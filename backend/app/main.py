@@ -203,64 +203,7 @@ class RunnerAssetCreate(RunnerAssetUpdate):
 
 @app.get("/api/runner-templates")
 def runner_templates():
-    public_catalog = {
-        "insighta-user-simulator": {
-            "name": "Command lifecycle adapter",
-            "description": "Runs a target project's bounded prepare, execute, and evidence commands while Orbit owns scheduling.",
-            "source": '''from orbit_runner_sdk import ORBIT_PROJECT_PATH, runner
-
-# Replace this with the target project's bounded browser-check command.
-COMMAND = ["python", "-m", "runner_target", "journey"]
-
-def execute(ctx, action):
-    ctx.exec([*COMMAND, action], cwd=ORBIT_PROJECT_PATH())
-
-@runner.phase("init")
-def init(ctx): execute(ctx, "status")
-@runner.phase("setup")
-def setup(ctx): execute(ctx, "prepare")
-@runner.phase("run")
-def run(ctx): execute(ctx, "run-once")
-@runner.phase("eval")
-def evaluate(ctx): execute(ctx, "collect-evidence")
-@runner.phase("teardown")
-def teardown(ctx): ctx.log("Browser journey check finished")
-@runner.phase("finalize")
-def finalize(ctx): ctx.log("Evaluation finalized")
-
-if __name__ == "__main__": runner.main()
-''',
-        },
-        "jgent-paired-improvement": {
-            "name": "Bounded improvement cycle",
-            "description": "Runs one locked improvement-and-validation cycle, then returns structured evidence to Orbit.",
-            "source": '''from orbit_runner_sdk import ORBIT_PROJECT_PATH, runner
-
-# Replace this with the target project's one-cycle improvement command.
-CYCLE_COMMAND = ["python", "scripts", "run_improvement_cycle.py", "--once"]
-
-@runner.phase("init")
-def init(ctx):
-    ctx.log(f"Target: {ORBIT_PROJECT_PATH()}")
-@runner.phase("setup")
-def setup(ctx):
-    ctx.log("Starting a bounded, lock-protected improvement cycle")
-@runner.phase("run")
-def run(ctx):
-    ctx.exec(CYCLE_COMMAND, cwd=ORBIT_PROJECT_PATH(), timeout=3600)
-@runner.phase("eval")
-def evaluate(ctx):
-    ctx.log("Read the target's cycle evidence and report it through Orbit")
-@runner.phase("teardown")
-def teardown(ctx): ctx.log("Improvement cycle finished")
-@runner.phase("finalize")
-def finalize(ctx): ctx.log("Evaluation finalized")
-
-if __name__ == "__main__": runner.main()
-''',
-        },
-    }
-    return [{**template, **public_catalog.get(template["id"], {})} for template in store.runner_templates()]
+    return store.runner_templates()
 
 
 @app.get("/api/runners")
