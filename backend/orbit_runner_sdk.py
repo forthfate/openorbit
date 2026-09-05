@@ -116,13 +116,20 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         self.emit_result({"browser_journey": evidence})
         return evidence
 
-    def exec(self, command: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> None:
+    def exec(self, command: list[str], *, cwd: Path | None = None, timeout: int | None = None) -> str:
+        """Run one bounded child command and return its captured output.
+
+        A runner phase is deliberately not a scheduler.  Returning the output
+        lets a phase turn its one-shot result into Orbit-owned structured
+        evidence without starting a persistent child daemon.
+        """
         self.log(f"exec: {' '.join(command)}")
         result = subprocess.run(command, cwd=cwd or self.target_repository, env=self.environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
         if result.stdout:
             print(result.stdout, end="", flush=True)
         if result.returncode:
             raise SystemExit(result.returncode)
+        return result.stdout
 
 
 class Runner:

@@ -11,7 +11,7 @@ import threading
 import time
 import uuid
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +44,7 @@ APP_DATA = _application_data_dir()
 WORKFLOWS = APP_DATA / "workflows"
 CONFIG = APP_DATA / "config"
 TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
+CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Use only the supplied repository context and task instruction. Preserve the
 task safety boundary, collect observable evidence, and never claim success
@@ -80,7 +81,29 @@ class ConsoleStore:
         RUNNERS.mkdir(parents=True, exist_ok=True)
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.Lock()
+        self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
+
+    def _recover_interrupted_runs(self) -> None:
+        """Do not present orphaned in-memory pipelines as still running.
+
+        The local scheduler is process-bound.  A server restart ends all worker
+        threads, so unfinished records from the previous process are explicitly
+        marked cancelled before they can distort active-evaluation metrics.
+        """
+        for path in RUNS.glob("*.json"):
+            try:
+                run = Run.model_validate_json(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if run.status not in {"queued", "running", "awaiting_approval"}:
+                continue
+            run.status, run.current_step, run.current_phase = "cancelled", None, None
+            run.updated_at, run.finished_at = now(), now()
+            run.step_results.append({"step_id": "orbit-restart", "error": "OpenOrbit restarted before this local pipeline completed.", "ended_at": now()})
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(run.model_dump_json(indent=2), encoding="utf-8")
+            temporary.replace(path)
 
     @staticmethod
     def _initialize_application_data() -> None:
@@ -128,7 +151,7 @@ def finalize(ctx): ctx.log("Browser journey evaluation finalized")
 
 if __name__ == "__main__": runner.main()
 '''},
-            {"id": "insighta-user-simulator", "name": "Insighta user simulator", "description": "Runs the persistent persona simulator as bounded Orbit phases; Orbit owns the repeat schedule.", "source": '''from pathlib import Path\nimport os\nfrom orbit_runner_sdk import runner\n\ndef simulator_root(ctx):\n    return Path(os.environ.get("INSIGHTA_SIMULATOR_ROOT", ctx.target_repository.parents[1] / "insighta-user-simulator"))\n\ndef simulator(ctx, *args):\n    ctx.exec(["./.venv/bin/python", "-m", "insighta_user_simulator.cli", *args], cwd=simulator_root(ctx))\n\n@runner.phase("init")\ndef init(ctx): simulator(ctx, "status")\n@runner.phase("setup")\ndef setup(ctx): simulator(ctx, "catalog")\n@runner.phase("run")\ndef run(ctx):\n    simulator(ctx, "run-once", *(["--dry-run"] if ctx.mode == "test" else []))\n@runner.phase("eval")\ndef evaluate(ctx): simulator(ctx, "health")\n@runner.phase("teardown")\ndef teardown(ctx): ctx.log("Insighta one-shot cycle finished")\n@runner.phase("finalize")\ndef finalize(ctx): ctx.log("Insighta evaluation finalized")\n\nif __name__ == "__main__": runner.main()\n'''},
+            {"id": "insighta-user-simulator", "name": "Persona journey processor", "description": "Runs one persona cycle per Orbit iteration. Orbit owns scheduling, limits, cancellation, logs, and supervision.", "source": '''from pathlib import Path\nimport json\nimport os\nfrom orbit_runner_sdk import runner\n\ndef simulator_root(ctx):\n    return Path(os.environ.get("ORBIT_PERSONA_ADAPTER_ROOT", ctx.project_root.parents[1] / "insighta-user-simulator"))\n\ndef simulator(ctx, *args):\n    return ctx.exec(["./.venv/bin/python", "-m", "insighta_user_simulator.cli", *args], cwd=simulator_root(ctx), timeout=86400)\n\n@runner.phase("init")\ndef init(ctx):\n    ctx.log("Orbit acquired the persona processor; no target daemon is started")\n    simulator(ctx, "status")\n\n@runner.phase("setup")\ndef setup(ctx): simulator(ctx, "catalog")\n\n@runner.phase("run")\ndef run(ctx):\n    ctx.log(f"Orbit iteration {ctx.loop_index}: running one bounded persona cycle")\n    output = simulator(ctx, "run-once", *(["--dry-run"] if ctx.mode == "test" else []))\n    ctx.emit_result({"persona_cycle": {"iteration": ctx.loop_index, "processed_personas": json.loads(output)}})\n\n@runner.phase("eval")\ndef evaluate(ctx):\n    ctx.emit_result({"processor": {"owner": "OpenOrbit", "iteration": ctx.loop_index, "scheduler": "pipeline"}})\n    ctx.log("Orbit retained this cycle's evidence for supervision")\n\n@runner.phase("teardown")\ndef teardown(ctx): ctx.log("Orbit completed one persona cycle")\n\n@runner.phase("finalize")\ndef finalize(ctx): ctx.log("Orbit finalized the bounded persona processor")\n\nif __name__ == "__main__": runner.main()\n'''},
             {"id": "jgent-paired-improvement", "name": "Jgent paired improvement", "description": "Runs one bounded 5+2 paired-improvement cycle and leaves scheduling to Orbit.", "source": '''from pathlib import Path\nfrom orbit_runner_sdk import runner\n\ndef cycle(ctx):\n    ctx.exec(["python", "scripts/operations/run_paired_improvement_cycle.py", "--once"], cwd=ctx.target_repository, timeout=3600)\n\n@runner.phase("init")\ndef init(ctx): ctx.exec(["python", "scripts/operations/run_paired_improvement_cycle.py", "--help"], cwd=ctx.target_repository)\n@runner.phase("setup")\ndef setup(ctx): ctx.log("Jgent paired gate is ready")\n@runner.phase("run")\ndef run(ctx): cycle(ctx)\n@runner.phase("eval")\ndef evaluate(ctx): ctx.log("Read .build/paired-improvement-cycle/scorecards.jsonl for gate evidence")\n@runner.phase("teardown")\ndef teardown(ctx): ctx.log("Jgent bounded cycle finished")\n@runner.phase("finalize")\ndef finalize(ctx): ctx.log("Jgent evaluation finalized")\n\nif __name__ == "__main__": runner.main()\n'''}]
 
     def runners(self) -> list[dict[str, str]]:
@@ -589,6 +612,14 @@ if __name__ == "__main__": runner.main()
         path = CONFIG / "improvements.yaml"
         return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
 
+    def cycle_interventions(self) -> list[dict[str, Any]]:
+        return yaml.safe_load(CYCLE_INTERVENTIONS.read_text(encoding="utf-8")) if CYCLE_INTERVENTIONS.exists() else []
+
+    def _save_cycle_interventions(self, values: list[dict[str, Any]]) -> None:
+        temporary = CYCLE_INTERVENTIONS.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(values, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(CYCLE_INTERVENTIONS)
+
     def reported_issues(self) -> list[dict[str, Any]]:
         path = CONFIG / "reported-issues.yaml"
         return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
@@ -681,6 +712,101 @@ if __name__ == "__main__": runner.main()
                 ]),
                 "commits": len([item for item in self.improvements() if item["status"] == "committed"]),
             },
+        }
+
+    def improvement_analytics(self, hours: int = 24) -> dict[str, Any]:
+        """Aggregate retained supervisor feedback into operator-facing trends."""
+        hours = max(1, min(hours, 24 * 30))
+        end = now()
+        start = end - timedelta(hours=hours)
+        feedback_by_build: dict[str, dict[str, Any]] = {}
+        trends_by_build: dict[str, dict[str, Any]] = {}
+        feedback_status_by_build: dict[str, dict[str, Any]] = {}
+        bucket_count = min(24, max(6, hours))
+        interval = timedelta(seconds=(end - start).total_seconds() / bucket_count)
+        issue_severity = [
+            {"time": (start + interval * index).isoformat(), "low": 0, "medium": 0, "high": 0, "critical": 0}
+            for index in range(bucket_count + 1)
+        ]
+
+        def parse_timestamp(value: object) -> datetime | None:
+            if not isinstance(value, str):
+                return None
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+
+        pipeline_runs = [
+            run for run in self.runs()
+            if run.execution_type == "pipeline" and run.evaluation_build_id
+        ]
+        for run in pipeline_runs:
+            build_id = str(run.evaluation_build_id)
+            name = run.evaluation_build_name or build_id
+            feedback = feedback_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "feedback_count": 0})
+            trend = trends_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "points": []})
+            status_counts = feedback_status_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "proposed": 0, "adopted": 0, "rejected": 0})
+            for record in run.supervisor_results:
+                recorded_at = parse_timestamp(record.get("recorded_at"))
+                if recorded_at is None or recorded_at < start or recorded_at > end:
+                    continue
+                response = record.get("response") if isinstance(record.get("response"), dict) else {}
+                improvements = response.get("improvements", []) if isinstance(response.get("improvements"), list) else []
+                issues = response.get("reported_issues", []) if isinstance(response.get("reported_issues"), list) else []
+                feedback["feedback_count"] += len(improvements) + len(issues)
+                for improvement in improvements:
+                    if isinstance(improvement, dict) and improvement.get("status") in {"proposed", "adopted", "rejected"}:
+                        status_counts[str(improvement["status"])] += 1
+                for issue in issues:
+                    if not isinstance(issue, dict) or issue.get("severity") not in {"low", "medium", "high", "critical"}:
+                        continue
+                    issue_time = parse_timestamp(issue.get("reported_at")) or recorded_at
+                    bucket = min(bucket_count, max(0, int((issue_time - start) / interval)))
+                    issue_severity[bucket][str(issue["severity"])] += 1
+                evaluation = response.get("evaluation") if isinstance(response.get("evaluation"), dict) else {}
+                score = evaluation.get("score") if isinstance(evaluation.get("score"), (int, float)) else None
+                trend["points"].append({
+                    "run_id": run.id,
+                    "iteration": record.get("iteration", 0),
+                    "recorded_at": recorded_at.isoformat(),
+                    "accepted_count": len([item for item in improvements if isinstance(item, dict) and item.get("status") == "adopted"]),
+                    "feedback_count": len(improvements) + len(issues),
+                    "score": score,
+                })
+
+        active_counts = []
+        for index in range(bucket_count + 1):
+            timestamp = start + interval * index
+            count = 0
+            for run in pipeline_runs:
+                # Older records can predate finished_at. A terminal status is
+                # authoritative in that case and must never inflate the live
+                # active-evaluation graph.
+                if run.status in {"succeeded", "failed", "cancelled"} and run.finished_at is None:
+                    continue
+                if run.created_at > timestamp:
+                    continue
+                if run.finished_at is None or run.finished_at > timestamp:
+                    count += 1
+            active_counts.append({"time": timestamp.isoformat(), "count": count})
+        health_by_build: dict[str, dict[str, Any]] = {}
+        for run in pipeline_runs:
+            if run.created_at < start or run.created_at > end:
+                continue
+            build_id = str(run.evaluation_build_id)
+            item = health_by_build.setdefault(build_id, {"build_id": build_id, "name": run.evaluation_build_name or build_id, "succeeded": 0, "failed": 0, "cancelled": 0, "running": 0})
+            item[run.status if run.status in item else "running"] += 1
+        for trend in trends_by_build.values():
+            trend["points"].sort(key=lambda point: point["recorded_at"])
+        return {
+            "window_hours": hours,
+            "feedback_by_build": sorted(feedback_by_build.values(), key=lambda item: item["feedback_count"], reverse=True),
+            "iteration_trends": sorted(trends_by_build.values(), key=lambda item: item["name"]),
+            "active_evaluations": active_counts,
+            "feedback_status": sorted(feedback_status_by_build.values(), key=lambda item: item["name"]),
+            "issue_severity": issue_severity,
+            "run_health": sorted(health_by_build.values(), key=lambda item: item["name"]),
         }
 
     def active_evaluations(self, runs: list[Run] | None = None) -> list[dict[str, Any]]:
@@ -964,7 +1090,16 @@ if __name__ == "__main__": runner.main()
                     self._execute_step(run_id, step, loop_index, resources)
                     if self._load(run_id).status in {"failed", "cancelled"}:
                         break
+                if (
+                    self._load(run_id).status == "running"
+                    and run.execution_mode == "run"
+                    and self._latest_cycle_has_persona_evidence(self._load(run_id))
+                ):
+                    self._complete_supervision(run_id)
                 if loop_index < run.loop_limit and run.repeat_interval_minutes and run.execution_mode == "run" and self._load(run_id).status == "running":
+                    run = self._load(run_id)
+                    run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
+                    self._save(run)
                     for _ in range(run.repeat_interval_minutes * 60):
                         if self._load(run_id).status != "running":
                             break
@@ -977,7 +1112,24 @@ if __name__ == "__main__": runner.main()
                 run.status = "succeeded"
                 run.current_step, run.current_phase, run.updated_at, run.finished_at = None, None, now(), now()
                 self._save(run)
-                self._complete_supervision(run_id)
+
+    @staticmethod
+    def _latest_cycle_has_persona_evidence(run: Run) -> bool:
+        """Only spend a supervisor call when the bounded cycle did real work.
+
+        The source daemon polls frequently but often finds no active/due persona.
+        OpenOrbit preserves that polling behavior without treating an empty poll
+        as an evaluation outcome.
+        """
+        for step in reversed(run.step_results):
+            if step.get("phase") != "run":
+                continue
+            result = step.get("result")
+            if not isinstance(result, dict):
+                return False
+            cycle = result.get("persona_cycle")
+            return isinstance(cycle, dict) and bool(cycle.get("processed_personas"))
+        return False
 
     @staticmethod
     def _validated_supervisor_result(text: str) -> dict[str, Any]:
@@ -1017,13 +1169,30 @@ if __name__ == "__main__": runner.main()
         target pipeline into a failed pipeline.
         """
         run = self._load(run_id)
+        iteration = max((int(item.get("loop_index", 0)) for item in run.step_results), default=0)
         configured = next((item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name), self.settings())
         if not configured.get("model"):
             run.supervisor_status, run.supervisor_error, run.updated_at = "not_configured", "No AI model profile is configured.", now()
+            run.supervisor_results.append({"iteration": iteration, "status": "not_configured", "error": run.supervisor_error, "recorded_at": now().isoformat()})
             self._save(run)
             return
         settings = ModelSettings(**{key: value for key, value in configured.items() if key != "profile_name"})
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+        cycle_evidence = [
+            {
+                "phase": item.get("phase"),
+                "iteration": item.get("loop_index"),
+                "exit_code": item.get("exit_code"),
+                "result": item.get("result"),
+                "output": str(item.get("output", ""))[-4_000:],
+            }
+            for item in run.step_results
+            if item.get("phase") in {"run", "eval"} and item.get("loop_index") == iteration
+        ]
+        supervisor_prompt = run.prompt_snapshot or ""
+        if cycle_evidence:
+            supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
+            supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
         with self.tracer.start_as_current_span(
             "supervisor.evaluate",
             attributes={
@@ -1031,10 +1200,11 @@ if __name__ == "__main__": runner.main()
                 "gen_ai.provider.name": settings.provider,
                 "gen_ai.request.model": settings.model,
                 "orbit.manager.template": (self.evaluation_build(run.evaluation_build_id).get("manager_template_id") if run.evaluation_build_id else ""),
+                "orbit.iteration": iteration,
             },
         ) as span:
             try:
-                result = self._validated_supervisor_result(provider.complete(settings, run.prompt_snapshot or ""))
+                result = self._validated_supervisor_result(provider.complete(settings, supervisor_prompt))
                 evaluation = result.get("evaluation")
                 if evaluation is not None:
                     threshold = run.approval_score if run.approval_score is not None else int(self.evaluation_build(run.evaluation_build_id).get("approval_score", 0))
@@ -1048,22 +1218,43 @@ if __name__ == "__main__": runner.main()
                     issue.setdefault("reported_at", reported_at)
                 run = self._load(run_id)
                 run.supervisor_status, run.supervisor_response, run.supervisor_error, run.updated_at = "completed", result, None, now()
+                run.supervisor_results.append({"iteration": iteration, "status": "completed", "prompt": supervisor_prompt, "response": result, "recorded_at": now().isoformat()})
                 self._save(run)
+                self._review_cycle_improvement(run, iteration, result, settings, provider)
                 span.set_attribute("orbit.supervisor.improvements", len(result["improvements"]))
                 span.set_attribute("orbit.supervisor.reported_issues", len(result["reported_issues"]))
                 span.add_event("supervisor.response.validated")
             except ValueError as error:
                 run = self._load(run_id)
                 run.supervisor_status, run.supervisor_error, run.updated_at = "invalid_response", str(error), now()
+                run.supervisor_results.append({"iteration": iteration, "status": "invalid_response", "prompt": supervisor_prompt, "error": str(error), "recorded_at": now().isoformat()})
                 self._save(run)
                 span.record_exception(error)
                 span.add_event("supervisor.response.invalid", {"reason": str(error)})
             except (RuntimeError, requests.RequestException) as error:
                 run = self._load(run_id)
                 run.supervisor_status, run.supervisor_error, run.updated_at = "failed", str(error), now()
+                run.supervisor_results.append({"iteration": iteration, "status": "failed", "prompt": supervisor_prompt, "error": str(error), "recorded_at": now().isoformat()})
                 self._save(run)
                 span.record_exception(error)
                 span.add_event("supervisor.request.failed", {"reason": str(error)})
+
+    def _review_cycle_improvement(self, run: Run, iteration: int, result: dict[str, Any], settings: ModelSettings, provider: Any) -> None:
+        """Let a second AI pass improve the operating cycle, not the target."""
+        prompt = """You improve an OpenOrbit evaluation cycle, not the evaluated product.\nReturn exactly JSON: {\"diagnosis\":\"string\",\"interventions\":[{\"target\":\"runner|workflow|test_case_set|manager_prompt|schedule\",\"title\":\"string\",\"rationale\":\"string\",\"proposed_change\":\"string\",\"risk\":\"low|medium|high\",\"validation\":\"string\",\"rollback\":\"string\"}]}.\nOnly propose evidence-backed changes. Do not propose target repository code changes.\n\n""" + json.dumps({"evaluation_build": run.evaluation_build_name, "iteration": iteration, "supervisor_result": result}, ensure_ascii=False)
+        try:
+            reviewed = json.loads(provider.complete(settings, prompt))
+            interventions = reviewed.get("interventions", []) if isinstance(reviewed, dict) else []
+            if not isinstance(interventions, list):
+                return
+            stored = self.cycle_interventions()
+            for intervention in interventions:
+                if not isinstance(intervention, dict) or not isinstance(intervention.get("title"), str):
+                    continue
+                stored.append({"id": f"ci-{uuid.uuid4().hex[:10]}", "evaluation_build_id": run.evaluation_build_id, "evaluation_build_name": run.evaluation_build_name, "run_id": run.id, "iteration": iteration, "diagnosis": str(reviewed.get("diagnosis", "")), "status": "proposed", "created_at": now().isoformat(), **intervention})
+            self._save_cycle_interventions(stored)
+        except (ValueError, RuntimeError, requests.RequestException, json.JSONDecodeError):
+            return
 
     def _execute_step(self, run_id: str, step, loop_index: int = 1, resources: dict[str, Any] | None = None) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
@@ -1134,6 +1325,8 @@ if __name__ == "__main__": runner.main()
                     "phase": step.phase,
                     "loop_index": loop_index,
                     "name": step.name,
+                    "command": step.command,
+                    "working_directory": str(directory),
                     "started_at": started,
                     "ended_at": now(),
                     "exit_code": process.returncode,

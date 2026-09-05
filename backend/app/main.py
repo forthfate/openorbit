@@ -323,6 +323,16 @@ def improvements():
     return store.improvements()
 
 
+@app.get("/api/cycle-interventions")
+def cycle_interventions():
+    return store.cycle_interventions()
+
+
+@app.get("/api/improvement-analytics")
+def improvement_analytics(hours: int = 24):
+    return store.improvement_analytics(hours)
+
+
 @app.get("/api/reported-issues")
 def reported_issues():
     return store.reported_issues()

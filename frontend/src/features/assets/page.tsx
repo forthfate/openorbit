@@ -1,11 +1,13 @@
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
-import { Children, useEffect, useRef, useState } from 'react'
+import { Children, useEffect, useState } from 'react'
 import type { PromptTemplate, RunnerAsset, RunnerTemplate, Settings, TargetTestCaseSet, TestCase, Workflow, WorkflowStep } from '../../domain/models'
 import type { Locale } from '../../locales'
 import { locales } from '../../locales'
 import { Modal } from '../../components/ui/modal'
 import { PanelHeader } from '../../components/ui/page-header'
 import { SectionInfo } from '../../components/ui/section-info'
+import { PythonEditor } from '../../components/ui/python-editor'
+import { YamlEditor } from '../../components/ui/yaml-editor'
 import { ProfileForm } from '../evaluation-builds/page'
 import { api } from '../../services/api'
 
@@ -18,7 +20,7 @@ const pipelineYaml=(workflow:Workflow|null|undefined)=>phases.map(phase=>{const 
 
 function Catalog({title,button,children,emptyHint,showRunners=false,locale}:{title:string;button:React.ReactNode;children:React.ReactNode;emptyHint:string;showRunners?:boolean;locale:Locale}){return <>{showRunners&&<RunnerCatalog locale={locale}/>}<section className="panel app-settings"><div className="panel-title-action"><PanelHeader title={<SectionInfo title={title} description={emptyHint}/>}/>{button}</div><div className="catalog-list">{Children.count(children)?children:<p className="catalog-empty">{emptyHint}</p>}</div></section></>}
 
-function PipelineYamlEditor({value,onChange,hint}:{value:string;onChange:(value:string)=>void;hint:string}){const previewRef=useRef<HTMLPreElement>(null);return <div className="pipeline-yaml-editor"><p className="hint">{hint}</p><div className="pipeline-code-editor"><pre ref={previewRef} aria-hidden="true">{value.split(/(\n)/).map((line,index)=>/^(init|setup|run|eval|teardown|finalize):$/.test(line)?<span className="pipeline-stage" key={index}>{line}</span>:line)}</pre><textarea aria-label="Pipeline YAML" spellCheck={false} value={value} onChange={event=>onChange(event.target.value)} onScroll={event=>{if(previewRef.current){previewRef.current.scrollTop=event.currentTarget.scrollTop;previewRef.current.scrollLeft=event.currentTarget.scrollLeft}}}/></div></div>}
+function PipelineYamlEditor({value,onChange,hint}:{value:string;onChange:(value:string)=>void;hint:string}){return <div className="pipeline-yaml-editor"><p className="hint">{hint}</p><YamlEditor value={value} onChange={onChange}/></div>}
 
 function WorkflowModal({onClose,flows,onCreate,onUpdate,editing,l}:{onClose:()=>void;flows:Workflow[];onCreate:(values:unknown)=>Promise<unknown>;onUpdate:(id:string,values:unknown)=>Promise<unknown>;editing:Workflow|null;l:(typeof text)['en']}){
   const [page,setPage]=useState(1),[draft,setDraft]=useState(()=>editing?{id:editing.id,name:editing.name,description:editing.description,template_workflow_id:''}:{id:'',name:'',description:'',template_workflow_id:''}),[workflowYaml,setWorkflowYaml]=useState(()=>pipelineYaml(editing)),[notice,setNotice]=useState('')
@@ -34,7 +36,7 @@ function RunnerModal({editing,onClose,onSaved}:{editing:RunnerAsset|null;onClose
   const save=()=>{if(!draft)return;api(editing?`/api/runners/${editing.id}`:'/api/runners',editing?'PUT':'POST',editing?{name:draft.name,description:draft.description,source:draft.source}:draft).then(()=>{onSaved();onClose()}).catch(error=>setNotice(error.message))}
   const openVsCode=()=>{if(editing)api(`/api/runners/${editing.id}/open-vscode`,'POST').then(()=>setNotice('VS Code opened')).catch(error=>setNotice(error.message))}
   if(!draft)return <Modal open title="Runner templates" onClose={onClose}><div className="runner-template-grid">{templates.map(template=><button className="runner-template-card" key={template.id} onClick={()=>choose(template)}><strong>{template.name}</strong><span>{template.description}</span><small>Python SDK · {template.id}</small></button>)}</div>{notice&&<small className="hint">{notice}</small>}</Modal>
-  return <Modal open title={editing?'Edit runner':'Create runner'} onClose={onClose}><div className="modal-form runner-editor"><label className="modal-setting-row"><span>ID</span><input disabled={Boolean(editing)} value={draft.id} onChange={event=>setDraft({...draft,id:event.target.value})}/></label><label className="modal-setting-row"><span>Name</span><input value={draft.name} onChange={event=>setDraft({...draft,name:event.target.value})}/></label><label className="modal-setting-row"><span>Description</span><textarea value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label><label className="runner-source"><span>Python SDK</span><textarea aria-label="Runner Python SDK" spellCheck={false} value={draft.source} onChange={event=>setDraft({...draft,source:event.target.value})}/></label><div className="modal-actions">{notice&&<small className="hint">{notice}</small>}{editing&&<button className="ghost" onClick={openVsCode}>Open in VS Code</button>}<button className="approve" onClick={save}>Save</button></div></div></Modal>
+  return <Modal open title={editing?'Edit runner':'Create runner'} onClose={onClose}><div className="modal-form runner-editor"><label className="modal-setting-row"><span>ID</span><input disabled={Boolean(editing)} value={draft.id} onChange={event=>setDraft({...draft,id:event.target.value})}/></label><label className="modal-setting-row"><span>Name</span><input value={draft.name} onChange={event=>setDraft({...draft,name:event.target.value})}/></label><label className="modal-setting-row"><span>Description</span><textarea value={draft.description} onChange={event=>setDraft({...draft,description:event.target.value})}/></label><label className="runner-source"><span>Python</span><PythonEditor value={draft.source} onChange={source=>setDraft({...draft,source})}/></label><div className="modal-actions">{notice&&<small className="hint">{notice}</small>}{editing&&<button className="ghost" onClick={openVsCode}>Open in VS Code</button>}<button className="approve" onClick={save}>Save</button></div></div></Modal>
 }
 
 function AssetRow({name,detail,onClick,onDelete}:{name:string;detail:string;onClick:()=>void;onDelete:()=>void}){return <div className="catalog-row-wrap"><button className="catalog-row" onClick={onClick}><strong>{name}</strong><span>{detail}</span></button><button className="icon-button danger" aria-label="Delete" onClick={onDelete}><Trash2 size={15}/></button></div>}

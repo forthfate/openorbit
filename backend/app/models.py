@@ -68,6 +68,7 @@ class Run(BaseModel):
     supervisor_status: Literal["pending", "completed", "not_configured", "invalid_response", "failed"] = "pending"
     supervisor_response: dict[str, Any] | None = None
     supervisor_error: str | None = None
+    supervisor_results: list[dict[str, Any]] = Field(default_factory=list)
     runner_output: str = ""
     step_results: list[dict] = []
     approval_reason: str | None = None
