@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest an improvement or new capability for OpenOrbit.
+title: "Feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea. Please describe the user problem first so the solution can stay focused.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user need, workflow, or limitation should this address?
+      placeholder: Describe the situation this feature would improve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like OpenOrbit to support?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Are there existing workarounds or other approaches?
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Relevant environment
+      description: Mention any affected frontend, backend, deployment, or integration context.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, screenshots, examples, or implementation notes if useful.
+    validations:
+      required: false
