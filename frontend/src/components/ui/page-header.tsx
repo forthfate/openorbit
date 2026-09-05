@@ -21,4 +21,4 @@ const sectionHints:Record<string,string>={
   'Runners':'Create reusable runners that execute project-specific automation.',
 }
 export function PanelHeader({title,action}:{title:ReactNode;action?:ReactNode}){const hint=typeof title==='string'?sectionHints[title]:undefined;return <div className="panel-head"><h2>{hint?<SectionInfo title={title} description={hint}/>:title}</h2>{action??<Settings2 size={18}/>}</div>}
-export function MetricCard({label,value}:{label:string;value:string}){const locale=localStorage.getItem('orbit.locale');const caption=locale==='ko'?'실시간 로컬 상태':locale==='ja'?'ライブローカル状態':'live local state';return <article className="metric"><p>{label}</p><strong>{value}</strong><small>{caption}</small></article>}
+export function MetricCard({label,value,detail}:{label:string;value:string;detail?:string}){const locale=localStorage.getItem('orbit.locale');const caption=detail??(locale==='ko'?'실시간 로컬 상태':locale==='ja'?'ライブローカル状態':'live local state');return <article className="metric"><p>{label}</p><strong>{value}</strong><small>{caption}</small></article>}

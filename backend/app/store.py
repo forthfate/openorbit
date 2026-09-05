@@ -728,6 +728,15 @@ if __name__ == "__main__": runner.main()
             {"time": (start + interval * index).isoformat(), "low": 0, "medium": 0, "high": 0, "critical": 0}
             for index in range(bucket_count + 1)
         ]
+        summary_start = end - timedelta(hours=24)
+        previous_summary_start = summary_start - timedelta(hours=24)
+        summary = {
+            "feedback": 0,
+            "accepted": 0,
+            "issues": 0,
+            "scores": [],
+            "previous_scores": [],
+        }
 
         def parse_timestamp(value: object) -> datetime | None:
             if not isinstance(value, str):
@@ -749,11 +758,23 @@ if __name__ == "__main__": runner.main()
             status_counts = feedback_status_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "proposed": 0, "adopted": 0, "rejected": 0})
             for record in run.supervisor_results:
                 recorded_at = parse_timestamp(record.get("recorded_at"))
-                if recorded_at is None or recorded_at < start or recorded_at > end:
+                if recorded_at is None or recorded_at > end:
                     continue
                 response = record.get("response") if isinstance(record.get("response"), dict) else {}
                 improvements = response.get("improvements", []) if isinstance(response.get("improvements"), list) else []
                 issues = response.get("reported_issues", []) if isinstance(response.get("reported_issues"), list) else []
+                evaluation = response.get("evaluation") if isinstance(response.get("evaluation"), dict) else {}
+                score = evaluation.get("score") if isinstance(evaluation.get("score"), (int, float)) else None
+                if recorded_at >= summary_start:
+                    summary["feedback"] += len(improvements) + len(issues)
+                    summary["accepted"] += len([item for item in improvements if isinstance(item, dict) and item.get("status") == "adopted"])
+                    summary["issues"] += len(issues)
+                    if score is not None:
+                        summary["scores"].append(score)
+                elif recorded_at >= previous_summary_start and score is not None:
+                    summary["previous_scores"].append(score)
+                if recorded_at < start:
+                    continue
                 feedback["feedback_count"] += len(improvements) + len(issues)
                 for improvement in improvements:
                     if isinstance(improvement, dict) and improvement.get("status") in {"proposed", "adopted", "rejected"}:
@@ -764,8 +785,6 @@ if __name__ == "__main__": runner.main()
                     issue_time = parse_timestamp(issue.get("reported_at")) or recorded_at
                     bucket = min(bucket_count, max(0, int((issue_time - start) / interval)))
                     issue_severity[bucket][str(issue["severity"])] += 1
-                evaluation = response.get("evaluation") if isinstance(response.get("evaluation"), dict) else {}
-                score = evaluation.get("score") if isinstance(evaluation.get("score"), (int, float)) else None
                 trend["points"].append({
                     "run_id": run.id,
                     "iteration": record.get("iteration", 0),
@@ -799,8 +818,17 @@ if __name__ == "__main__": runner.main()
             item[run.status if run.status in item else "running"] += 1
         for trend in trends_by_build.values():
             trend["points"].sort(key=lambda point: point["recorded_at"])
+        average_score = round(sum(summary["scores"]) / len(summary["scores"]), 1) if summary["scores"] else None
+        previous_average = sum(summary["previous_scores"]) / len(summary["previous_scores"]) if summary["previous_scores"] else None
         return {
             "window_hours": hours,
+            "operational_summary": {
+                "feedback": summary["feedback"],
+                "accepted": summary["accepted"],
+                "issues": summary["issues"],
+                "average_score": average_score,
+                "score_delta": round(average_score - previous_average, 1) if average_score is not None and previous_average is not None else None,
+            },
             "feedback_by_build": sorted(feedback_by_build.values(), key=lambda item: item["feedback_count"], reverse=True),
             "iteration_trends": sorted(trends_by_build.values(), key=lambda item: item["name"]),
             "active_evaluations": active_counts,
