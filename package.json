@@ -1,0 +1,17 @@
+{
+  "name": "openorbit",
+  "version": "0.1.0",
+  "description": "Open control plane for recurring AI automations",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "openorbit": "bin/orbit.mjs"
+  },
+  "workspaces": ["frontend"],
+  "scripts": {
+    "run": "node bin/orbit.mjs run",
+    "build": "npm --prefix frontend run build",
+    "check": "npm --prefix frontend run build"
+  },
+  "files": ["bin/", "backend/", "frontend/", "orbit/", "config/", "workflows/", "pyproject.toml", "README.md", "LICENSE"]
+}

@@ -1,0 +1,28 @@
+id: user-simulation
+version: 1
+title: Persistent source-grounded user simulation
+inputs:
+  - persona
+  - local_day_memory
+  - source_catalog
+  - browser_observation
+prompts:
+  session_planner: simulation/session-planner.md
+graph:
+  - plan_persona_session
+  - execute_source_backed_actions
+  - normalize_evidence
+outputs:
+  - session_evidence
+  - durable_summary
+  - improvement_proposal
+invariants:
+  - Only actions whose target is present in source_catalog may execute.
+  - Input values and credentials never enter model context or durable evidence.
+  - A browser click is not success; verify resulting rendered state.
+  - Real orders, upgrades, credential changes, and paywall bypasses are refused.
+  - A proposal creates a backup before changing a prompt or pipeline resource.
+runtime:
+  heartbeat_seconds: 300
+  persona_min_interval_seconds: 1800
+  memory_boundary: persona_local_day

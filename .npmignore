@@ -1,0 +1,11 @@
+.venv/
+frontend/node_modules/
+frontend/dist/
+data/
+conversations/
+.orbit/
+docs/
+specs/
+adr/
+tests/
+backend/tests/
