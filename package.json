@@ -1,0 +1,23 @@
+{
+  "name": "openorbit",
+  "version": "0.0.4",
+  "description": "Open control plane for recurring AI automations",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "bin": {
+    "orbit": "bin/orbit.mjs",
+    "openorbit": "bin/orbit.mjs"
+  },
+  "workspaces": ["frontend"],
+  "scripts": {
+    "run": "node bin/orbit.mjs run",
+    "build": "pnpm --filter agent-improvement-console-ui run build",
+    "check": "pnpm --filter agent-improvement-console-ui run build",
+    "prepack": "pnpm run build"
+  },
+  "files": ["bin/", "backend/", "frontend/", "orbit/", "config/", "workflows/", "pyproject.toml", "README.md", "LICENSE"]
+}

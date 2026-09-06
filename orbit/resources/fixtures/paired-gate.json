@@ -1,0 +1,6 @@
+{
+  "replay_probes": ["R01", "R02", "R03", "R04", "R05"],
+  "development_probes": ["D01", "D02"],
+  "score_range": [0, 5],
+  "promotion_threshold": 4
+}

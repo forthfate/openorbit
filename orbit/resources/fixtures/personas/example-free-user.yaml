@@ -1,0 +1,10 @@
+id: example_free_user
+locale: en-US
+timezone: America/New_York
+activity_windows:
+  - weekdays: '08:00-18:00'
+goals:
+  - Understand portfolio allocation and risk.
+constraints:
+  simulated_trading_only: true
+  no_real_credentials: true

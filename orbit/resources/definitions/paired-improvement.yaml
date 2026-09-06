@@ -1,0 +1,34 @@
+id: paired-improvement
+version: 1
+title: Evidence-first paired improvement cycle
+inputs:
+  - candidate_fingerprint
+  - replay_evidence
+  - development_evidence
+  - reviewer_scorecards
+prompts:
+  reviewer: improvement/reviewer.md
+  implementation_request: improvement/implementation-request.md
+stages:
+  - ready
+  - applying_improvement
+  - evaluating
+  - reviewing
+  - ready
+gate:
+  replay_probes: 5
+  development_probes: 2
+  minimum_score: 4
+  required_stable_evaluations: 3
+invariants:
+  - One isolated candidate patch is evaluated at a time.
+  - The exact candidate fingerprint must remain unchanged between gates.
+  - Promotion requires three complete 5+2 gates with every scorecard at least 4 of 5.
+  - After three non-sufficient gates, revert exactly the recorded candidate patch.
+  - Block automation if unrelated working-tree changes overlap the candidate.
+  - Never edit target repositories, baseline fixtures, or evaluator source data.
+outputs:
+  - bounded_decision_ledger
+  - candidate_patch
+  - review_report
+  - promotion_or_revert_decision

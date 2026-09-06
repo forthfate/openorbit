@@ -1,0 +1,1 @@
+export function StatusBadge({value,label}:{value:string;label?:string}){const style=({succeeded:'good',running:'run',awaiting_approval:'wait',failed:'bad',committed:'good',evaluating:'run',enabled:'good',accepted:'good',applied:'good',rejected:'bad',proposed:'wait'}[value]??'muted');return <span className={`badge ${style}`}>{label??value}</span>}
