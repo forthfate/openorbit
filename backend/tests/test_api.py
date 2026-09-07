@@ -341,7 +341,13 @@ def test_manager_prompt_template_can_be_updated(tmp_path, monkeypatch):
     template = store_module.ConsoleStore().update_prompt_template(
         "manager-test-v1", {"name": "Updated", "version": 2, "content": "new content"}
     )
-    assert template == {"id": "manager-test-v1", "name": "Updated", "version": 2, "content": "new content"}
+    assert template == {
+        "id": "manager-test-v1",
+        "name": "Updated",
+        "version": 2,
+        "content": "new content",
+        "versions": [{"version": 1, "content": "old"}, {"version": 2, "content": "new content"}],
+    }
 
 
 def test_target_test_case_sets_are_managed_as_assets(tmp_path, monkeypatch):

@@ -62,6 +62,10 @@ Your final response must be exactly one JSON object:
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
+PROPOSAL_DECISION_POLICY = """# Improvement decision policy
+Decide each improvement status independently from the evaluation approval score.
+Use `adopted` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `adopted` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
+Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
@@ -1424,7 +1428,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check, in order: scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step for the user. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark an improvement adopted only when the missing instruction is additive, reversible, and directly supported by the evidence, so the next iteration can validate it; otherwise mark it proposed. Return empty arrays only when every criterion is demonstrably met.",
+                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted whenever it is directly supported by the evidence and has measurable acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -2404,6 +2408,7 @@ if __name__ == "__main__":
                 operational.replace(MANAGER_PROMPT_SLOT, manager_policy),
                 f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
+                PROPOSAL_DECISION_POLICY,
             )
             if part
         )
@@ -2902,6 +2907,7 @@ if __name__ == "__main__":
         active_counts = []
         for index in range(bucket_count + 1):
             timestamp = start + interval * index
+            bucket_end = min(end, timestamp + interval)
             count = 0
             for run in pipeline_runs:
                 # Older records can predate finished_at. A terminal status is
@@ -2909,10 +2915,16 @@ if __name__ == "__main__":
                 # active-evaluation graph.
                 if run.status in {"succeeded", "failed", "cancelled"} and run.finished_at is None:
                     continue
-                if run.created_at > timestamp:
+                if index == bucket_count:
+                    if run.created_at > timestamp or (
+                        run.finished_at is not None and run.finished_at <= timestamp
+                    ):
+                        continue
+                elif run.created_at >= bucket_end or (
+                    run.finished_at is not None and run.finished_at <= timestamp
+                ):
                     continue
-                if run.finished_at is None or run.finished_at > timestamp:
-                    count += 1
+                count += 1
             active_counts.append({"time": timestamp.isoformat(), "count": count})
         health_by_build: dict[str, dict[str, Any]] = {}
         for run in pipeline_runs:

@@ -171,6 +171,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
                 name={t.activeCount}
                 stroke="var(--accent)"
                 fill="var(--surface-raised)"
+                dot={{ r: 3, fill: "var(--accent)", stroke: "var(--surface)" }}
               />
             </AreaChart>
           </ResponsiveContainer>
