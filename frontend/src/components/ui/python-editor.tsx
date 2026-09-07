@@ -3,9 +3,9 @@ import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 
-export function PythonEditor({value,onChange}:{value:string;onChange:(value:string)=>void}){
+export function PythonEditor({value,onChange,ariaLabel}:{value:string;onChange:(value:string)=>void;ariaLabel:string}){
   return <CodeMirror
-    aria-label="Runner Python source"
+    aria-label={ariaLabel}
     value={value}
     height="min(56vh, 620px)"
     theme={oneDark}

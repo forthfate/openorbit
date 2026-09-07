@@ -1,60 +1,20 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Locale } from "../../locales";
-import { locales } from "../../locales";
+import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import type { Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm } from "../evaluation-builds/page";
+import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
   chat_model_profile_name: string;
 };
 
-const copy = {
-  en: {
-    title: "Operational manager prompt",
-    description:
-      "Defines Orbit-wide manager behavior and the required response contract. The selected evaluation-build manager template is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
-    warning:
-      "This entire operational manager prompt is Orbit's interpretation contract. Keep its instructions, __ORBIT_MANAGER_AI_PROMPT__ slot, and JSON response format intact; changing or removing any of them can stop evaluations or make results unreadable.",
-    edit: "Edit prompt",
-    content: "Prompt content",
-    save: "Save",
-    cancel: "Cancel",
-    empty: "No operational prompt configured.",
-    saved: "Saved.",
-  },
-  ko: {
-    title: "운영 관리자 프롬프트",
-    description:
-      "Orbit 전체의 관리자 AI 행동과 필수 응답 계약을 정의합니다. 평가 빌드에서 선택한 관리자 프롬프트 템플릿은 __ORBIT_MANAGER_AI_PROMPT__ 위치에 삽입됩니다.",
-    warning:
-      "이 운영 관리자 프롬프트 전체는 Orbit이 결과를 해석하는 계약입니다. 지시문, __ORBIT_MANAGER_AI_PROMPT__ 삽입 위치, JSON 응답 형식을 모두 유지하세요. 어느 하나라도 삭제하거나 변경하면 평가가 중단되거나 Orbit이 결과를 읽지 못할 수 있습니다.",
-    edit: "프롬프트 편집",
-    content: "프롬프트 본문",
-    save: "저장",
-    cancel: "취소",
-    empty: "설정된 운영 프롬프트가 없습니다.",
-    saved: "저장했습니다.",
-  },
-  ja: {
-    title: "運用管理者プロンプト",
-    description:
-      "Orbit 全体における管理 AI の振る舞いと必須の応答契約を定義します。評価ビルドで選択した管理者プロンプトテンプレートは __ORBIT_MANAGER_AI_PROMPT__ の位置に挿入されます。",
-    warning:
-      "この運用管理者プロンプト全体は Orbit が結果を解釈するための契約です。指示、__ORBIT_MANAGER_AI_PROMPT__ の挿入位置、JSON 応答形式をすべて維持してください。いずれかを削除・変更すると、評価が停止したり Orbit が結果を読めなくなる場合があります。",
-    edit: "プロンプト編集",
-    content: "プロンプト本文",
-    save: "保存",
-    cancel: "キャンセル",
-    empty: "運用プロンプトは設定されていません。",
-    saved: "保存しました。",
-  },
-};
+type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
 const profileBlank: Settings = {
   profile_name: "",
@@ -65,53 +25,8 @@ const profileBlank: Settings = {
   secret_env: "AZURE_OPENAI_API_KEY",
   aws_profile: "",
 };
-const profileCopy = {
-  en: {
-    title: "AI model profiles",
-    description:
-      "Reusable AI connection profiles for evaluation builds and system features. Configure a profile once, then select it wherever it is needed.",
-    create: "Add",
-    edit: "Edit AI model profile",
-    empty: "No AI model profile configured.",
-    delete: "Delete",
-    chatProfile: "System AI model",
-    chatProfileHint:
-      "Choose the saved AI model profile used by Orbit system features, including chat and cycle analysis.",
-    selectChatProfile: "Select a system AI model",
-    saveChatProfile: "Save",
-    chatProfileSaved: "System AI model saved.",
-  },
-  ko: {
-    title: "AI 모델 프로필",
-    description:
-      "평가 빌드와 시스템 기능에서 함께 쓰는 재사용 가능한 AI 연결 프로필입니다. 한 번 설정한 뒤 필요한 곳에서 선택하세요.",
-    create: "추가",
-    edit: "AI 모델 프로필 편집",
-    empty: "설정된 AI 모델 프로필이 없습니다.",
-    delete: "삭제",
-    chatProfile: "시스템 AI 모델",
-    chatProfileHint:
-      "Orbit 챗봇과 사이클 분석 등 시스템 기능에서 사용할 저장된 AI 모델 프로필을 선택하세요.",
-    selectChatProfile: "시스템 AI 모델 선택",
-    saveChatProfile: "저장",
-    chatProfileSaved: "시스템 AI 모델을 저장했습니다.",
-  },
-  ja: {
-    title: "AIモデルプロファイル",
-    description:
-      "評価ビルドとシステム機能で共有する再利用可能なAI接続プロファイルです。一度設定すれば必要な場所で選択できます。",
-    create: "追加",
-    edit: "AIモデルプロファイルを編集",
-    empty: "AIモデルプロファイルが設定されていません。",
-    delete: "削除",
-    chatProfile: "システムAIモデル",
-    chatProfileHint:
-      "Orbit チャットとサイクル分析などのシステム機能で使う保存済みAIモデルプロファイルを選択します。",
-    selectChatProfile: "システムAIモデルを選択",
-    saveChatProfile: "保存",
-    chatProfileSaved: "システムAIモデルを保存しました。",
-  },
-};
+type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
+type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; profileForm: ProfileFormCopy };
 
 export function SettingsPage({
   locale,
@@ -139,8 +54,9 @@ export function SettingsPage({
   onDeleteProfile: (profileName: string) => void;
 }) {
   const t = locales[locale].common,
-    l = copy[locale],
-    p = profileCopy[locale],
+    settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
+    l = settingsCopy.manager,
+    p = settingsCopy.profiles,
     evaluation = locales[locale].evaluation;
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
@@ -191,9 +107,7 @@ export function SettingsPage({
             value={locale}
             onChange={(event) => setLocale(event.target.value as Locale)}
           >
-            <option value="en">English</option>
-            <option value="ko">한국어</option>
-            <option value="ja">日本語</option>
+              {localeOptions.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
           </select>
         </label>
         <label className="setting-row">
@@ -335,6 +249,7 @@ export function SettingsPage({
           tested={tested}
           onClose={() => setProfileOpen(false)}
           t={evaluation}
+          help={settingsCopy.profileForm}
         />
       </Modal>
     </>

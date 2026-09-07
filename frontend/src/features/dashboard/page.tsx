@@ -17,82 +17,12 @@ import type {
 import { MetricCard } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
-import { intlLocales, locales, type Locale } from "../../locales";
+import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 
-const hero = {
-  en: {
-    title: "Operate, supervise, and improve AI systems.",
-    description:
-      "Continuously evaluate AI behavior, retain observable evidence, and keep every improvement decision in a controlled operating flow.",
-    quickStart: "Start with Quick Start",
-  },
-  ko: {
-    title: "AI 시스템을 운영하고, 감독하고, 개선합니다.",
-    description:
-      "AI 동작을 지속적으로 평가하고 관찰 가능한 증거를 남기며, 모든 개선 결정을 통제된 운영 흐름 안에서 관리합니다.",
-    quickStart: "퀵 스타트 시작",
-  },
-  ja: {
-    title: "AIシステムを運用し、監督し、改善します。",
-    description:
-      "AIの振る舞いを継続的に評価し、観測可能な証跡を残しながら、すべての改善判断を統制された運用フローで管理します。",
-    quickStart: "クイックスタートを始める",
-  },
-};
-const operations = {
-  en: {
-    title: "Evaluation health",
-    description:
-      "A 24-hour operating summary from retained supervisor evidence.",
-    feedback: "Feedback",
-    accepted: "Accepted",
-    issues: "Reported issues",
-    score: "Supervisor score",
-    trend: "Feedback and accepted changes",
-    none: "No supervisor feedback in the last 24 hours.",
-    previous: "vs previous 24h",
-  },
-  ko: {
-    title: "평가 운영 상태",
-    description:
-      "보존된 감독관 증거를 기준으로 한 최근 24시간 운영 요약입니다.",
-    feedback: "피드백",
-    accepted: "수용",
-    issues: "보고된 문제",
-    score: "감독관 점수",
-    trend: "피드백 및 수용된 개선",
-    none: "최근 24시간 감독관 피드백이 없습니다.",
-    previous: "이전 24시간 대비",
-  },
-  ja: {
-    title: "評価の運用状態",
-    description: "保持された監督者の証跡に基づく直近24時間の運用サマリーです。",
-    feedback: "フィードバック",
-    accepted: "受容",
-    issues: "報告された問題",
-    score: "監督者スコア",
-    trend: "フィードバックと受容済み改善",
-    none: "直近24時間の監督者フィードバックはありません。",
-    previous: "前の24時間比",
-  },
-};
-const dashboardHelp = {
-  en: {
-    trend:
-      "Compare hourly supervisor feedback with the improvements accepted during the same period.",
-    logs: "Review recorded Orbit events, including operational messages and errors.",
-  },
-  ko: {
-    trend: "시간대별 감독관 피드백과 같은 기간에 수용된 개선을 비교합니다.",
-    logs: "운영 메시지와 오류를 포함한 Orbit 이벤트 기록을 확인합니다.",
-  },
-  ja: {
-    trend:
-      "時間帯ごとの監督者フィードバックと、同じ期間に受容された改善を比較します。",
-    logs: "運用メッセージとエラーを含む Orbit イベントの記録を確認します。",
-  },
-};
+type HeroCopy = { title: string; description: string; quickStart: string };
+type OperationsCopy = { title:string; description:string; feedback:string; accepted:string; issues:string; score:string; trend:string; none:string; previous:string };
+type DashboardHelp = { trend:string; logs:string };
 
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
@@ -121,8 +51,8 @@ function OperationalHealth({ locale }: { locale: Locale }) {
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
   }, []);
-  const copy = operations[locale],
-    help = dashboardHelp[locale],
+  const copy = localeMessages<OperationsCopy>(locale, "dashboardOperations"),
+    help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
     summary = analytics?.operational_summary;
   const trend = useMemo(() => {
     const grouped = new Map<
@@ -230,9 +160,9 @@ export function DashboardPage({
   locale: Locale;
 }) {
   const t = locales[locale].common,
-    h = hero[locale],
+    h = localeMessages<HeroCopy>(locale, "dashboardHero"),
     dashboard = locales[locale].dashboardUi,
-    help = dashboardHelp[locale],
+    help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length;
   const openBuild = (id?: string) => {

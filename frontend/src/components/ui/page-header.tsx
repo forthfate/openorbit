@@ -1,37 +1,6 @@
 import type { ReactNode } from 'react'
 import { SectionInfo } from './section-info'
-import { locales, resolveLocale } from '../../locales'
+import { localeMessages, locales, resolveLocale } from '../../locales'
 
-const sectionHints:Record<string,string>={
-  'Evaluation build list':'Create and manage evaluation configurations that connect a target, workflow, and evaluation assets.',
-  '평가 빌드 목록':'평가 대상, 워크플로, 감독관 자산을 연결한 평가 구성을 관리합니다.',
-  '評価ビルド一覧':'評価対象、ワークフロー、評価アセットをつなぐ評価構成を管理します。',
-  'Application settings':'Manage console-wide preferences such as language and theme.',
-  '애플리케이션 설정':'언어와 테마처럼 이 콘솔 자체에 적용되는 기본 환경을 관리합니다.',
-  'アプリケーション設定':'言語やテーマなど、このコンソール自体に適用される基本環境を管理します。',
-  'Operational manager prompt':'A console-wide operating prompt, separate from reusable evaluation-build templates.',
-  '운영 관리자 프롬프트':'콘솔 전체 운영용 프롬프트이며 평가 빌드 템플릿 자산과는 별개입니다.',
-  '運用管理者プロンプト':'コンソール全体の運用プロンプトで、評価ビルド用テンプレートとは別に管理します。',
-  'PDCA and AI feedback':'Track improvements proposed by supervisor evaluations and their evidence.',
-  'PDCA 및 AI 피드백':'감독관 평가에서 제안된 개선과 근거를 추적합니다.',
-  'PDCAとAIフィードバック':'監督AI評価で提案された改善と根拠を追跡します。',
-  'Improvement effect':'Compare before-and-after scores and success change.',
-  '개선 효과':'개선 전후 점수와 성공 변화율을 비교합니다.',
-  '改善効果':'改善前後のスコアと成功差分を比較します。',
-  'Runners':'Create reusable runners that execute project-specific automation.',
-  'Evaluation feedback trends':'Review feedback volume, acceptance, issues, and run health across evaluation builds.',
-  '평가 피드백 추이':'평가 빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.',
-  '評価フィードバックの推移':'評価ビルドごとのフィードバック、受容結果、課題、実行状態の推移を確認します。',
-  'Proposal decision history':'Review the auditable history of proposed, accepted, rejected, and applied improvements.',
-  '제안 결정 히스토리':'제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.',
-  '提案決定の履歴':'提案・受容・却下・適用された改善の監査履歴を確認します。',
-  'Cycle Improvement AI':'Review AI-proposed changes to the evaluation cycle and their supporting evidence.',
-  'AI 모델 프로필':'평가 빌드와 챗봇에서 재사용할 AI 연결 프로필을 관리합니다.',
-  'AI model profiles':'Manage reusable AI connection profiles for evaluation builds and chatbots.',
-  'AIモデルプロファイル':'評価ビルドとチャットボットで再利用する AI 接続プロファイルを管理します。',
-  '챗봇 AI 모델':'Orbit 챗봇에서 사용할 저장된 AI 연결 프로필을 선택합니다.',
-  'Chat assistant model':'Choose the saved AI connection profile used by the Orbit chat assistant.',
-  'チャットボットAIモデル':'Orbit チャットボットで使用する保存済み AI 接続プロファイルを選択します。',
-}
-export function PanelHeader({title,description,action}:{title:ReactNode;description?:string;action?:ReactNode}){const hint=description??(typeof title==='string'?sectionHints[title]:undefined);return <div className="panel-head"><h2>{hint?<SectionInfo title={title} description={hint}/>:title}</h2>{action}</div>}
+export function PanelHeader({title,description,action}:{title:ReactNode;description?:string;action?:ReactNode}){const locale=resolveLocale(localStorage.getItem('orbit.locale')),sectionHints=localeMessages<Record<string,string>>(locale,'sectionHints'),hint=description??(typeof title==='string'?sectionHints[title]:undefined);return <div className="panel-head"><h2>{hint?<SectionInfo title={title} description={hint}/>:title}</h2>{action}</div>}
 export function MetricCard({label,value,detail}:{label:string;value:string;detail?:string}){const locale=resolveLocale(localStorage.getItem('orbit.locale'));const caption=detail??locales[locale].ui.liveLocalState;return <article className="metric"><p>{label}</p><strong>{value}</strong><small>{caption}</small></article>}
