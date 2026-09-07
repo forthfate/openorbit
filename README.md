@@ -91,6 +91,17 @@ work with the same local operating data through OpenOrbit's versioned API.
   </tr>
 </table>
 
+## Build with us
+
+We are looking for thoughtful collaborators who share our belief that AI
+systems should be observable, controllable, and continuously improved. Start a
+fork, open a small issue, improve the docs, or help shape a larger idea—every
+contribution is welcome.
+
+New to the project? Browse [good first issues](https://github.com/forthfate/openorbit/labels/good%20first%20issue),
+ask a question or share an idea in [Issues](https://github.com/forthfate/openorbit/issues),
+or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
+
 ## Quick start
 
 ### Requirements
