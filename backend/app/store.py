@@ -125,6 +125,11 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     target = ctx.project_path(prompt_path)
     current = target.read_text(encoding="utf-8")
+    if not proposals:
+        # Do not manufacture a changing candidate when the supervisor has not
+        # accepted a change. A stable candidate must retain the same fingerprint
+        # across repeated validations before it can be promoted.
+        return {"path": prompt_path, "changed": False, "reason": "no_accepted_proposals"}
     lines = ["## Accepted improvement proposals", "", f"Iteration: {ctx.loop_index}", ""]
     for proposal in proposals:
         lines.extend(
@@ -1388,6 +1393,142 @@ if __name__ == "__main__":
                     "enabled": True,
                 },
             },
+            {
+                "schema_version": 1,
+                "id": "openorbit.ai-slo-drift-monitor",
+                "version": "1.0.0",
+                "name": "AI SLO and behavior drift monitor",
+                "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
+                "publisher": {"name": "OpenOrbit"},
+                "parameters": [
+                    {
+                        "key": "build_name",
+                        "label": "Evaluation name",
+                        "type": "string",
+                        "required": True,
+                        "default": "AI operational SLO monitor",
+                    },
+                    {
+                        "key": "repository",
+                        "label": "Evaluator workspace",
+                        "type": "workspace",
+                        "required": True,
+                        "placeholder": "/absolute/path/to/your-ai-evaluator",
+                    },
+                    {
+                        "key": "probe_command",
+                        "label": "Structured evaluator command",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. uv run ai-eval",
+                        "description": "A command that supports preflight, prepare, run-probes, and collect-evidence and returns JSON for each action.",
+                    },
+                    {
+                        "key": "slo_focus",
+                        "label": "SLO focus",
+                        "type": "string",
+                        "required": True,
+                        "default": "response quality, policy compliance, latency, and cost",
+                        "placeholder": "e.g. grounded answers and p95 latency under 3 seconds",
+                    },
+                    {
+                        "key": "profile_name",
+                        "label": "AI model profile name",
+                        "type": "string",
+                        "required": True,
+                        "default": "AI operations supervisor",
+                    },
+                    {
+                        "key": "provider",
+                        "label": "AI provider",
+                        "type": "select",
+                        "required": True,
+                        "default": "azure-openai",
+                        "options": [
+                            {"value": "azure-openai", "label": "Azure OpenAI"},
+                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
+                        ],
+                    },
+                    {
+                        "key": "model",
+                        "label": "Model / deployment",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. gpt-4o",
+                    },
+                    {
+                        "key": "endpoint",
+                        "label": "Provider endpoint",
+                        "type": "url",
+                        "required": False,
+                        "placeholder": "https://your-resource.openai.azure.com",
+                    },
+                    {
+                        "key": "region",
+                        "label": "Region",
+                        "type": "string",
+                        "required": True,
+                        "default": "us-east-1",
+                    },
+                    {
+                        "key": "secret_env",
+                        "label": "API key environment variable",
+                        "type": "string",
+                        "required": True,
+                        "default": "AZURE_OPENAI_API_KEY",
+                    },
+                ],
+                "assets": {
+                    "runner": {
+                        "name": "${build_name} runner",
+                        "description": "Evidence-gated AI SLO and drift monitor created by Quick Start.",
+                        "template_id": "evidence-gated-probe-cycle",
+                        "source": EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE,
+                    },
+                    "prompt_template": {
+                        "name": "${build_name} policy",
+                        "version": 1,
+                        "content": "Review the fixed AI SLO evidence for ${slo_focus}. Compare each reported metric with its retained baseline and threshold. Report only evidence-backed drift, regressions, or risks; propose reversible improvements with explicit validation and rollback steps.",
+                    },
+                    "test_case_set": {
+                        "name": "${build_name} probe matrix",
+                        "description": "A fixed, repeatable AI operational SLO probe matrix.",
+                        "cases": [
+                            {
+                                "id": "ai-slo-drift",
+                                "name": "AI SLO and behavior drift",
+                                "path": "/",
+                                "prompt": "Evaluate ${slo_focus} against the evaluator's fixed representative input matrix.",
+                                "acceptance": "Return structured current metrics, baseline comparisons, configured thresholds, outliers, and reproducible evidence for every detected drift.",
+                            }
+                        ],
+                    },
+                    "execution_environment": {
+                        "name": "${build_name} execution",
+                        "executor_type": "local",
+                        "environment_variables": {"ORBIT_PROBE_COMMAND": "${probe_command}"},
+                    },
+                    "target_environment": {"name": "${build_name} target", "repository": "${repository}"},
+                    "model_profile": {
+                        "profile_name": "${profile_name}",
+                        "provider": "${provider}",
+                        "model": "${model}",
+                        "endpoint": "${endpoint}",
+                        "region": "${region}",
+                        "secret_env": "${secret_env}",
+                    },
+                },
+                "build": {
+                    "name": "${build_name}",
+                    "purpose": "Continuously monitor AI operational SLOs and behavior drift with retained evidence.",
+                    "model_profile_name": "${profile_name}",
+                    "timezone": "Asia/Tokyo",
+                    "repeat_interval_minutes": 1440,
+                    "run_limit": 30,
+                    "approval_score": 8,
+                    "enabled": True,
+                },
+            },
         ]
 
     @staticmethod
@@ -1485,6 +1626,7 @@ if __name__ == "__main__":
                 values[key] = str(parameter["default"])
             if parameter.get("required") and not values.get(key):
                 raise ValueError(f"quick start parameter '{key}' is required")
+            values.setdefault(key, "")
         token = uuid.uuid4().hex[:8]
         prefix = re.sub(r"[^a-z0-9]+", "-", quick_start_id.lower()).strip("-")[-36:]
         generated = {
@@ -1784,6 +1926,25 @@ if __name__ == "__main__":
         }
 
     @staticmethod
+    def _environment_variables_from_values(values: dict[str, Any]) -> dict[str, str]:
+        variables = values.get("environment_variables", {})
+        if not isinstance(variables, dict):
+            raise ValueError("execution environment variables must be an object")
+        allowed_orbit_variables = {
+            "ORBIT_ADAPTER_COMMAND",
+            "ORBIT_AGENT_COMMAND",
+            "ORBIT_PROBE_COMMAND",
+        }
+        normalized = {str(key).strip(): str(value) for key, value in variables.items()}
+        if any(
+            not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+            or (key.startswith("ORBIT_") and key not in allowed_orbit_variables)
+            for key in normalized
+        ):
+            raise ValueError("execution environment variables include an unsupported name")
+        return normalized
+
+    @staticmethod
     def _asset_list(path: Path) -> list[dict[str, Any]]:
         if not path.exists():
             return []
@@ -1842,6 +2003,7 @@ if __name__ == "__main__":
             "executor": self._executor_from_values(values),
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "environment_variables": self._environment_variables_from_values(values),
         }
         items.append(item)
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -1873,6 +2035,7 @@ if __name__ == "__main__":
             "executor": self._executor_from_values(values),
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "environment_variables": self._environment_variables_from_values(values),
         }
         items[index] = item
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -3003,6 +3166,9 @@ if __name__ == "__main__":
             resources["evaluation_build"] = {
                 key: value for key, value in build.items() if key not in {"executor"}
             }
+            resources["execution_environment"] = self._execution_environment(
+                str(build.get("execution_environment_id", ""))
+            )
             selected = next(
                 (
                     item
@@ -3401,6 +3567,17 @@ if __name__ == "__main__":
                 self._wait_for_tool_interval(step.id, step.minimum_interval_seconds)
                 creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
                 environment = os.environ.copy()
+                execution_environment = (resources or {}).get("execution_environment", {})
+                if isinstance(execution_environment, dict):
+                    configured_variables = execution_environment.get("environment_variables", {})
+                    if isinstance(configured_variables, dict):
+                        environment.update(
+                            {
+                                str(key): str(value)
+                                for key, value in configured_variables.items()
+                                if str(key).strip()
+                            }
+                        )
                 environment["PYTHONPATH"] = str(ROOT / "backend") + (
                     os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else ""
                 )
