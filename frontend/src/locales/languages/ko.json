@@ -79,25 +79,73 @@
         "chatProfileSaved": "시스템 AI 모델을 저장했습니다."
       },
       "profileForm": {
-        "profileName": { "label": "프로필 이름", "hint": "저장된 AI 연결을 선택할 때 사용하는 알아보기 쉬운 이름입니다." },
-        "provider": { "label": "프로바이더", "hint": "이 모델 연결을 제공하는 AI 플랫폼입니다." },
-        "modelDeployment": { "label": "모델 / 배포 이름", "hint": "호출할 프로바이더별 모델 또는 배포 이름입니다." }
+        "profileName": {
+          "label": "프로필 이름",
+          "hint": "저장된 AI 연결을 선택할 때 사용하는 알아보기 쉬운 이름입니다."
+        },
+        "provider": {
+          "label": "프로바이더",
+          "hint": "이 모델 연결을 제공하는 AI 플랫폼입니다."
+        },
+        "modelDeployment": {
+          "label": "모델 / 배포 이름",
+          "hint": "호출할 프로바이더별 모델 또는 배포 이름입니다."
+        }
       }
     },
     "buildWizard": {
-      "buildId": { "label": "빌드 ID", "hint": "API와 실행 이력에서 사용하는 안정적인 식별자입니다." },
-      "buildName": { "label": "빌드 이름", "hint": "콘솔 전체에 표시되는 사람이 읽을 수 있는 이름입니다." },
-      "runner": { "label": "러너", "hint": "이 평가를 수행하는 재사용 가능한 자동화 러너입니다." },
-      "targetEnvironment": { "label": "대상 환경", "hint": "평가 대상 애플리케이션 또는 서비스입니다." },
-      "executionEnvironment": { "label": "실행 환경", "hint": "Orbit이 선택한 러너를 실행하는 위치입니다." },
-      "purpose": { "label": "목적", "hint": "이 평가에서 확인할 동작 또는 결과를 설명합니다." },
-      "managerTemplate": { "label": "관리자 템플릿", "hint": "이 빌드에서 사용하는 감독자 지시문과 응답 계약입니다." },
-      "testCaseSet": { "label": "테스트 케이스 세트", "hint": "대상 AI에 대한 재사용 가능한 고정 입력과 승인 근거입니다." },
-      "aiProfile": { "label": "AI 모델 프로필", "hint": "이 평가에서 사용할 저장된 AI 연결 프로필입니다." },
-      "timezone": { "label": "시간대", "hint": "반복 평가 실행을 예약할 때 적용하는 시간대입니다." },
-      "repeatInterval": { "label": "반복 간격", "hint": "반복 실행 사이의 시간(분)입니다." },
-      "runLimit": { "label": "실행 제한", "hint": "이 빌드에 예약하거나 유지할 최대 실행 수입니다." },
-      "approvalScore": { "label": "승인 점수", "hint": "승인에 필요한 최소 감독자 점수입니다." },
+      "buildId": {
+        "label": "빌드 ID",
+        "hint": "API와 실행 이력에서 사용하는 안정적인 식별자입니다."
+      },
+      "buildName": {
+        "label": "빌드 이름",
+        "hint": "콘솔 전체에 표시되는 사람이 읽을 수 있는 이름입니다."
+      },
+      "runner": {
+        "label": "러너",
+        "hint": "이 평가를 수행하는 재사용 가능한 자동화 러너입니다."
+      },
+      "targetEnvironment": {
+        "label": "대상 환경",
+        "hint": "평가 대상 애플리케이션 또는 서비스입니다."
+      },
+      "executionEnvironment": {
+        "label": "실행 환경",
+        "hint": "Orbit이 선택한 러너를 실행하는 위치입니다."
+      },
+      "purpose": {
+        "label": "목적",
+        "hint": "이 평가에서 확인할 동작 또는 결과를 설명합니다."
+      },
+      "managerTemplate": {
+        "label": "관리자 템플릿",
+        "hint": "이 빌드에서 사용하는 감독자 지시문과 응답 계약입니다."
+      },
+      "testCaseSet": {
+        "label": "테스트 케이스 세트",
+        "hint": "대상 AI에 대한 재사용 가능한 고정 입력과 승인 근거입니다."
+      },
+      "aiProfile": {
+        "label": "AI 모델 프로필",
+        "hint": "이 평가에서 사용할 저장된 AI 연결 프로필입니다."
+      },
+      "timezone": {
+        "label": "시간대",
+        "hint": "반복 평가 실행을 예약할 때 적용하는 시간대입니다."
+      },
+      "repeatInterval": {
+        "label": "반복 간격",
+        "hint": "반복 실행 사이의 시간(분)입니다."
+      },
+      "runLimit": {
+        "label": "실행 제한",
+        "hint": "이 빌드에 예약하거나 유지할 최대 실행 수입니다."
+      },
+      "approvalScore": {
+        "label": "승인 점수",
+        "hint": "승인에 필요한 최소 감독자 점수입니다."
+      },
       "name": "이름",
       "next": "다음"
     },
@@ -118,7 +166,15 @@
     "dashboardHero": {
       "title": "AI 시스템을 운영하고, 감독하고, 개선합니다.",
       "description": "AI 동작을 지속적으로 평가하고 관찰 가능한 증거를 남기며, 모든 개선 결정을 통제된 운영 흐름 안에서 관리합니다.",
-      "quickStart": "퀵 스타트 시작"
+      "quickStart": "퀵 스타트 시작",
+      "quickStartHint": "아래 퀵 스타터로 10초 만에 OpenOrbit을 시험해 보세요.",
+      "quickStarts": "빠른 시작",
+      "quickStartsHint": "검증된 예시를 선택해 평가 빌드를 빠르게 시작하세요."
+    },
+    "dashboardLinks": {
+      "repository": "GitHub 저장소",
+      "releases": "릴리스 노트",
+      "openApi": "OpenAPI"
     },
     "dashboardOperations": {
       "title": "평가 운영 상태",
@@ -182,6 +238,7 @@
       "modelDeployment": "모델 / 배포 이름",
       "azureEndpoint": "Azure 엔드포인트",
       "region": "리전",
+      "awsProfile": "AWS CLI 프로필(선택 사항)",
       "secretEnv": "시크릿 환경 변수",
       "test": "테스트",
       "testPassed": "테스트 성공 — 이제 이 프로필을 저장할 수 있습니다.",
@@ -375,6 +432,49 @@
       "baseUrl": "브라우저 기본 URL (선택)",
       "promptPath": "개선 대상 프롬프트 파일 경로 (Native Improvement Cycle 전용)"
     },
+    "improvementPage": {
+      "improvement": "개선",
+      "trends": "평가 피드백 추이",
+      "range": "기간",
+      "evaluation": "평가",
+      "feedbackVolume": "평가별 피드백",
+      "iterationTrend": "반복별 수용 피드백 및 점수",
+      "activeTrend": "실행 중 평가",
+      "feedbackStatus": "피드백 상태 분포",
+      "issueSeverity": "보고된 문제 심각도",
+      "runHealth": "평가 실행 건강도",
+      "accepted": "수용됨",
+      "score": "점수",
+      "history": "제안 결정 히스토리",
+      "historyHint": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",
+      "allBuilds": "전체 평가",
+      "allStates": "전체 상태",
+      "rejected": "기각됨",
+      "proposed": "제안됨",
+      "decisionReason": "결정 사유",
+      "timeline": "타임라인",
+      "noProposals": "제안 이력이 없습니다.",
+      "iteration": "반복",
+      "run": "실행",
+      "feedbackCount": "피드백 수",
+      "activeCount": "실행 중 평가",
+      "noIterationFeedback": "이 기간에 반복 피드백이 없습니다.",
+      "adopted": "적용됨",
+      "low": "낮음",
+      "medium": "중간",
+      "high": "높음",
+      "critical": "심각",
+      "succeeded": "성공",
+      "failed": "실패",
+      "cancelled": "취소됨",
+      "running": "실행 중"
+    },
+    "quickStartLabels": {
+      "openorbit.site-exploration-review": {
+        "name": "사이트 탐색 검토",
+        "description": "안전한 링크로 사이트를 탐색하고 근거 기반 제품 피드백을 남깁니다. 실행 중인 앱, Playwright 브라우저, LangGraph가 필요합니다."
+      }
+    },
     "evaluations": {
       "title": "평가 실행 이력",
       "evaluation": "평가",
@@ -387,6 +487,7 @@
       "score": "점수",
       "decision": "평가 결정",
       "proposals": "개선 제안",
+      "observedBehavior": "평가 대상 AI 행동",
       "issues": "보고된 문제",
       "status": "실행 상태",
       "phase": "현재 단계",

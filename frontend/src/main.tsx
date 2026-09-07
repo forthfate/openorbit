@@ -35,7 +35,12 @@ const pageFromHash = (): Page => {
   const page = window.location.hash.slice(1);
   return pages.includes(page as Page) ? (page as Page) : "dashboard";
 };
-type ConfirmCopy = { title: string; description: string; cancel: string; confirm: string };
+type ConfirmCopy = {
+  title: string;
+  description: string;
+  cancel: string;
+  confirm: string;
+};
 
 export default function App() {
   const [page, setPageState] = useState<Page>(pageFromHash);
@@ -44,6 +49,7 @@ export default function App() {
   const [deletingBuild, setDeletingBuild] = useState<string | null>(null);
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
   const [quickStartRequest, setQuickStartRequest] = useState(0);
+  const [quickStartSelection, setQuickStartSelection] = useState<string>();
   const room = useControlRoom();
   const ui = locales[locale].ui;
   useEffect(() => {
@@ -66,7 +72,8 @@ export default function App() {
     localStorage.setItem(themeStorageKey, value);
     setThemeState(value);
   };
-  const openQuickStart = () => {
+  const openQuickStart = (id?: string) => {
+    setQuickStartSelection(id);
     setQuickStartRequest((value) => value + 1);
     setPage("builds");
   };
@@ -242,6 +249,12 @@ export default function App() {
         testCaseSets={room.testCaseSets}
         executionEnvironments={room.executionEnvironments}
         targetEnvironments={room.targetEnvironments}
+        profiles={room.profiles}
+        settings={room.settings}
+        setSettings={room.setSettings}
+        test={test}
+        save={save}
+        tested={room.settingsTested}
         onRefresh={room.refresh}
         onCreateWorkflow={createWorkflow}
         onUpdateWorkflow={updateWorkflow}
@@ -265,7 +278,11 @@ export default function App() {
         onDelete={deleteBuild}
         onQuickStartCreate={createQuickStart}
         quickStartRequest={quickStartRequest}
-        onQuickStartRequestHandled={() => setQuickStartRequest(0)}
+        quickStartSelection={quickStartSelection}
+        onQuickStartRequestHandled={() => {
+          setQuickStartRequest(0);
+          setQuickStartSelection(undefined);
+        }}
       />
     ),
     runs: (
@@ -296,7 +313,10 @@ export default function App() {
       />
     ),
   }[page];
-  const confirmations = localeMessages<{ deleteBuild: ConfirmCopy; emergencyStop: ConfirmCopy }>(locale, "confirmations");
+  const confirmations = localeMessages<{
+    deleteBuild: ConfirmCopy;
+    emergencyStop: ConfirmCopy;
+  }>(locale, "confirmations");
   const confirmation = confirmations.deleteBuild;
   const emergencyConfirmation = confirmations.emergencyStop;
   return (
@@ -305,7 +325,11 @@ export default function App() {
       setPage={setPage}
       locale={locale}
       theme={theme}
-      activeRunCount={room.runs.filter((run) => ["queued", "awaiting_approval", "running"].includes(run.status)).length}
+      activeRunCount={
+        room.runs.filter((run) =>
+          ["queued", "awaiting_approval", "running"].includes(run.status),
+        ).length
+      }
     >
       <div className="page-stack">{content}</div>
       <ConfirmDialog

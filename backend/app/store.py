@@ -57,11 +57,15 @@ __ORBIT_MANAGER_AI_PROMPT__
 
 Your final response must be exactly one JSON object:
 {
-  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\"},
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
   \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
-Always include both keys, using empty arrays when there are no items."""
+Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
+PROPOSAL_DECISION_POLICY = """# Improvement decision policy
+Decide each improvement status independently from the evaluation approval score.
+Use `adopted` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `adopted` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
+Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
@@ -151,6 +155,19 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
     return ctx.update_file(prompt_path, updated)
 
 
+def managed_prompt_evidence(ctx):
+    '''Expose the current managed prompt beside the browser validation evidence.'''
+    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    if not prompt_path:
+        raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
+    content = ctx.project_path(prompt_path).read_text(encoding="utf-8")
+    return {
+        "path": prompt_path,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "content": content,
+    }
+
+
 @runner.phase("init")
 def init(ctx):
     # Process-level validation runs once before the iteration loop begins.
@@ -169,6 +186,8 @@ def setup(ctx):
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
     prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
+    proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -177,6 +196,8 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "managed_prompt": managed_prompt_evidence(ctx),
+                "proposal_applications": proposal_applications,
             }
         }
     )
@@ -832,7 +853,63 @@ if __name__ == "__main__": runner.main()
                     for parameter in quick_start["parameters"]
                 ],
             }
-        raise ValueError("template translation kind must be runner-template or quick-start")
+        if kind == "supervisor-result":
+            run_id, separator, iteration_value = template_id.partition(":")
+            if not separator or not iteration_value.isdigit():
+                raise ValueError("supervisor result translation ID must be run_id:iteration")
+            record = next(
+                (
+                    item
+                    for item in self._load(run_id).supervisor_results
+                    if isinstance(item, dict) and int(item.get("iteration", 0)) == int(iteration_value)
+                ),
+                None,
+            )
+            response = record.get("response") if isinstance(record, dict) else None
+            if not isinstance(response, dict):
+                raise KeyError(template_id)
+
+            def display_fields(item: Any, fields: tuple[str, ...]) -> dict[str, str]:
+                return {
+                    field: value
+                    for field in fields
+                    if isinstance((value := item.get(field)), str) and value.strip()
+                }
+
+            evaluation = response.get("evaluation")
+            return {
+                **(
+                    {"prompt": record["prompt"]}
+                    if isinstance(record.get("prompt"), str) and record["prompt"].strip()
+                    else {}
+                ),
+                "response": {
+                    "evaluation": display_fields(evaluation, ("behavior_summary", "summary"))
+                    if isinstance(evaluation, dict)
+                    else {},
+                    "improvements": [
+                        display_fields(
+                            item,
+                            (
+                                "title",
+                                "rationale",
+                                "proposed_change",
+                                "acceptanceEvidence",
+                                "validation",
+                                "rollback",
+                            ),
+                        )
+                        for item in response.get("improvements", [])
+                        if isinstance(item, dict)
+                    ],
+                    "reported_issues": [
+                        display_fields(item, ("title", "evidence", "reproduction"))
+                        for item in response.get("reported_issues", [])
+                        if isinstance(item, dict)
+                    ],
+                },
+            }
+        raise ValueError("template translation kind is not supported")
 
     @staticmethod
     def validate_template_translation(source: Any, translated: Any) -> dict[str, Any]:
@@ -1220,7 +1297,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.agent-self-improvement",
-                "version": "1.0.1",
+                "version": "1.0.2",
                 "name": "Agent self-improvement",
                 "description": "Improve an agent prompt with browser validation. Requires a Git repository, running app, prompt file, and Playwright browser.",
                 "publisher": {"name": "OpenOrbit"},
@@ -1251,6 +1328,7 @@ if __name__ == "__main__":
                         "label": "Agent prompt file path",
                         "type": "string",
                         "required": True,
+                        "default": "examples/agent-improvement-sample-prompt.md",
                         "placeholder": "e.g. prompts/system.md",
                     },
                     {
@@ -1350,7 +1428,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Assess fixed browser evidence and approve improvement proposals only when the evidence supports them.",
+                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted whenever it is directly supported by the evidence and has measurable acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -2116,7 +2194,18 @@ if __name__ == "__main__":
 
     def prompt_templates(self) -> list[dict[str, Any]]:
         path = CONFIG / "prompt-templates.yaml"
-        return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
+        templates = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
+        for template in templates:
+            versions = template.get("versions")
+            if not versions:
+                versions = [
+                    {"version": int(template.get("version", 1)), "content": template.get("content", "")}
+                ]
+                template["versions"] = versions
+            latest = max(versions, key=lambda item: int(item.get("version", 0)))
+            template["version"] = int(latest["version"])
+            template["content"] = str(latest["content"])
+        return templates
 
     def target_test_case_sets(self) -> list[dict[str, Any]]:
         return (
@@ -2203,10 +2292,22 @@ if __name__ == "__main__":
         if index is None:
             raise KeyError(template_id)
         name, content = str(values.get("name", "")).strip(), str(values.get("content", "")).strip()
-        version = int(values.get("version", 0))
-        if not name or not content or version < 1:
-            raise ValueError("prompt template requires a name, version, and content")
-        template = {"id": template_id, "name": name, "version": version, "content": content}
+        if not name or not content:
+            raise ValueError("prompt template requires a name and content")
+        current = templates[index]
+        versions = list(
+            current.get("versions")
+            or [{"version": int(current.get("version", 1)), "content": current.get("content", "")}]
+        )
+        version = max(int(item.get("version", 0)) for item in versions) + 1
+        versions.append({"version": version, "content": content})
+        template = {
+            "id": template_id,
+            "name": name,
+            "version": version,
+            "content": content,
+            "versions": versions,
+        }
         templates[index] = template
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2241,10 +2342,16 @@ if __name__ == "__main__":
         self, templates: list[dict[str, Any]], template_id: str, values: dict[str, Any]
     ) -> dict[str, Any]:
         name, content = str(values.get("name", "")).strip(), str(values.get("content", "")).strip()
-        version = int(values.get("version", 0))
-        if not name or not content or version < 1:
-            raise ValueError("prompt template requires a name, version, and content")
-        template = {"id": template_id, "name": name, "version": version, "content": content}
+        if not name or not content:
+            raise ValueError("prompt template requires a name and content")
+        version = 1
+        template = {
+            "id": template_id,
+            "name": name,
+            "version": version,
+            "content": content,
+            "versions": [{"version": version, "content": content}],
+        }
         templates.append(template)
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2301,6 +2408,7 @@ if __name__ == "__main__":
                 operational.replace(MANAGER_PROMPT_SLOT, manager_policy),
                 f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
+                PROPOSAL_DECISION_POLICY,
             )
             if part
         )
@@ -2799,6 +2907,7 @@ if __name__ == "__main__":
         active_counts = []
         for index in range(bucket_count + 1):
             timestamp = start + interval * index
+            bucket_end = min(end, timestamp + interval)
             count = 0
             for run in pipeline_runs:
                 # Older records can predate finished_at. A terminal status is
@@ -2806,10 +2915,16 @@ if __name__ == "__main__":
                 # active-evaluation graph.
                 if run.status in {"succeeded", "failed", "cancelled"} and run.finished_at is None:
                     continue
-                if run.created_at > timestamp:
+                if index == bucket_count:
+                    if run.created_at > timestamp or (
+                        run.finished_at is not None and run.finished_at <= timestamp
+                    ):
+                        continue
+                elif run.created_at >= bucket_end or (
+                    run.finished_at is not None and run.finished_at <= timestamp
+                ):
                     continue
-                if run.finished_at is None or run.finished_at > timestamp:
-                    count += 1
+                count += 1
             active_counts.append({"time": timestamp.isoformat(), "count": count})
         health_by_build: dict[str, dict[str, Any]] = {}
         for run in pipeline_runs:
@@ -3268,6 +3383,8 @@ if __name__ == "__main__":
                 or result.get("jgent_paired")
                 or result.get("agent_cycle")
                 or result.get("probe_gate")
+                or result.get("browser_journey")
+                or result.get("site_exploration")
             )
             if not isinstance(cycle, dict):
                 return False
@@ -3304,8 +3421,13 @@ if __name__ == "__main__":
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
         if evaluation is not None:
-            if not isinstance(evaluation, dict) or set(evaluation) != {"score", "approval", "summary"}:
-                raise ValueError("supervisor evaluation must contain score, approval, and summary")
+            if not isinstance(evaluation, dict) or set(evaluation) not in (
+                {"score", "approval", "summary"},
+                {"score", "approval", "behavior_summary", "summary"},
+            ):
+                raise ValueError(
+                    "supervisor evaluation must contain score, approval, summary, and behavior_summary"
+                )
             score = evaluation["score"]
             if isinstance(score, str):
                 try:
@@ -3320,6 +3442,8 @@ if __name__ == "__main__":
                 evaluation["summary"], str
             ):
                 raise ValueError("supervisor evaluation approval or summary is invalid")
+            if "behavior_summary" in evaluation and not isinstance(evaluation["behavior_summary"], str):
+                raise ValueError("supervisor evaluation behavior_summary is invalid")
         return result
 
     def _complete_supervision(self, run_id: str) -> None:

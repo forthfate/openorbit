@@ -5,7 +5,7 @@ import { api } from "./api";
 export type TemplateTranslation<T> = { content: T; cached: boolean; profile_name: string };
 
 export function useTemplateTranslations<T>(
-  kind: "runner-template" | "quick-start",
+  kind: "runner-template" | "quick-start" | "supervisor-result",
   templateIds: string[],
   locale: Locale,
 ) {
