@@ -216,6 +216,65 @@ def test_native_improvement_cycle_evidence_triggers_supervision():
     assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(RunRecord()) is True
 
 
+def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="managed-prompt-run",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        supervisor_profile_name="Supervisor",
+        prompt_snapshot="Evaluate the target.",
+        status="running",
+        created_at=timestamp,
+        updated_at=timestamp,
+        step_results=[
+            {
+                "phase": "setup",
+                "loop_index": 1,
+                "result": {"improvement_cycle": {"managed_prompt": {"content": "Prompt evidence"}}},
+            },
+            {
+                "phase": "run",
+                "loop_index": 1,
+                "result": {"improvement_cycle": {"candidate_fingerprint": "a" * 64}},
+            },
+        ],
+    )
+    store._test_sessions[run.id] = run
+    captured_prompts = []
+
+    class FakeProvider:
+        def complete(self, _settings, prompt):
+            captured_prompts.append(prompt)
+            return '{"improvements": [], "reported_issues": []}'
+
+    monkeypatch.setattr(
+        store,
+        "profiles",
+        lambda: [
+            {
+                "profile_name": "Supervisor",
+                "provider": "azure-openai",
+                "model": "test-model",
+                "endpoint": "https://example.test/openai/v1",
+                "region": "us-east-1",
+                "secret_env": "AZURE_OPENAI_API_KEY",
+                "aws_profile": "",
+            }
+        ],
+    )
+    monkeypatch.setattr(store_module, "AzureOpenAIProvider", FakeProvider)
+    monkeypatch.setattr(store, "_review_cycle_improvement", lambda *_args: None)
+
+    store._complete_supervision(run.id)
+
+    assert len(captured_prompts) == 1
+    assert '"phase": "setup"' in captured_prompts[0]
+    assert "Prompt evidence" in captured_prompts[0]
+
+
 def test_direct_browser_and_site_exploration_evidence_trigger_supervision():
     class BrowserRun:
         step_results = [{"phase": "run", "result": {"browser_journey": {"results": [{"passed": True}]}}}]
