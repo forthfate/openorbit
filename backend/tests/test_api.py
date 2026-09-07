@@ -87,7 +87,7 @@ def test_v1_openapi_contract_documents_project_and_pipeline_resources():
     client = TestClient(app)
     schema = client.get("/api/openapi.json")
     assert schema.status_code == 200
-    assert schema.json()["info"]["version"] == "0.1.0"
+    assert schema.json()["info"]["version"] == "0.2.0"
     assert "/api/v1/projects" in schema.json()["paths"]
     assert "/api/v1/projects/{project_id}/pipelines" in schema.json()["paths"]
     assert "/api/v1/pipelines/{pipeline_id}/actions" in schema.json()["paths"]

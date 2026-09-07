@@ -5,6 +5,23 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-09-07
+
+### Added
+
+- Declarative Quick Start packages can now create reusable evaluation assets and a configured evaluation build from a guided setup flow.
+- The Evaluation Builds test action opens a live run-detail dialog with execution status and logs, while test sessions remain out of Evaluation runs history.
+- The sidebar displays the current number of queued, approval-pending, and running evaluation runs, capped at `99+`.
+
+### Changed
+
+- Local evaluation builds and workspace browsing may use any existing local directory; the prior fixed workspace-root restriction was removed.
+
+### Fixed
+
+- Evaluation runners now expand home-directory paths such as `~/projects/example` before checking that the working directory exists.
+- Release lockfile verification now includes the project version, preventing `uv sync --locked` failures after a version bump.
+
 ## [0.1.0] - 2026-09-07
 
 ### Added
@@ -52,3 +69,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 [0.0.5]: https://github.com/forthfate/openorbit/releases/tag/v0.0.5
 [0.1.0]: https://github.com/forthfate/openorbit/releases/tag/v0.1.0
+[0.2.0]: https://github.com/forthfate/openorbit/releases/tag/v0.2.0
