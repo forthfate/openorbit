@@ -104,6 +104,31 @@ or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
 
 ## Quick start
 
+### Start in 10 seconds with a Quick Start
+
+Open the **Quick starts** section on the Dashboard, choose a guided template,
+fill in the few target-specific fields, and create the evaluation build. Each
+template creates the runner, fixed test cases, environments, manager policy,
+and model profile configuration together—so you can start with a working
+operating loop instead of assembling every asset by hand.
+
+| Quick Start | Use it when | Example first run |
+| --- | --- | --- |
+| **User journey smoke test** | You need a recurring, read-only browser check for a local product. | Confirm that the home page loads and the primary heading is visible. |
+| **Site exploration review** | You want evidence-backed product feedback from safe same-site exploration. | Explore the documentation or dashboard and retain the visited pages behind each recommendation. |
+| **Agent self-improvement** | You want to improve a managed prompt from real AI responses. | Send a support request to the configured target model, retain its response, and let the supervisor approve only response-backed prompt changes. |
+| **AI SLO and behavior drift monitor** | You already have a structured evaluator for quality, safety, latency, or cost. | Connect its probe command and compare the retained metrics with the configured baseline and thresholds. |
+
+For example, to evaluate a support-agent prompt:
+
+1. Choose **Agent self-improvement**.
+2. Select the Git repository and managed prompt file, then choose your AI model profile.
+3. Enter one representative user request and its response-level acceptance criterion.
+4. Create the build and run it. OpenOrbit retains the actual target-AI response, asks the supervisor to review that evidence, and applies only an adopted, reversible prompt improvement on the following iteration.
+
+Quick Starts never store provider keys. They reference the environment-variable
+name already configured in the selected model profile.
+
 ### Requirements
 
 | Requirement | Version | Used for |
