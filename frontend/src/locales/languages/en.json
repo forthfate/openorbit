@@ -80,25 +80,73 @@
         "chatProfileSaved": "System AI model saved."
       },
       "profileForm": {
-        "profileName": { "label": "Profile name", "hint": "A memorable name used to select this saved AI connection." },
-        "provider": { "label": "Provider", "hint": "The AI platform that serves this model connection." },
-        "modelDeployment": { "label": "Model / deployment", "hint": "The provider-specific model or deployment name to invoke." }
+        "profileName": {
+          "label": "Profile name",
+          "hint": "A memorable name used to select this saved AI connection."
+        },
+        "provider": {
+          "label": "Provider",
+          "hint": "The AI platform that serves this model connection."
+        },
+        "modelDeployment": {
+          "label": "Model / deployment",
+          "hint": "The provider-specific model or deployment name to invoke."
+        }
       }
     },
     "buildWizard": {
-      "buildId": { "label": "Build ID", "hint": "A stable identifier used by the API and run history." },
-      "buildName": { "label": "Build name", "hint": "The human-readable name shown throughout the console." },
-      "runner": { "label": "Runner", "hint": "The reusable automation runner that performs this evaluation." },
-      "targetEnvironment": { "label": "Target environment", "hint": "The target application or service being evaluated." },
-      "executionEnvironment": { "label": "Execution environment", "hint": "Where Orbit runs the selected runner." },
-      "purpose": { "label": "Purpose", "hint": "Describe the behavior or outcome this evaluation should assess." },
-      "managerTemplate": { "label": "Manager template", "hint": "The supervisor instructions and response contract used for this build." },
-      "testCaseSet": { "label": "Test case set", "hint": "The reusable fixed inputs and acceptance evidence for the target AI." },
-      "aiProfile": { "label": "AI model profile", "hint": "The saved AI connection profile used by this evaluation." },
-      "timezone": { "label": "Timezone", "hint": "Timezone used when scheduling recurring evaluation runs." },
-      "repeatInterval": { "label": "Repeat interval", "hint": "Minutes between recurring runs." },
-      "runLimit": { "label": "Run limit", "hint": "Maximum number of runs to retain or schedule for this build." },
-      "approvalScore": { "label": "Approval score", "hint": "Minimum supervisor score required for approval." },
+      "buildId": {
+        "label": "Build ID",
+        "hint": "A stable identifier used by the API and run history."
+      },
+      "buildName": {
+        "label": "Build name",
+        "hint": "The human-readable name shown throughout the console."
+      },
+      "runner": {
+        "label": "Runner",
+        "hint": "The reusable automation runner that performs this evaluation."
+      },
+      "targetEnvironment": {
+        "label": "Target environment",
+        "hint": "The target application or service being evaluated."
+      },
+      "executionEnvironment": {
+        "label": "Execution environment",
+        "hint": "Where Orbit runs the selected runner."
+      },
+      "purpose": {
+        "label": "Purpose",
+        "hint": "Describe the behavior or outcome this evaluation should assess."
+      },
+      "managerTemplate": {
+        "label": "Manager template",
+        "hint": "The supervisor instructions and response contract used for this build."
+      },
+      "testCaseSet": {
+        "label": "Test case set",
+        "hint": "The reusable fixed inputs and acceptance evidence for the target AI."
+      },
+      "aiProfile": {
+        "label": "AI model profile",
+        "hint": "The saved AI connection profile used by this evaluation."
+      },
+      "timezone": {
+        "label": "Timezone",
+        "hint": "Timezone used when scheduling recurring evaluation runs."
+      },
+      "repeatInterval": {
+        "label": "Repeat interval",
+        "hint": "Minutes between recurring runs."
+      },
+      "runLimit": {
+        "label": "Run limit",
+        "hint": "Maximum number of runs to retain or schedule for this build."
+      },
+      "approvalScore": {
+        "label": "Approval score",
+        "hint": "Minimum supervisor score required for approval."
+      },
       "name": "Name",
       "next": "Next"
     },
@@ -119,7 +167,9 @@
     "dashboardHero": {
       "title": "Operate, supervise, and improve AI systems.",
       "description": "Continuously evaluate AI behavior, retain observable evidence, and keep every improvement decision in a controlled operating flow.",
-      "quickStart": "Start with Quick Start"
+      "quickStart": "Start with Quick Start",
+      "quickStarts": "Quick starts",
+      "quickStartsHint": "Choose a validated example to start an evaluation build quickly."
     },
     "dashboardOperations": {
       "title": "Evaluation health",
@@ -378,7 +428,41 @@
       "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)"
     },
     "improvementPage": {
-      "improvement": "Improvement", "trends": "Evaluation feedback trends", "range": "Range", "evaluation": "Evaluation", "feedbackVolume": "Feedback by evaluation", "iterationTrend": "Accepted feedback & score by iteration", "activeTrend": "Active evaluations over time", "feedbackStatus": "Feedback status distribution", "issueSeverity": "Reported issue severity", "runHealth": "Evaluation run health", "accepted": "Accepted", "score": "Score", "history": "Proposal decision history", "historyHint": "Review the auditable history of proposed, accepted, rejected, and applied improvements.", "allBuilds": "All evaluations", "allStates": "All states", "rejected": "Rejected", "proposed": "Proposed", "decisionReason": "Decision reason", "timeline": "Timeline", "noProposals": "No proposal history.", "iteration": "Iteration", "run": "Run", "feedbackCount": "Feedback count", "activeCount": "Active evaluations", "noIterationFeedback": "No iteration feedback in this period.", "adopted": "Adopted", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+      "improvement": "Improvement",
+      "trends": "Evaluation feedback trends",
+      "range": "Range",
+      "evaluation": "Evaluation",
+      "feedbackVolume": "Feedback by evaluation",
+      "iterationTrend": "Accepted feedback & score by iteration",
+      "activeTrend": "Active evaluations over time",
+      "feedbackStatus": "Feedback status distribution",
+      "issueSeverity": "Reported issue severity",
+      "runHealth": "Evaluation run health",
+      "accepted": "Accepted",
+      "score": "Score",
+      "history": "Proposal decision history",
+      "historyHint": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",
+      "allBuilds": "All evaluations",
+      "allStates": "All states",
+      "rejected": "Rejected",
+      "proposed": "Proposed",
+      "decisionReason": "Decision reason",
+      "timeline": "Timeline",
+      "noProposals": "No proposal history.",
+      "iteration": "Iteration",
+      "run": "Run",
+      "feedbackCount": "Feedback count",
+      "activeCount": "Active evaluations",
+      "noIterationFeedback": "No iteration feedback in this period.",
+      "adopted": "Adopted",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "running": "Running"
     },
     "evaluations": {
       "title": "Evaluation runs",

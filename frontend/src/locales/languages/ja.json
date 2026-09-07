@@ -79,25 +79,73 @@
         "chatProfileSaved": "システムAIモデルを保存しました。"
       },
       "profileForm": {
-        "profileName": { "label": "プロファイル名", "hint": "保存済みの AI 接続を選択する際に使う、分かりやすい名前です。" },
-        "provider": { "label": "プロバイダー", "hint": "このモデル接続を提供する AI プラットフォームです。" },
-        "modelDeployment": { "label": "モデル / デプロイ", "hint": "呼び出すプロバイダー固有のモデルまたはデプロイ名です。" }
+        "profileName": {
+          "label": "プロファイル名",
+          "hint": "保存済みの AI 接続を選択する際に使う、分かりやすい名前です。"
+        },
+        "provider": {
+          "label": "プロバイダー",
+          "hint": "このモデル接続を提供する AI プラットフォームです。"
+        },
+        "modelDeployment": {
+          "label": "モデル / デプロイ",
+          "hint": "呼び出すプロバイダー固有のモデルまたはデプロイ名です。"
+        }
       }
     },
     "buildWizard": {
-      "buildId": { "label": "ビルド ID", "hint": "API と実行履歴で使用する安定した識別子です。" },
-      "buildName": { "label": "ビルド名", "hint": "コンソール全体に表示される人が読める名前です。" },
-      "runner": { "label": "ランナー", "hint": "この評価を実行する再利用可能な自動化ランナーです。" },
-      "targetEnvironment": { "label": "対象環境", "hint": "評価対象のアプリケーションまたはサービスです。" },
-      "executionEnvironment": { "label": "実行環境", "hint": "Orbit が選択したランナーを実行する場所です。" },
-      "purpose": { "label": "目的", "hint": "この評価で確認する振る舞いまたは結果を説明します。" },
-      "managerTemplate": { "label": "管理者テンプレート", "hint": "このビルドで使う監督者向け指示と応答契約です。" },
-      "testCaseSet": { "label": "テストケースセット", "hint": "対象 AI 向けの再利用可能な固定入力と承認根拠です。" },
-      "aiProfile": { "label": "AIモデルプロファイル", "hint": "この評価で使用する保存済み AI 接続プロファイルです。" },
-      "timezone": { "label": "タイムゾーン", "hint": "繰り返し評価の実行をスケジュールする際に使用するタイムゾーンです。" },
-      "repeatInterval": { "label": "繰り返し間隔", "hint": "繰り返し実行の間隔（分）です。" },
-      "runLimit": { "label": "実行上限", "hint": "このビルドでスケジュールまたは保持する最大実行数です。" },
-      "approvalScore": { "label": "承認スコア", "hint": "承認に必要な監督者の最低スコアです。" },
+      "buildId": {
+        "label": "ビルド ID",
+        "hint": "API と実行履歴で使用する安定した識別子です。"
+      },
+      "buildName": {
+        "label": "ビルド名",
+        "hint": "コンソール全体に表示される人が読める名前です。"
+      },
+      "runner": {
+        "label": "ランナー",
+        "hint": "この評価を実行する再利用可能な自動化ランナーです。"
+      },
+      "targetEnvironment": {
+        "label": "対象環境",
+        "hint": "評価対象のアプリケーションまたはサービスです。"
+      },
+      "executionEnvironment": {
+        "label": "実行環境",
+        "hint": "Orbit が選択したランナーを実行する場所です。"
+      },
+      "purpose": {
+        "label": "目的",
+        "hint": "この評価で確認する振る舞いまたは結果を説明します。"
+      },
+      "managerTemplate": {
+        "label": "管理者テンプレート",
+        "hint": "このビルドで使う監督者向け指示と応答契約です。"
+      },
+      "testCaseSet": {
+        "label": "テストケースセット",
+        "hint": "対象 AI 向けの再利用可能な固定入力と承認根拠です。"
+      },
+      "aiProfile": {
+        "label": "AIモデルプロファイル",
+        "hint": "この評価で使用する保存済み AI 接続プロファイルです。"
+      },
+      "timezone": {
+        "label": "タイムゾーン",
+        "hint": "繰り返し評価の実行をスケジュールする際に使用するタイムゾーンです。"
+      },
+      "repeatInterval": {
+        "label": "繰り返し間隔",
+        "hint": "繰り返し実行の間隔（分）です。"
+      },
+      "runLimit": {
+        "label": "実行上限",
+        "hint": "このビルドでスケジュールまたは保持する最大実行数です。"
+      },
+      "approvalScore": {
+        "label": "承認スコア",
+        "hint": "承認に必要な監督者の最低スコアです。"
+      },
       "name": "名前",
       "next": "次へ"
     },
@@ -118,7 +166,9 @@
     "dashboardHero": {
       "title": "AIシステムを運用し、監督し、改善します。",
       "description": "AIの振る舞いを継続的に評価し、観測可能な証跡を残しながら、すべての改善判断を統制された運用フローで管理します。",
-      "quickStart": "クイックスタートを始める"
+      "quickStart": "クイックスタートを始める",
+      "quickStarts": "クイックスタート",
+      "quickStartsHint": "検証済みの例を選び、評価ビルドをすぐに開始できます。"
     },
     "dashboardOperations": {
       "title": "評価の運用状態",
@@ -377,7 +427,41 @@
       "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）"
     },
     "improvementPage": {
-      "improvement": "改善", "trends": "評価フィードバックの推移", "range": "期間", "evaluation": "評価", "feedbackVolume": "評価別フィードバック", "iterationTrend": "反復別の受容フィードバックとスコア", "activeTrend": "アクティブ評価", "feedbackStatus": "フィードバック状態分布", "issueSeverity": "報告された問題の重大度", "runHealth": "評価実行の健全性", "accepted": "受容", "score": "スコア", "history": "提案決定の履歴", "historyHint": "提案・受容・却下・適用された改善の監査履歴を確認します。", "allBuilds": "すべての評価", "allStates": "すべての状態", "rejected": "却下", "proposed": "提案", "decisionReason": "決定理由", "timeline": "タイムライン", "noProposals": "提案履歴はありません。", "iteration": "反復", "run": "実行", "feedbackCount": "フィードバック数", "activeCount": "アクティブ評価", "noIterationFeedback": "この期間に反復フィードバックはありません。", "adopted": "適用済み", "low": "低", "medium": "中", "high": "高", "critical": "重大", "succeeded": "成功", "failed": "失敗", "cancelled": "キャンセル", "running": "実行中"
+      "improvement": "改善",
+      "trends": "評価フィードバックの推移",
+      "range": "期間",
+      "evaluation": "評価",
+      "feedbackVolume": "評価別フィードバック",
+      "iterationTrend": "反復別の受容フィードバックとスコア",
+      "activeTrend": "アクティブ評価",
+      "feedbackStatus": "フィードバック状態分布",
+      "issueSeverity": "報告された問題の重大度",
+      "runHealth": "評価実行の健全性",
+      "accepted": "受容",
+      "score": "スコア",
+      "history": "提案決定の履歴",
+      "historyHint": "提案・受容・却下・適用された改善の監査履歴を確認します。",
+      "allBuilds": "すべての評価",
+      "allStates": "すべての状態",
+      "rejected": "却下",
+      "proposed": "提案",
+      "decisionReason": "決定理由",
+      "timeline": "タイムライン",
+      "noProposals": "提案履歴はありません。",
+      "iteration": "反復",
+      "run": "実行",
+      "feedbackCount": "フィードバック数",
+      "activeCount": "アクティブ評価",
+      "noIterationFeedback": "この期間に反復フィードバックはありません。",
+      "adopted": "適用済み",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "critical": "重大",
+      "succeeded": "成功",
+      "failed": "失敗",
+      "cancelled": "キャンセル",
+      "running": "実行中"
     },
     "evaluations": {
       "title": "評価実行履歴",
