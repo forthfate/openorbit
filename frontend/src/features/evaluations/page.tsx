@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, ListFilter, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
@@ -17,6 +17,7 @@ import { StatusBadge } from "../../components/ui/status-badge";
 import { Tooltip } from "../../components/ui/tooltip";
 import { intlLocales, localeMessageMap, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
+import { useTemplateTranslations } from "../../services/use-template-translation";
 
 const phases = [
   "init",
@@ -57,6 +58,14 @@ const elapsed = (start?: string, end?: string) => {
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 };
 const copy = localeMessageMap<Record<string,string>>("evaluations");
+type SupervisorResultTranslation = {
+  prompt?: string;
+  response: {
+    evaluation: { behavior_summary?: string; summary?: string };
+    improvements: Record<string, string>[];
+    reported_issues: Record<string, string>[];
+  };
+};
 function BrowserEvidence({ result }: { result: Record<string, unknown> }) {
   const journey = result.browser_journey as
     | {
@@ -142,30 +151,22 @@ function WorkflowLogOutput({
   locale: Locale;
 }) {
   const l = copy[locale];
+  const visibleSteps = steps.filter(
+    (step) =>
+      Boolean(step.result) ||
+      Boolean(step.log_lines?.length) ||
+      Boolean(step.output) ||
+      Boolean(step.error),
+  );
   return (
     <div className="console-output workflow-log-output">
-      {steps.length ? (
-        steps.map((step, index) => (
+      {visibleSteps.length ? (
+        visibleSteps.map((step, index) => (
           <section key={`${step.step_id}-${index}`}>
-            <div>
-              <strong>{step.name ?? step.step_id}</strong>
-              <small>exit {step.exit_code ?? "—"}</small>
-            </div>
-            <code className="workflow-command">
-              ${" "}
-              {step.command?.join(" ") ??
-                "Command metadata unavailable for this older run."}
-            </code>
-            {step.working_directory && (
-              <small className="workflow-directory">
-                {step.working_directory}
-              </small>
-            )}
             {step.result && <BrowserEvidence result={step.result} />}
-            <TimestampedLogOutput
-              locale={locale}
-              lines={stepLogLines(step)}
-            />
+            {(step.log_lines?.length || step.output || step.error) && (
+              <TimestampedLogOutput locale={locale} lines={stepLogLines(step)} />
+            )}
           </section>
         ))
       ) : (
@@ -481,6 +482,48 @@ export function EvaluationsPage({
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
   const selected = initialSelectedRun ?? selectedInternal;
+  const supervisorTranslationIds = useMemo(
+    () =>
+      (selected?.supervisor_results ?? [])
+        .filter((record) => Boolean(record.response))
+        .map((record) => `${selected?.id}:${record.iteration}`),
+    [selected],
+  );
+  const supervisorTranslations = useTemplateTranslations<SupervisorResultTranslation>(
+    "supervisor-result",
+    supervisorTranslationIds,
+    locale,
+  );
+  const translateSupervisorResponse = (record: SupervisorRecord) => {
+    const response = record.response;
+    const translated = supervisorTranslations.content(`${selected?.id}:${record.iteration}`);
+    if (!response || !translated) return response;
+    return {
+      ...response,
+      evaluation: response.evaluation
+        ? { ...response.evaluation, ...translated.response.evaluation }
+        : response.evaluation,
+      improvements: response.improvements.map((item, index) => ({
+        ...item,
+        ...translated.response.improvements[index],
+      })),
+      reported_issues: response.reported_issues.map((item, index) => ({
+        ...item,
+        ...translated.response.reported_issues[index],
+      })),
+    };
+  };
+  const translateSupervisorRecord = (record?: SupervisorRecord) => {
+    if (!record) return record;
+    const translated = supervisorTranslations.content(`${selected?.id}:${record.iteration}`);
+    if (!translated) return record;
+    return {
+      ...record,
+      ...(translated.prompt ? { prompt: translated.prompt } : {}),
+      response: translateSupervisorResponse(record),
+    };
+  };
+  const translationCopy = locales[locale].templateTranslation;
   const filterMenu = useRef<HTMLDivElement>(null),
     resultFilterMenu = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -795,7 +838,7 @@ export function EvaluationsPage({
     );
     const latestIteration = records[0]?.iteration;
     return records.filter((record) => {
-      const response = record.response,
+      const response = translateSupervisorResponse(record),
         recordEvaluation = response?.evaluation,
         decision = recordEvaluation?.approval ?? "no_response",
         score = recordEvaluation?.score,
@@ -860,16 +903,26 @@ export function EvaluationsPage({
     resultScoreBucket,
   ]);
   const resultImprovements = resultRecords.flatMap((record) =>
-      (record.response?.improvements ?? []).map((item) => ({
+      (translateSupervisorResponse(record)?.improvements ?? []).map((item) => ({
         ...item,
         __iteration: record.iteration,
       })),
     ),
     resultIssues = resultRecords.flatMap((record) =>
-      (record.response?.reported_issues ?? []).map((item) => ({
+      (translateSupervisorResponse(record)?.reported_issues ?? []).map((item) => ({
         ...item,
         __iteration: record.iteration,
       })),
+    );
+  const resultBehaviorSummaries = resultRecords
+    .map((record) => ({
+      iteration: record.iteration,
+      recordedAt: record.recorded_at,
+      summary: translateSupervisorResponse(record)?.evaluation?.behavior_summary,
+    }))
+    .filter(
+      (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
+        Boolean(item.summary),
     );
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
@@ -1156,12 +1209,36 @@ export function EvaluationsPage({
             />
           )}{" "}
           {tab === "supervisor" && (
-            <SupervisorOutput
-              record={supervision}
-              l={l}
-              telemetry={telemetry}
-              iteration={iterationTab}
-            />
+            <>
+              {supervisorTranslationIds.length > 0 && (
+                <div className="supervisor-translation-action">
+                  <button
+                    className="ghost"
+                    type="button"
+                    disabled={supervisorTranslations.loading}
+                    onClick={
+                      supervisorTranslations.content(supervisorTranslationIds[0])
+                        ? supervisorTranslations.showOriginal
+                        : supervisorTranslations.translate
+                    }
+                  >
+                    <Languages size={15} />
+                    {supervisorTranslations.loading
+                      ? translationCopy.translating
+                      : supervisorTranslations.content(supervisorTranslationIds[0])
+                        ? translationCopy.showOriginal
+                        : translationCopy.translate}
+                  </button>
+                </div>
+              )}
+              {supervisorTranslations.error && <small className="hint">{translationCopy.failed}</small>}
+              <SupervisorOutput
+                record={translateSupervisorRecord(supervision)}
+                l={l}
+                telemetry={telemetry}
+                iteration={iterationTab}
+              />
+            </>
           )}{" "}
           {tab === "result" && (
             <div className="run-result">
@@ -1176,6 +1253,25 @@ export function EvaluationsPage({
                   <ListFilter size={15} />
                   {l.filter}
                 </button>
+                {supervisorTranslationIds.length > 0 && (
+                  <button
+                    className="ghost result-translation-action"
+                    type="button"
+                    disabled={supervisorTranslations.loading}
+                    onClick={
+                      supervisorTranslations.content(supervisorTranslationIds[0])
+                        ? supervisorTranslations.showOriginal
+                        : supervisorTranslations.translate
+                    }
+                  >
+                    <Languages size={15} />
+                    {supervisorTranslations.loading
+                      ? translationCopy.translating
+                      : supervisorTranslations.content(supervisorTranslationIds[0])
+                        ? translationCopy.showOriginal
+                        : translationCopy.translate}
+                  </button>
+                )}
                 {resultFiltersOpen && (
                   <div className="run-filters run-filter-popover result-filter-popover">
                     <div className="run-filter-popover__header">
@@ -1324,8 +1420,30 @@ export function EvaluationsPage({
                   </div>
                 )}
               </div>
+              {supervisorTranslations.error && <small className="hint">{translationCopy.failed}</small>}
               {resultRecords.length ? (
                 <>
+                  {resultBehaviorSummaries.length > 0 && (
+                    <section className="result-behavior-summaries">
+                      <h3>{l.observedBehavior}</h3>
+                      <div className="result-items">
+                        {resultBehaviorSummaries.map((item) => (
+                          <article className="result-row" key={item.iteration}>
+                            <time className="result-row__time">{time(locale, item.recordedAt)}</time>
+                            <div className="result-row__body">
+                              <p>{item.summary}</p>
+                            </div>
+                            <div className="result-row__metrics">
+                              <span>
+                                <small>Iteration</small>
+                                <b>#{item.iteration}</b>
+                              </span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   <section>
                     <h3>{l.proposals}</h3>
                     <ResultList

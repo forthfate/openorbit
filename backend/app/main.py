@@ -193,7 +193,6 @@ def target_environments():
 
 class PromptTemplateUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    version: int = Field(ge=1, le=10000)
     content: str = Field(min_length=1, max_length=100_000)
 
 
@@ -843,7 +842,7 @@ class ChatMessage(BaseModel):
 
 
 class TemplateTranslationRequest(BaseModel):
-    kind: Literal["runner-template", "quick-start"]
+    kind: Literal["runner-template", "quick-start", "supervisor-result"]
     template_id: str = Field(min_length=1, max_length=200)
     locale: str = Field(min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 

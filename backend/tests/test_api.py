@@ -216,6 +216,17 @@ def test_native_improvement_cycle_evidence_triggers_supervision():
     assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(RunRecord()) is True
 
 
+def test_direct_browser_and_site_exploration_evidence_trigger_supervision():
+    class BrowserRun:
+        step_results = [{"phase": "run", "result": {"browser_journey": {"results": [{"passed": True}]}}}]
+
+    class SiteRun:
+        step_results = [{"phase": "run", "result": {"site_exploration": {"evidence": {"visited": [{}]}}}}]
+
+    assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(BrowserRun()) is True
+    assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(SiteRun()) is True
+
+
 def test_runner_templates_separate_direct_user_journeys_from_external_commands():
     templates = {item["id"]: item for item in store_module.ConsoleStore.runner_templates()}
     user_journey = templates["user-journey-cycle"]["source"]
@@ -239,6 +250,8 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "update_prompt_from_accepted_proposals" in improvement
     assert "ctx.accept_proposal" not in improvement
     assert "ctx.update_file" in improvement
+    assert "managed_prompt_evidence" in improvement
+    assert "record_proposal_application" in improvement
     assert "no_accepted_proposals" in improvement
     assert "ORBIT_AGENT_COMMAND" in json_agent
     assert "ORBIT_PROBE_COMMAND" in probe_gate
@@ -328,7 +341,13 @@ def test_manager_prompt_template_can_be_updated(tmp_path, monkeypatch):
     template = store_module.ConsoleStore().update_prompt_template(
         "manager-test-v1", {"name": "Updated", "version": 2, "content": "new content"}
     )
-    assert template == {"id": "manager-test-v1", "name": "Updated", "version": 2, "content": "new content"}
+    assert template == {
+        "id": "manager-test-v1",
+        "name": "Updated",
+        "version": 2,
+        "content": "new content",
+        "versions": [{"version": 1, "content": "old"}, {"version": 2, "content": "new content"}],
+    }
 
 
 def test_target_test_case_sets_are_managed_as_assets(tmp_path, monkeypatch):
