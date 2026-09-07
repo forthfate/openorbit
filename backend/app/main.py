@@ -15,7 +15,7 @@ from .store import ConsoleStore
 
 app = FastAPI(
     title="OpenOrbit API",
-    version="0.1.0",
+    version="0.2.0",
     summary="A local control plane API for recurring AI automations.",
     description="""\
 The versioned API follows a GitLab-inspired resource model: an evaluation build
@@ -318,6 +318,17 @@ def invoke_evaluation_build(build_id: str):
 @app.post("/api/evaluation-builds/{build_id}/tests")
 def test_evaluation_build(build_id: str):
     return safely(lambda: store.test_evaluation_build(build_id))
+
+
+@app.get("/api/evaluation-build-tests/{session_id}")
+def evaluation_build_test(session_id: str):
+    """Return a process-local test session; it is never part of run history."""
+    return safely(lambda: store.test_session(session_id))
+
+
+@app.delete("/api/evaluation-build-tests/{session_id}", status_code=204)
+def discard_evaluation_build_test(session_id: str):
+    safely(lambda: store.discard_test_session(session_id))
 
 
 class EvaluationBuildCreate(BaseModel):

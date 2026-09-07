@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
 import { ToastProvider } from "./components/ui/toast";
-import type { Page } from "./domain/models";
+import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { AssetsPage } from "./features/assets/page";
 import { EvaluationBuildsPage } from "./features/evaluation-builds/page";
@@ -144,12 +144,15 @@ export default function App() {
       })
       .catch((e) => room.setNotice(e.message));
   const testBuild = (id: string) =>
-    api(`/api/evaluation-builds/${id}/tests`, "POST")
-      .then(() => {
+    api<Run>(`/api/evaluation-builds/${id}/tests`, "POST")
+      .then((run) => {
         room.setNotice(ui.evaluationTestStarted, "success");
-        room.refresh();
+        return run;
       })
-      .catch((e) => room.setNotice(e.message));
+      .catch((e) => {
+        room.setNotice(e.message);
+        throw e;
+      });
   const createBuild = (values: unknown) =>
     api("/api/evaluation-builds", "POST", values)
       .then(() => {
@@ -338,7 +341,13 @@ export default function App() {
     },
   }[locale];
   return (
-    <AppShell page={page} setPage={setPage} locale={locale} theme={theme}>
+    <AppShell
+      page={page}
+      setPage={setPage}
+      locale={locale}
+      theme={theme}
+      activeRunCount={room.runs.filter((run) => ["queued", "awaiting_approval", "running"].includes(run.status)).length}
+    >
       <div className="page-stack">{content}</div>
       <ConfirmDialog
         open={deletingBuild !== null}

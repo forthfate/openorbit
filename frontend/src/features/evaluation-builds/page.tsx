@@ -15,11 +15,13 @@ import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { StatusBadge } from "../../components/ui/status-badge";
 import type {
   Build,
   ExecutionEnvironment,
   PromptTemplate,
   QuickStart,
+  Run,
   RunnerAsset,
   Settings,
   TargetEnvironment,
@@ -60,6 +62,21 @@ const empty: Draft = {
   approval_score: 8,
   enabled: true,
 };
+const testIsActive = (status: string) => ["queued", "awaiting_approval", "running"].includes(status);
+const testStatus = (locale: Locale, status: string) => ({
+  queued: locale === "ko" ? "대기 중" : locale === "ja" ? "待機中" : "Queued",
+  awaiting_approval: locale === "ko" ? "승인 대기" : locale === "ja" ? "承認待ち" : "Awaiting approval",
+  running: locale === "ko" ? "실행 중" : locale === "ja" ? "実行中" : "Running",
+  succeeded: locale === "ko" ? "완료" : locale === "ja" ? "完了" : "Completed",
+  failed: locale === "ko" ? "실패" : locale === "ja" ? "失敗" : "Failed",
+  cancelled: locale === "ko" ? "취소됨" : locale === "ja" ? "キャンセル済み" : "Cancelled",
+})[status] ?? status;
+function TestRunDetailModal({ run, locale, onClose }: { run: Run; locale: Locale; onClose: () => void }) {
+  const active = testIsActive(run.status);
+  const text = locale === "ko" ? { status: "실행 상태", phase: "현재 단계", logs: "로그", waiting: "테스트를 시작하는 중입니다.", close: "닫기", note: "이 테스트 결과는 Evaluation runs에 저장되지 않습니다." } : locale === "ja" ? { status: "実行状態", phase: "現在のフェーズ", logs: "ログ", waiting: "テストを開始しています。", close: "閉じる", note: "このテスト結果は Evaluation runs に保存されません。" } : { status: "Run status", phase: "Current phase", logs: "Logs", waiting: "Starting test…", close: "Close", note: "This test result is not saved to Evaluation runs." };
+  const stamp = (value?: string) => value ? new Date(value).toLocaleString() : "—";
+  return <Modal open title="Evaluation run detail" onClose={onClose} className="modal--run-detail"><div className="run-detail-summary"><div><small>{text.status}</small><StatusBadge value={run.status} label={testStatus(locale, run.status)} /></div><div><small>{text.phase}</small><strong>{run.current_phase ?? (active ? "—" : testStatus(locale, run.status))}</strong></div><div><small>Started</small><strong>{stamp(run.created_at)}</strong></div><div><small>Finished</small><strong>{stamp(run.finished_at)}</strong></div></div><p className="hint">{text.note}</p><div className="run-tabs"><button className="active">{text.logs}</button></div><div className="console-output iteration-log-output">{run.step_results?.length ? run.step_results.map((step, index) => <section key={`${step.step_id}-${index}`}><div><strong>{step.name ?? step.step_id}</strong><small>{step.phase ?? "—"} · {stamp(step.ended_at ?? step.started_at)}</small></div><pre>{step.output ?? step.error ?? JSON.stringify(step.result ?? {}, null, 2)}</pre></section>) : <p className="hint">{active ? text.waiting : "—"}</p>}</div><div className="modal-actions"><button className="approve" onClick={onClose}>{text.close}</button></div></Modal>;
+}
 const draftOf = (b: Build, copy = false): Draft => ({
   ...empty,
   id: copy ? "" : b.id,
@@ -500,7 +517,7 @@ export function EvaluationBuildsPage(props: {
   executionEnvironments: ExecutionEnvironment[];
   targetEnvironments: TargetEnvironment[];
   onInvoke: (id: string) => void;
-  onTest: (id: string) => void;
+  onTest: (id: string) => Promise<Run>;
   onCreate: (v: Draft) => Promise<unknown>;
   onUpdate: (id: string, v: Draft) => Promise<unknown>;
   onDelete: (id: string) => void;
@@ -541,7 +558,27 @@ export function EvaluationBuildsPage(props: {
     [page, setPage] = useState(1),
     [size, setSize] = useState(15),
     [selected, setSelected] = useState(""),
+    [testRun, setTestRun] = useState<Run | null>(null),
     file = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!testRun || !testIsActive(testRun.status)) return;
+    const timer = window.setInterval(() => {
+      api<Run>(`/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`)
+        .then(setTestRun)
+        .catch(() => setTestRun(null));
+    }, 750);
+    return () => window.clearInterval(timer);
+  }, [testRun]);
+  const startTest = (id: string) => {
+    onTest(id).then(setTestRun).catch((error) =>
+      setError(error instanceof Error ? error.message : "Test failed to start"),
+    );
+  };
+  const closeTest = () => {
+    if (testRun && !testIsActive(testRun.status))
+      api(`/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`, "DELETE").catch(() => undefined);
+    setTestRun(null);
+  };
   const start = (initialMode: "chooser" | "quick" = "chooser") => {
     setEdit(null);
     setD(empty);
@@ -587,7 +624,13 @@ export function EvaluationBuildsPage(props: {
         header: ui.action,
         render: (b) => (
           <span className="build-actions">
-            <button className="ghost icon-button" onClick={() => onTest(b.id)}>
+            <button
+              className="ghost icon-button"
+              onClick={(event) => {
+                event.stopPropagation();
+                startTest(b.id);
+              }}
+            >
               <TestTube2 size={15} />
             </button>
             <button
@@ -684,6 +727,7 @@ export function EvaluationBuildsPage(props: {
           </div>
         </div>
       </section>
+      {testRun && <TestRunDetailModal run={testRun} locale={locale} onClose={closeTest} />}
       <Modal
         open={open}
         title={

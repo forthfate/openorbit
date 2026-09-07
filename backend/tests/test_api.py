@@ -56,11 +56,38 @@ def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     assert not (store_module.RUNS / "completed-run.json").exists()
 
 
+def test_transient_test_session_is_not_written_to_run_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    session = Run(
+        id="test-session",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        execution_mode="test",
+        status="succeeded",
+        created_at=timestamp,
+        updated_at=timestamp,
+        finished_at=timestamp,
+    )
+    store._test_sessions[session.id] = session
+
+    store._save(session)
+
+    assert store.test_session(session.id).id == session.id
+    assert store.runs() == []
+    assert not (store_module.RUNS / f"{session.id}.json").exists()
+
+    store.discard_test_session(session.id)
+    with pytest.raises(KeyError):
+        store.test_session(session.id)
+
+
 def test_v1_openapi_contract_documents_project_and_pipeline_resources():
     client = TestClient(app)
     schema = client.get("/api/openapi.json")
     assert schema.status_code == 200
-    assert schema.json()["info"]["version"] == "0.1.0"
+    assert schema.json()["info"]["version"] == "0.2.0"
     assert "/api/v1/projects" in schema.json()["paths"]
     assert "/api/v1/projects/{project_id}/pipelines" in schema.json()["paths"]
     assert "/api/v1/pipelines/{pipeline_id}/actions" in schema.json()["paths"]
