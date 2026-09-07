@@ -553,7 +553,17 @@ class RunnerContext:
         for record in reversed(records):
             response = record.get("response") if isinstance(record, dict) else None
             if isinstance(response, dict):
-                return response
+                feedback = dict(response)
+                improvements = feedback.get("improvements", [])
+                if isinstance(improvements, list):
+                    iteration = record.get("iteration", 0)
+                    feedback["_orbit_proposal_ids"] = [
+                        f"{run_id}:{iteration}:{index}"
+                        for index, proposal in enumerate(improvements)
+                        if isinstance(proposal, dict)
+                        and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
+                    ]
+                return feedback
         return {}
 
     def log(self, message: str) -> None:

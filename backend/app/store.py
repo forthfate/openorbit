@@ -151,6 +151,19 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
     return ctx.update_file(prompt_path, updated)
 
 
+def managed_prompt_evidence(ctx):
+    '''Expose the current managed prompt beside the browser validation evidence.'''
+    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    if not prompt_path:
+        raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
+    content = ctx.project_path(prompt_path).read_text(encoding="utf-8")
+    return {
+        "path": prompt_path,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "content": content,
+    }
+
+
 @runner.phase("init")
 def init(ctx):
     # Process-level validation runs once before the iteration loop begins.
@@ -169,6 +182,8 @@ def setup(ctx):
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
     prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
+    proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -177,6 +192,8 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "managed_prompt": managed_prompt_evidence(ctx),
+                "proposal_applications": proposal_applications,
             }
         }
     )
@@ -1276,7 +1293,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.agent-self-improvement",
-                "version": "1.0.1",
+                "version": "1.0.2",
                 "name": "Agent self-improvement",
                 "description": "Improve an agent prompt with browser validation. Requires a Git repository, running app, prompt file, and Playwright browser.",
                 "publisher": {"name": "OpenOrbit"},
@@ -1307,6 +1324,7 @@ if __name__ == "__main__":
                         "label": "Agent prompt file path",
                         "type": "string",
                         "required": True,
+                        "default": "examples/agent-improvement-sample-prompt.md",
                         "placeholder": "e.g. prompts/system.md",
                     },
                     {
@@ -1406,7 +1424,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Assess fixed browser evidence and approve improvement proposals only when the evidence supports them.",
+                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check, in order: scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step for the user. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark an improvement adopted only when the missing instruction is additive, reversible, and directly supported by the evidence, so the next iteration can validate it; otherwise mark it proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -3324,6 +3342,8 @@ if __name__ == "__main__":
                 or result.get("jgent_paired")
                 or result.get("agent_cycle")
                 or result.get("probe_gate")
+                or result.get("browser_journey")
+                or result.get("site_exploration")
             )
             if not isinstance(cycle, dict):
                 return False
