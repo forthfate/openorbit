@@ -88,6 +88,38 @@ const copy = {
     cancelled: "Cancelled",
     failed: "Failed",
     waiting: "Waiting for next iteration",
+    filter: "Filter",
+    reset: "Reset",
+    apply: "Apply",
+    cancel: "Cancel",
+    allIterations: "All iterations",
+    latestIteration: "Latest iteration",
+    iterationRange: "Iteration range",
+    from: "From",
+    to: "To",
+    noSupervisorResponse: "No supervisor response",
+    allDecisions: "All decisions",
+    allScores: "All scores",
+    noScore: "No score",
+    scoreLow: "0–3",
+    scoreMedium: "4–6",
+    scoreGood: "7–8",
+    scoreExcellent: "9–10",
+    resultContent: "Result content",
+    allContent: "All content",
+    improvementsOnly: "Improvements present",
+    issuesOnly: "Issues present",
+    noFindings: "No findings",
+    noMatchingResults: "No evaluation results match these filters.",
+    attempt: "Attempt",
+    allAttempts: "All attempts",
+    attempted: "Attempted",
+    notAttempted: "Not attempted",
+    improvementStatus: "Improvement status",
+    issueSeverity: "Issue severity",
+    issueStatus: "Issue status",
+    allStatuses: "All statuses",
+    allSeverities: "All severities",
   },
   ko: {
     title: "평가 실행 이력",
@@ -116,6 +148,38 @@ const copy = {
     cancelled: "취소됨",
     failed: "실패",
     waiting: "다음 반복 대기",
+    filter: "필터",
+    reset: "초기화",
+    apply: "적용",
+    cancel: "취소",
+    allIterations: "전체 반복",
+    latestIteration: "최신 반복",
+    iterationRange: "반복 범위",
+    from: "시작",
+    to: "끝",
+    noSupervisorResponse: "감독관 응답 없음",
+    allDecisions: "전체 결정",
+    allScores: "전체 점수",
+    noScore: "점수 없음",
+    scoreLow: "0–3점",
+    scoreMedium: "4–6점",
+    scoreGood: "7–8점",
+    scoreExcellent: "9–10점",
+    resultContent: "결과 내용",
+    allContent: "전체 내용",
+    improvementsOnly: "개선 제안 있음",
+    issuesOnly: "문제 보고 있음",
+    noFindings: "결과 없음",
+    noMatchingResults: "필터와 일치하는 평가 결과가 없습니다.",
+    attempt: "시도 여부",
+    allAttempts: "전체",
+    attempted: "시도함",
+    notAttempted: "시도하지 않음",
+    improvementStatus: "개선 제안 상태",
+    issueSeverity: "문제 심각도",
+    issueStatus: "문제 상태",
+    allStatuses: "전체 상태",
+    allSeverities: "전체 심각도",
   },
   ja: {
     title: "評価実行履歴",
@@ -144,6 +208,38 @@ const copy = {
     cancelled: "キャンセル済み",
     failed: "失敗",
     waiting: "次の反復を待機中",
+    filter: "フィルター",
+    reset: "リセット",
+    apply: "適用",
+    cancel: "キャンセル",
+    allIterations: "すべての反復",
+    latestIteration: "最新の反復",
+    iterationRange: "反復の範囲",
+    from: "開始",
+    to: "終了",
+    noSupervisorResponse: "監督AIの応答なし",
+    allDecisions: "すべての判断",
+    allScores: "すべてのスコア",
+    noScore: "スコアなし",
+    scoreLow: "0～3",
+    scoreMedium: "4～6",
+    scoreGood: "7～8",
+    scoreExcellent: "9～10",
+    resultContent: "結果の内容",
+    allContent: "すべての内容",
+    improvementsOnly: "改善提案あり",
+    issuesOnly: "問題報告あり",
+    noFindings: "結果なし",
+    noMatchingResults: "フィルターに一致する評価結果はありません。",
+    attempt: "試行",
+    allAttempts: "すべて",
+    attempted: "試行済み",
+    notAttempted: "未試行",
+    improvementStatus: "改善提案の状態",
+    issueSeverity: "問題の重要度",
+    issueStatus: "問題の状態",
+    allStatuses: "すべての状態",
+    allSeverities: "すべての重要度",
   },
 };
 function BrowserEvidence({ result }: { result: Record<string, unknown> }) {
@@ -248,11 +344,13 @@ function ResultList({
   kind,
   locale,
   empty,
+  showIteration = false,
 }: {
   items: Record<string, unknown>[];
   kind: "improvement" | "issue";
   locale: Locale;
   empty: string;
+  showIteration?: boolean;
 }) {
   return (
     <div className="result-items">
@@ -280,6 +378,12 @@ function ResultList({
                 </p>
               </div>
               <div className="result-row__metrics">
+                {showIteration && typeof item.__iteration === "number" && (
+                  <span>
+                    <small>Iteration</small>
+                    <b>#{item.__iteration}</b>
+                  </span>
+                )}
                 {kind === "improvement" ? (
                   <>
                     <span>
@@ -461,7 +565,7 @@ export function EvaluationsPage({
     l = copy[locale];
   const [selected, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "result">(
-      "workflow",
+      "result",
     ),
     [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
     [iterationTab, setIterationTab] = useState(1),
@@ -480,12 +584,38 @@ export function EvaluationsPage({
       "all",
     ),
     [draftPhaseFilter, setDraftPhaseFilter] = useState(""),
-    [draftActiveOnly, setDraftActiveOnly] = useState(false);
+    [draftActiveOnly, setDraftActiveOnly] = useState(false),
+    [resultFiltersOpen, setResultFiltersOpen] = useState(false),
+    [resultIterationFilter, setResultIterationFilter] = useState<"all" | "latest" | "range">("all"),
+    [resultIterationFrom, setResultIterationFrom] = useState(""),
+    [resultIterationTo, setResultIterationTo] = useState(""),
+    [resultDecisions, setResultDecisions] = useState<Set<string>>(
+      () => new Set(["approved", "rejected", "pending", "no_response"]),
+    ),
+    [resultScoreBucket, setResultScoreBucket] = useState("all"),
+    [resultContent, setResultContent] = useState<"all" | "improvements" | "issues" | "empty">("all"),
+    [resultAttemptFilter, setResultAttemptFilter] = useState("all"),
+    [resultImprovementStatus, setResultImprovementStatus] = useState("all"),
+    [resultIssueSeverity, setResultIssueSeverity] = useState("all"),
+    [resultIssueStatus, setResultIssueStatus] = useState("all"),
+    [draftResultIterationFilter, setDraftResultIterationFilter] = useState<"all" | "latest" | "range">("all"),
+    [draftResultIterationFrom, setDraftResultIterationFrom] = useState(""),
+    [draftResultIterationTo, setDraftResultIterationTo] = useState(""),
+    [draftResultDecisions, setDraftResultDecisions] = useState<Set<string>>(
+      () => new Set(["approved", "rejected", "pending", "no_response"]),
+    ),
+    [draftResultScoreBucket, setDraftResultScoreBucket] = useState("all"),
+    [draftResultContent, setDraftResultContent] = useState<"all" | "improvements" | "issues" | "empty">("all"),
+    [draftResultAttemptFilter, setDraftResultAttemptFilter] = useState("all"),
+    [draftResultImprovementStatus, setDraftResultImprovementStatus] = useState("all"),
+    [draftResultIssueSeverity, setDraftResultIssueSeverity] = useState("all"),
+    [draftResultIssueStatus, setDraftResultIssueStatus] = useState("all");
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
-  const filterMenu = useRef<HTMLDivElement>(null);
+  const filterMenu = useRef<HTMLDivElement>(null),
+    resultFilterMenu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (selected)
       api<RunTelemetry>(`/api/runs/${selected.id}/telemetry`)
@@ -565,6 +695,51 @@ export function EvaluationsPage({
     setPage(1);
     closeFilters();
   };
+  const resetResultFilters = () => {
+    setDraftResultIterationFilter("all");
+    setDraftResultIterationFrom("");
+    setDraftResultIterationTo("");
+    setDraftResultDecisions(new Set(["approved", "rejected", "pending", "no_response"]));
+    setDraftResultScoreBucket("all");
+    setDraftResultContent("all");
+    setDraftResultAttemptFilter("all");
+    setDraftResultImprovementStatus("all");
+    setDraftResultIssueSeverity("all");
+    setDraftResultIssueStatus("all");
+  };
+  const openResultFilters = () => {
+    setDraftResultIterationFilter(resultIterationFilter);
+    setDraftResultIterationFrom(resultIterationFrom);
+    setDraftResultIterationTo(resultIterationTo);
+    setDraftResultDecisions(new Set(resultDecisions));
+    setDraftResultScoreBucket(resultScoreBucket);
+    setDraftResultContent(resultContent);
+    setDraftResultAttemptFilter(resultAttemptFilter);
+    setDraftResultImprovementStatus(resultImprovementStatus);
+    setDraftResultIssueSeverity(resultIssueSeverity);
+    setDraftResultIssueStatus(resultIssueStatus);
+    setResultFiltersOpen(true);
+  };
+  const applyResultFilters = () => {
+    setResultIterationFilter(draftResultIterationFilter);
+    setResultIterationFrom(draftResultIterationFrom);
+    setResultIterationTo(draftResultIterationTo);
+    setResultDecisions(new Set(draftResultDecisions));
+    setResultScoreBucket(draftResultScoreBucket);
+    setResultContent(draftResultContent);
+    setResultAttemptFilter(draftResultAttemptFilter);
+    setResultImprovementStatus(draftResultImprovementStatus);
+    setResultIssueSeverity(draftResultIssueSeverity);
+    setResultIssueStatus(draftResultIssueStatus);
+    setResultFiltersOpen(false);
+  };
+  const toggleResultDecision = (decision: string) =>
+    setDraftResultDecisions((current) => {
+      const next = new Set(current);
+      if (next.has(decision)) next.delete(decision);
+      else next.add(decision);
+      return next;
+    });
   const appliedFilterCount =
     Number(statuses.size !== runStatuses.length) +
     Number(Boolean(buildFilter)) +
@@ -592,6 +767,18 @@ export function EvaluationsPage({
     document.addEventListener("pointerdown", close);
     return () => document.removeEventListener("pointerdown", close);
   }, [filtersOpen]);
+  useEffect(() => {
+    if (!resultFiltersOpen) return;
+    const close = (event: PointerEvent) => {
+      if (
+        resultFilterMenu.current &&
+        !resultFilterMenu.current.contains(event.target as Node)
+      )
+        setResultFiltersOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [resultFiltersOpen]);
   const columns: Column<Run>[] = [
     {id:"select",header:<input aria-label="Select all runs on this page" type="checkbox" checked={allPageSelected} disabled={!selectableRuns.length} onChange={togglePage}/>,render:r=><input aria-label={`Select run ${r.id}`} type="checkbox" checked={selectedRunIds.has(r.id)} disabled={!terminal(r.status)} onChange={()=>toggleRun(r.id)}/>},
     {
@@ -716,6 +903,107 @@ export function EvaluationsPage({
     ),
     result = supervision?.response,
     evaluation = result?.evaluation;
+  const resultFilterOptions = useMemo(() => {
+    const improvementStatuses = new Set<string>(),
+      issueSeverities = new Set<string>(),
+      issueStatuses = new Set<string>();
+    for (const record of selected?.supervisor_results ?? []) {
+      for (const improvement of record.response?.improvements ?? []) {
+        if (improvement.status) improvementStatuses.add(String(improvement.status));
+      }
+      for (const issue of record.response?.reported_issues ?? []) {
+        if (issue.severity) issueSeverities.add(String(issue.severity));
+        if (issue.status) issueStatuses.add(String(issue.status));
+      }
+    }
+    return {
+      improvementStatuses: [...improvementStatuses].sort(),
+      issueSeverities: [...issueSeverities].sort(),
+      issueStatuses: [...issueStatuses].sort(),
+    };
+  }, [selected]);
+  const resultRecords = useMemo(() => {
+    const records = [...(selected?.supervisor_results ?? [])].sort(
+      (a, b) => b.iteration - a.iteration,
+    );
+    const latestIteration = records[0]?.iteration;
+    return records.filter((record) => {
+      const response = record.response,
+        recordEvaluation = response?.evaluation,
+        decision = recordEvaluation?.approval ?? "no_response",
+        score = recordEvaluation?.score,
+        improvements = response?.improvements ?? [],
+        issues = response?.reported_issues ?? [];
+      const inRange =
+        (!resultIterationFrom || record.iteration >= Number(resultIterationFrom)) &&
+        (!resultIterationTo || record.iteration <= Number(resultIterationTo));
+      const scoreMatches =
+        resultScoreBucket === "all" ||
+        (resultScoreBucket === "missing" && score === undefined) ||
+        (resultScoreBucket === "low" && score !== undefined && score <= 3) ||
+        (resultScoreBucket === "medium" && score !== undefined && score >= 4 && score <= 6) ||
+        (resultScoreBucket === "good" && score !== undefined && score >= 7 && score <= 8) ||
+        (resultScoreBucket === "excellent" && score !== undefined && score >= 9 && score <= 10);
+      const contentMatches =
+        resultContent === "all" ||
+        (resultContent === "improvements" && improvements.length > 0) ||
+        (resultContent === "issues" && issues.length > 0) ||
+        (resultContent === "empty" && improvements.length === 0 && issues.length === 0);
+      const attemptMatches =
+        resultAttemptFilter === "all" ||
+        improvements.some((improvement) =>
+          resultAttemptFilter === "attempted"
+            ? improvement.attempted === true || improvement.status === "adopted"
+            : improvement.attempted !== true && improvement.status !== "adopted",
+        );
+      const improvementStatusMatches =
+        resultImprovementStatus === "all" ||
+        improvements.some(
+          (improvement) => String(improvement.status ?? "—") === resultImprovementStatus,
+        );
+      const issueSeverityMatches =
+        resultIssueSeverity === "all" ||
+        issues.some((issue) => String(issue.severity ?? "—") === resultIssueSeverity);
+      const issueStatusMatches =
+        resultIssueStatus === "all" ||
+        issues.some((issue) => String(issue.status ?? "—") === resultIssueStatus);
+      return (
+        resultDecisions.has(decision) &&
+        scoreMatches &&
+        contentMatches &&
+        attemptMatches &&
+        improvementStatusMatches &&
+        issueSeverityMatches &&
+        issueStatusMatches &&
+        (resultIterationFilter !== "range" || inRange) &&
+        (resultIterationFilter !== "latest" || record.iteration === latestIteration)
+      );
+    });
+  }, [
+    selected,
+    resultContent,
+    resultDecisions,
+    resultAttemptFilter,
+    resultImprovementStatus,
+    resultIssueSeverity,
+    resultIssueStatus,
+    resultIterationFilter,
+    resultIterationFrom,
+    resultIterationTo,
+    resultScoreBucket,
+  ]);
+  const resultImprovements = resultRecords.flatMap((record) =>
+      (record.response?.improvements ?? []).map((item) => ({
+        ...item,
+        __iteration: record.iteration,
+      })),
+    ),
+    resultIssues = resultRecords.flatMap((record) =>
+      (record.response?.reported_issues ?? []).map((item) => ({
+        ...item,
+        __iteration: record.iteration,
+      })),
+    );
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
@@ -881,7 +1169,7 @@ export function EvaluationsPage({
             ...(r.supervisor_results ?? []).map((item) => item.iteration ?? 0),
           );
           setSelected(r);
-          setTab("logs");
+          setTab("result");
           setPhaseTab("init");
           setIterationTab(latest);
         }}
@@ -932,6 +1220,18 @@ export function EvaluationsPage({
           </div>
           <div className="run-tabs">
             <button
+              className={tab === "result" ? "active" : ""}
+              onClick={() => setTab("result")}
+            >
+              {l.result}
+            </button>
+            <button
+              className={tab === "supervisor" ? "active" : ""}
+              onClick={() => setTab("supervisor")}
+            >
+              {l.supervisor}
+            </button>
+            <button
               className={tab === "workflow" ? "active" : ""}
               onClick={() => setTab("workflow")}
             >
@@ -943,20 +1243,8 @@ export function EvaluationsPage({
             >
               {l.logs}
             </button>
-            <button
-              className={tab === "supervisor" ? "active" : ""}
-              onClick={() => setTab("supervisor")}
-            >
-              {l.supervisor}
-            </button>
-            <button
-              className={tab === "result" ? "active" : ""}
-              onClick={() => setTab("result")}
-            >
-              {l.result}
-            </button>
           </div>
-          {iterations.length > 0 && (
+          {tab !== "result" && iterations.length > 0 && (
             <div className="iteration-navigator" aria-label={l.iteration}>
               <button
                 className="ghost icon-button"
@@ -1027,24 +1315,191 @@ export function EvaluationsPage({
           )}{" "}
           {tab === "result" && (
             <div className="run-result">
-              <section>
-                <h3>{l.proposals}</h3>
-                <ResultList
-                  locale={locale}
-                  kind="improvement"
-                  items={result?.improvements ?? []}
-                  empty={supervision ? l.noResults : l.supervisorWaiting}
-                />
-              </section>
-              <section>
-                <h3>{l.issues}</h3>
-                <ResultList
-                  locale={locale}
-                  kind="issue"
-                  items={result?.reported_issues ?? []}
-                  empty={supervision ? l.noResults : l.supervisorWaiting}
-                />
-              </section>
+              <div className="result-filter-trigger" ref={resultFilterMenu}>
+                <button
+                  className="ghost run-filter-button"
+                  aria-expanded={resultFiltersOpen}
+                  onClick={() =>
+                    resultFiltersOpen ? setResultFiltersOpen(false) : openResultFilters()
+                  }
+                >
+                  <ListFilter size={15} />
+                  {l.filter}
+                </button>
+                {resultFiltersOpen && (
+                  <div className="run-filters run-filter-popover result-filter-popover">
+                    <div className="run-filter-popover__header">
+                      <strong>{l.filter}</strong>
+                      <button className="ghost" onClick={resetResultFilters}>
+                        {l.reset}
+                      </button>
+                    </div>
+                    <label>
+                      {l.iteration}
+                      <select
+                        value={draftResultIterationFilter}
+                        onChange={(event) =>
+                          setDraftResultIterationFilter(
+                            event.target.value as "all" | "latest" | "range",
+                          )
+                        }
+                      >
+                        <option value="all">{l.allIterations}</option>
+                        <option value="latest">{l.latestIteration}</option>
+                        <option value="range">{l.iterationRange}</option>
+                      </select>
+                    </label>
+                    {draftResultIterationFilter === "range" && (
+                      <div className="result-filter-range">
+                        <label>
+                          {l.from}
+                          <input
+                            type="number"
+                            min="1"
+                            value={draftResultIterationFrom}
+                            onChange={(event) => setDraftResultIterationFrom(event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          {l.to}
+                          <input
+                            type="number"
+                            min="1"
+                            value={draftResultIterationTo}
+                            onChange={(event) => setDraftResultIterationTo(event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    )}
+                    <fieldset>
+                      <legend>{l.decision}</legend>
+                      <div className="run-filters__statuses">
+                        {(["approved", "rejected", "pending", "no_response"] as const).map((decision) => (
+                          <label key={decision}>
+                            <input
+                              type="checkbox"
+                              checked={draftResultDecisions.has(decision)}
+                              onChange={() => toggleResultDecision(decision)}
+                            />
+                            {decision === "no_response" ? l.noSupervisorResponse : decision === "approved" ? l.approve : decision === "rejected" ? l.reject : "Pending"}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                    <label>
+                      {l.score}
+                      <select
+                        value={draftResultScoreBucket}
+                        onChange={(event) => setDraftResultScoreBucket(event.target.value)}
+                      >
+                        <option value="all">{l.allScores}</option>
+                        <option value="missing">{l.noScore}</option>
+                        <option value="low">{l.scoreLow}</option>
+                        <option value="medium">{l.scoreMedium}</option>
+                        <option value="good">{l.scoreGood}</option>
+                        <option value="excellent">{l.scoreExcellent}</option>
+                      </select>
+                    </label>
+                    <label>
+                      {l.resultContent}
+                      <select
+                        value={draftResultContent}
+                        onChange={(event) =>
+                          setDraftResultContent(
+                            event.target.value as "all" | "improvements" | "issues" | "empty",
+                          )
+                        }
+                      >
+                        <option value="all">{l.allContent}</option>
+                        <option value="improvements">{l.improvementsOnly}</option>
+                        <option value="issues">{l.issuesOnly}</option>
+                        <option value="empty">{l.noFindings}</option>
+                      </select>
+                    </label>
+                    <label>
+                      {l.attempt}
+                      <select
+                        value={draftResultAttemptFilter}
+                        onChange={(event) => setDraftResultAttemptFilter(event.target.value)}
+                      >
+                        <option value="all">{l.allAttempts}</option>
+                        <option value="attempted">{l.attempted}</option>
+                        <option value="not_attempted">{l.notAttempted}</option>
+                      </select>
+                    </label>
+                    <label>
+                      {l.improvementStatus}
+                      <select
+                        value={draftResultImprovementStatus}
+                        onChange={(event) => setDraftResultImprovementStatus(event.target.value)}
+                      >
+                        <option value="all">{l.allStatuses}</option>
+                        {resultFilterOptions.improvementStatuses.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {l.issueSeverity}
+                      <select
+                        value={draftResultIssueSeverity}
+                        onChange={(event) => setDraftResultIssueSeverity(event.target.value)}
+                      >
+                        <option value="all">{l.allSeverities}</option>
+                        {resultFilterOptions.issueSeverities.map((severity) => (
+                          <option key={severity} value={severity}>{severity}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {l.issueStatus}
+                      <select
+                        value={draftResultIssueStatus}
+                        onChange={(event) => setDraftResultIssueStatus(event.target.value)}
+                      >
+                        <option value="all">{l.allStatuses}</option>
+                        {resultFilterOptions.issueStatuses.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="run-filter-popover__footer">
+                      <button className="ghost" onClick={() => setResultFiltersOpen(false)}>
+                        {l.cancel}
+                      </button>
+                      <button className="approve" onClick={applyResultFilters}>
+                        {l.apply}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {resultRecords.length ? (
+                <>
+                  <section>
+                    <h3>{l.proposals}</h3>
+                    <ResultList
+                      locale={locale}
+                      kind="improvement"
+                      items={resultImprovements}
+                      empty={l.noResults}
+                      showIteration
+                    />
+                  </section>
+                  <section>
+                    <h3>{l.issues}</h3>
+                    <ResultList
+                      locale={locale}
+                      kind="issue"
+                      items={resultIssues}
+                      empty={l.noResults}
+                      showIteration
+                    />
+                  </section>
+                </>
+              ) : (
+                <p className="hint result-empty">{l.noMatchingResults}</p>
+              )}
             </div>
           )}
         </Modal>
