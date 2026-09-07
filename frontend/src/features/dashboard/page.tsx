@@ -22,21 +22,21 @@ import { api } from "../../services/api";
 
 const hero = {
   en: {
-    title: "Operate, supervise, and improve recurring AI automations.",
+    title: "Operate, supervise, and improve AI systems.",
     description:
-      "Connect runners and workflows, retain observable evidence, and keep every automated action within a controlled operating flow.",
+      "Continuously evaluate AI behavior, retain observable evidence, and keep every improvement decision in a controlled operating flow.",
     quickStart: "Start with Quick Start",
   },
   ko: {
-    title: "AI가 수행하는 자동화 작업을 실행하고, 감독하고, 개선합니다.",
+    title: "AI 시스템을 운영하고, 감독하고, 개선합니다.",
     description:
-      "러너와 워크플로를 연결하고 관찰 가능한 증거를 남기며, 모든 자동화 작업을 통제된 운영 흐름 안에서 관리합니다.",
+      "AI 동작을 지속적으로 평가하고 관찰 가능한 증거를 남기며, 모든 개선 결정을 통제된 운영 흐름 안에서 관리합니다.",
     quickStart: "퀵 스타트 시작",
   },
   ja: {
-    title: "AIによる自動化を実行し、監督し、改善します。",
+    title: "AIシステムを運用し、監督し、改善します。",
     description:
-      "ランナーとワークフローをつなぎ、観測可能な証跡を残しながら、すべての自動化を統制された運用フローで管理します。",
+      "AIの振る舞いを継続的に評価し、観測可能な証跡を残しながら、すべての改善判断を統制された運用フローで管理します。",
     quickStart: "クイックスタートを始める",
   },
 };

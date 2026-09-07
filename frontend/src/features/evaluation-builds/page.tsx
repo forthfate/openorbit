@@ -26,7 +26,7 @@ import type {
   TargetEnvironment,
   TargetTestCaseSet,
 } from "../../domain/models";
-import { locales, type Locale } from "../../locales";
+import { intlLocales, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 import { EvaluationsPage } from "../evaluations/page";
 
@@ -46,6 +46,13 @@ type Draft = {
   approval_score: number;
   enabled: boolean;
 };
+const formatDate = (locale: Locale, value?: string) =>
+  value
+    ? new Intl.DateTimeFormat(intlLocales[locale], {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(value))
+    : "—";
 const empty: Draft = {
   id: "",
   name: "",
@@ -617,11 +624,11 @@ export function EvaluationBuildsPage(props: {
         header: ui.repository,
         render: (b) => b.repository_name ?? b.repository,
       },
-      { id: "created", header: ui.created, render: (b) => b.created_at ?? "—" },
+      { id: "created", header: ui.created, render: (b) => formatDate(locale, b.created_at) },
       {
         id: "last-started",
         header: ui.lastStarted,
-        render: (b) => b.last_run_at ?? "—",
+        render: (b) => formatDate(locale, b.last_run_at),
       },
       {
         id: "action",

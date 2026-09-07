@@ -306,6 +306,31 @@ function LineNumberedOutput({ value }: { value: string }) {
     </div>
   );
 }
+function TimestampedLogOutput({
+  lines,
+  locale,
+}: {
+  lines: { value: string; timestamp?: string }[];
+  locale: Locale;
+}) {
+  return (
+    <div className="timestamped-log-output">
+      {lines.map((line, index) => (
+        <div key={index}>
+          <time>{time(locale, line.timestamp)}</time>
+          <code>{line.value || " "}</code>
+        </div>
+      ))}
+    </div>
+  );
+}
+const stepLogLines = (step: RunStepResult) =>
+  step.log_lines?.length
+    ? step.log_lines.map(({ timestamp, value }) => ({ value, timestamp }))
+    : (step.output ?? step.error ?? "—").split("\n").map((value) => ({
+        value,
+        timestamp: step.ended_at ?? step.started_at,
+      }));
 function WorkflowLogOutput({
   steps,
   locale,
@@ -321,9 +346,7 @@ function WorkflowLogOutput({
           <section key={`${step.step_id}-${index}`}>
             <div>
               <strong>{step.name ?? step.step_id}</strong>
-              <small>
-                {time(locale, step.ended_at)} · exit {step.exit_code ?? "—"}
-              </small>
+              <small>exit {step.exit_code ?? "—"}</small>
             </div>
             <code className="workflow-command">
               ${" "}
@@ -336,7 +359,10 @@ function WorkflowLogOutput({
               </small>
             )}
             {step.result && <BrowserEvidence result={step.result} />}
-            <LineNumberedOutput value={step.output ?? step.error ?? "—"} />
+            <TimestampedLogOutput
+              locale={locale}
+              lines={stepLogLines(step)}
+            />
           </section>
         ))
       ) : (
@@ -345,28 +371,23 @@ function WorkflowLogOutput({
     </div>
   );
 }
-function IterationLogOutput({
+function CombinedLogOutput({
   steps,
   locale,
+  empty,
 }: {
   steps: RunStepResult[];
   locale: Locale;
+  empty: string;
 }) {
   const logSteps = steps.filter((step) => step.output || step.error);
+  const lines = logSteps.flatMap(stepLogLines);
   return (
-    <div className="console-output iteration-log-output">
+    <div className="console-output">
       {logSteps.length ? (
-        logSteps.map((step, index) => (
-          <section key={`${step.step_id}-${index}`}>
-            <div>
-              <strong>{step.name ?? step.step_id}</strong>
-              <small>{time(locale, step.ended_at ?? step.started_at)}</small>
-            </div>
-            <LineNumberedOutput value={step.output ?? step.error ?? "—"} />
-          </section>
-        ))
+        <TimestampedLogOutput lines={lines} locale={locale} />
       ) : (
-        <p className="hint">No logs were emitted for this iteration.</p>
+        <p className="hint">{empty}</p>
       )}
     </div>
   );
@@ -1325,7 +1346,11 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "logs" && (
-            <IterationLogOutput locale={locale} steps={selectedSteps} />
+            <CombinedLogOutput
+              steps={selectedSteps}
+              locale={locale}
+              empty={l.noLogs}
+            />
           )}{" "}
           {tab === "supervisor" && (
             <SupervisorOutput

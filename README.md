@@ -40,7 +40,56 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | **Evaluation run detail** | What happened in each phase, and what evidence supports the result? |
 | **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
 
-Screenshots of a complete English-language product scenario will live here. The scenario will follow a customer-support AI through a browser journey, supervisor review, and a proposed operating improvement.
+The screenshots below follow a customer-support AI through recurring quality
+evaluation, an evidence-backed failed handoff, and a proposed improvement.
+
+### Monitor a healthy AI system
+
+Start with the operating picture: completed evaluations, active work, errors,
+and the latest supervisor feedback. This lets an operator spot a regression
+before opening an individual run.
+
+![OpenOrbit dashboard showing successful evaluations, zero errors, and supervisor feedback](docs/images/dashboard-healthy.png)
+
+### Review a successful evaluation result
+
+Open a retained run to see the supervisor score and decision beside the
+improvements and issues supported by that evaluation. Every proposal remains
+connected to the iteration that produced it.
+
+![OpenOrbit evaluation-run detail with a completed result, approved decision, and adopted improvement](docs/images/evaluation-result-approved.png)
+
+### Review evidence across the improvement cycle
+
+Compare feedback volume, accepted changes, scores, and run health across
+multiple evaluation builds. The history makes it clear whether the operating
+cycle is improving the AI system over time.
+
+![OpenOrbit improvement results with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
+
+### Ask an AI assistant what to do next
+
+Configure a System AI model to use the built-in Chat Assistant for questions
+about evaluation work, runners, and the control room. Your own AI agent can
+work with the same local operating data through OpenOrbit's versioned API.
+
+![OpenOrbit Chat Assistant asking what to improve next for an evaluation build](docs/images/chat-assistant-question.png)
+
+## Development partners
+
+<table>
+  <tr>
+    <td align="center" width="240">
+      <a href="https://insighta.cloud">
+        <img src="docs/images/insighta-cloud-icon.png" width="72" alt="insighta cloud Inc. logo" />
+        <br /><br />
+        <strong>insighta cloud Inc.</strong>
+        <br />
+        <sub>Development partner</sub>
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## Quick start
 
@@ -49,16 +98,21 @@ Screenshots of a complete English-language product scenario will live here. The 
 | Requirement | Version | Used for |
 | --- | --- | --- |
 | Python | 3.13+ | Local API and runner SDK |
-| Node.js | 24+ | Packaged launcher and frontend development |
-| Git | 2.40+ recommended | Repository-backed evaluation and improvement cycles |
-| Chromium system libraries | Platform-specific | Browser journeys on Linux only |
+| Git | 2.40+ recommended | Install from Git and repository-backed evaluation cycles |
+| Node.js | 24+ | Installing from Git and frontend development |
 
 ### Run the packaged app
 
+Install a tagged release directly from GitHub:
+
 ```bash
-pip install openorbit
+python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.git@v0.3.0"
 orbit run
 ```
+
+The Git install builds the bundled control-room UI, so it requires Node.js 24+
+and pnpm. To try the latest development version instead, replace `v0.3.0` with
+`main`.
 
 Or run it once with npm:
 
@@ -93,6 +147,23 @@ pnpm --filter agent-improvement-console-ui run dev
 ```
 
 Then open the Vite URL shown in the terminal, normally `http://localhost:5173`.
+
+## Standalone and BYOA
+
+OpenOrbit is a standalone, local-first control plane. It does not host or
+resell an AI model, and it does not require an OpenOrbit cloud account.
+
+Bring your own AI: create a model profile for the API provider and model your
+team already uses, then select that profile for supervisor evaluation, Cycle
+Improvement AI, or the Chat Assistant. OpenOrbit stores only the environment
+variable name for a provider credential—not the credential itself—and keeps
+the operational record in your local AppData.
+
+### Browser journeys (optional)
+
+Only evaluation builds that run browser journeys need a Chromium browser and
+its platform-specific system libraries. This is not required to start
+OpenOrbit, create assets, review runs, or use non-browser runners.
 
 ## Your first evaluation loop
 
@@ -162,4 +233,6 @@ Please open a pull request rather than pushing directly to `main`. See [CONTRIBU
 
 ## License
 
-[MIT](LICENSE)
+Copyright © 2026 forthfate and insighta cloud Inc.
+
+Released under the [MIT License](LICENSE).
