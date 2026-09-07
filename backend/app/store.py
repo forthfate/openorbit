@@ -292,6 +292,216 @@ def finalize(ctx):
 if __name__ == "__main__":
     runner.main()
 """
+
+JSON_AGENT_CYCLE_TEMPLATE = r'''"""Run a portable, bounded external agent cycle.
+
+Set ORBIT_AGENT_COMMAND to a JSON argument array or a shell-like command
+prefix. The external tool receives one action at a time: ``status`` or
+``run-once``. It must write one JSON object to stdout and must never start a
+daemon or scheduler; OpenOrbit owns repetition, timing, and supervision.
+"""
+
+import json
+import os
+import shlex
+
+from orbit_sdk import runner
+
+
+def agent_command():
+    """Read an explicit command prefix without depending on target source files."""
+    configured = os.environ.get("ORBIT_AGENT_COMMAND", "").strip()
+    if not configured:
+        raise ValueError("Set ORBIT_AGENT_COMMAND to the external agent command")
+    if configured.startswith("["):
+        value = json.loads(configured)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError("ORBIT_AGENT_COMMAND JSON must be an array of strings")
+        return value
+    return shlex.split(configured)
+
+
+def cycle_input(ctx, action):
+    """Expose non-secret evaluation context through one documented JSON contract."""
+    return json.dumps(
+        {
+            "action": action,
+            "iteration": ctx.loop_index,
+            "evaluation_build": ctx.evaluation_build,
+            "test_cases": ctx.test_cases,
+        },
+        ensure_ascii=False,
+    )
+
+
+def invoke(ctx, action):
+    """Run one bounded action and require structured evidence from the agent."""
+    output = ctx.exec(
+        [*agent_command(), action],
+        cwd=ctx.project_root,
+        timeout=3600,
+        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
+    )
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"External agent action {action!r} did not return JSON") from error
+    if not isinstance(result, dict):
+        raise RuntimeError(f"External agent action {action!r} must return a JSON object")
+    return result
+
+
+@runner.phase("init")
+def init(ctx):
+    # Check availability once; later phases must not start an independent loop.
+    status = invoke(ctx, "status")
+    ctx.emit_result({"agent_cycle": {"status": status}})
+
+
+@runner.phase("setup")
+def setup(ctx):
+    # Record the fixed inputs so every external action is auditable.
+    ctx.emit_result(
+        {
+            "agent_cycle": {
+                "iteration": ctx.loop_index,
+                "test_case_ids": [str(case.get("id", "")) for case in ctx.test_cases],
+            }
+        }
+    )
+
+
+@runner.phase("run")
+def run(ctx):
+    # Exactly one unit of agent work; OpenOrbit schedules a future iteration.
+    result = invoke(ctx, "run-once")
+    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": result}})
+
+
+@runner.phase("eval")
+def evaluate(ctx):
+    # Re-read status rather than assuming the prior action completed correctly.
+    status = invoke(ctx, "status")
+    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "status": status}})
+
+
+@runner.phase("teardown")
+def teardown(ctx):
+    # The external process has already returned; no daemon cleanup is required.
+    ctx.log("Completed one bounded external agent cycle")
+
+
+@runner.phase("finalize")
+def finalize(ctx):
+    ctx.log("Finalized the external agent evaluation")
+
+
+if __name__ == "__main__":
+    runner.main()
+'''
+
+EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE = r'''"""Run a portable evidence-gated probe matrix through an external tool.
+
+Set ORBIT_PROBE_COMMAND to a JSON argument array or a shell-like command
+prefix. The tool must support ``preflight``, ``prepare``, ``run-probes``, and
+``collect-evidence`` actions. Every action receives ORBIT_CYCLE_INPUT and
+returns one JSON object. The tool may create disposable workspaces, but it
+must not schedule itself or commit changes to the target repository.
+"""
+
+import json
+import os
+import shlex
+
+from orbit_sdk import runner
+
+
+def probe_command():
+    """Read the explicit probe command prefix configured by the operator."""
+    configured = os.environ.get("ORBIT_PROBE_COMMAND", "").strip()
+    if not configured:
+        raise ValueError("Set ORBIT_PROBE_COMMAND to the evidence-gate command")
+    if configured.startswith("["):
+        value = json.loads(configured)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError("ORBIT_PROBE_COMMAND JSON must be an array of strings")
+        return value
+    return shlex.split(configured)
+
+
+def cycle_input(ctx, action):
+    """Pass selected probes and non-secret evaluation context to the tool."""
+    return json.dumps(
+        {
+            "action": action,
+            "iteration": ctx.loop_index,
+            "evaluation_build": ctx.evaluation_build,
+            "probes": ctx.test_cases,
+        },
+        ensure_ascii=False,
+    )
+
+
+def invoke(ctx, action):
+    """Run one gate action and reject unstructured evidence early."""
+    output = ctx.exec(
+        [*probe_command(), action],
+        cwd=ctx.project_root,
+        timeout=3600,
+        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
+    )
+    try:
+        result = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"Probe action {action!r} did not return JSON") from error
+    if not isinstance(result, dict):
+        raise RuntimeError(f"Probe action {action!r} must return a JSON object")
+    return result
+
+
+@runner.phase("init")
+def init(ctx):
+    # A fixed probe set keeps the gate repeatable and its evidence comparable.
+    if not ctx.test_cases:
+        raise ValueError("Select a fixed test case set before running an evidence gate")
+    preflight = invoke(ctx, "preflight")
+    ctx.emit_result({"probe_gate": {"preflight": preflight}})
+
+
+@runner.phase("setup")
+def setup(ctx):
+    # Prepare disposable inputs without mutating the target repository.
+    prepared = invoke(ctx, "prepare")
+    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "prepared": prepared}})
+
+
+@runner.phase("run")
+def run(ctx):
+    # Run the complete fixed matrix once and retain the tool's structured report.
+    report = invoke(ctx, "run-probes")
+    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "report": report}})
+
+
+@runner.phase("eval")
+def evaluate(ctx):
+    # Collect final evidence separately so a supervisor can make an independent decision.
+    evidence = invoke(ctx, "collect-evidence")
+    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "evidence": evidence}})
+
+
+@runner.phase("teardown")
+def teardown(ctx):
+    ctx.log("Completed one evidence-gated probe matrix")
+
+
+@runner.phase("finalize")
+def finalize(ctx):
+    ctx.log("Finalized the evidence-gated probe evaluation")
+
+
+if __name__ == "__main__":
+    runner.main()
+'''
 DATA = APP_DATA / "data"
 RUNS = DATA / "runs"
 TELEMETRY = DATA / "telemetry.jsonl"
@@ -374,8 +584,8 @@ class ConsoleStore:
         templates = [
             {
                 "id": "user-journey-cycle",
-                "name": "User journey cycle",
-                "description": "Runs fixed browser journeys directly through OpenOrbit, retaining page evidence and screenshots for every bounded iteration.",
+                "name": "Browser journey validation",
+                "description": "Validates fixed browser journeys directly and retains page evidence and screenshots for every bounded iteration.",
                 "source": """# Requirements
 # - The target application is running at the evaluation build's browser base URL.
 # - The evaluation build selects at least one fixed test case.
@@ -489,8 +699,8 @@ if __name__ == "__main__": runner.main()
             },
             {
                 "id": "external-command-adapter",
-                "name": "External command adapter",
-                "description": "Connects a tool that follows a bounded status, prepare, run-once, and evidence command contract. OpenOrbit retains scheduling and supervision.",
+                "name": "External automation integration",
+                "description": "Connects an existing automation tool while OpenOrbit retains scheduling, evidence collection, and supervision.",
                 "source": """import json\nimport os\nimport shlex\n\nfrom orbit_sdk import ORBIT_PROJECT_PATH, runner\n\n# Set ORBIT_ADAPTER_COMMAND to the command prefix for an external tool. It may\n# be a JSON array or a shell-like string. The tool must support the bounded\n# actions appended below and must never start its own scheduler.\ndef adapter_command():\n    # Parse once per invocation so the configuration remains explicit and does\n    # not depend on a target repository's source files.\n    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()\n    if not configured:\n        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")\n    if configured.startswith("["):\n        value = json.loads(configured)\n        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")\n        return value\n    return shlex.split(configured)\n\ndef invoke(ctx, action):\n    # OpenOrbit owns the lifecycle: the adapter receives one bounded action and\n    # must return instead of starting a daemon or an independent scheduler.\n    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)\n\n@runner.phase("init")\ndef init(ctx):\n    # Process-level readiness check, performed once before the repeat loop.\n    invoke(ctx, "status")\n\n@runner.phase("setup")\ndef setup(ctx):\n    # Per-iteration preparation, such as refreshing target-side test data.\n    invoke(ctx, "prepare")\n\n@runner.phase("run")\ndef run(ctx):\n    # Exactly one unit of adapter work; OpenOrbit schedules further iterations.\n    invoke(ctx, "run-once")\n\n@runner.phase("eval")\ndef evaluate(ctx):\n    # Return machine-readable or textual evidence for the supervisor to assess.\n    invoke(ctx, "collect-evidence")\n\n@runner.phase("teardown")\ndef teardown(ctx):\n    # Per-iteration cleanup after evidence collection.\n    ctx.log("Completed the bounded external command")\n\n@runner.phase("finalize")\ndef finalize(ctx):\n    # Process-level finalization, performed once after the loop exits.\n    ctx.log("Finalized the external command evaluation")\n\nif __name__ == "__main__": runner.main()\n""",
             },
             {
@@ -502,10 +712,26 @@ if __name__ == "__main__": runner.main()
         ]
         templates[-1] = {
             "id": "native-improvement-cycle",
-            "name": "Native improvement cycle",
-            "description": "Updates the configured prompt from accepted supervisor proposals, retains every prior prompt version, validates fixed browser journeys, and records accepted/rejected proposal decisions for review.",
+            "name": "Prompt improvement validation",
+            "description": "Applies accepted prompt improvements with rollback history, validates fixed browser journeys, and records review decisions.",
             "source": NATIVE_IMPROVEMENT_CYCLE_TEMPLATE,
         }
+        templates.extend(
+            (
+                {
+                    "id": "json-agent-cycle",
+                    "name": "User journey simulation",
+                    "description": "Runs one bounded agent simulation per iteration while OpenOrbit retains fixed inputs, evidence, and supervision.",
+                    "source": JSON_AGENT_CYCLE_TEMPLATE,
+                },
+                {
+                    "id": "evidence-gated-probe-cycle",
+                    "name": "Evidence-driven improvement gate",
+                    "description": "Validates a fixed probe matrix and returns structured preflight, result, and evidence records for improvement decisions.",
+                    "source": EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE,
+                },
+            )
+        )
         return templates
 
     def _custom_runner_templates(self) -> list[dict[str, str]]:
@@ -2020,6 +2246,8 @@ if __name__ == "__main__": runner.main()
                 or result.get("user_journey")
                 or result.get("improvement_cycle")
                 or result.get("jgent_paired")
+                or result.get("agent_cycle")
+                or result.get("probe_gate")
             )
             if not isinstance(cycle, dict):
                 return False
@@ -2031,6 +2259,7 @@ if __name__ == "__main__": runner.main()
                 or cycle.get("candidate_fingerprint")
                 or cycle.get("prompt_update")
                 or cycle.get("report")
+                or cycle.get("result")
             )
         return False
 
@@ -2127,6 +2356,8 @@ if __name__ == "__main__": runner.main()
                 "user_journey",
                 "improvement_cycle",
                 "jgent_paired",
+                "agent_cycle",
+                "probe_gate",
             ):
                 if key in result:
                     return {key: result[key]}

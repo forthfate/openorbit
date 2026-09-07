@@ -152,9 +152,13 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     user_journey = templates["user-journey-cycle"]["source"]
     adapter = templates["external-command-adapter"]["source"]
     improvement = templates["native-improvement-cycle"]["source"]
+    json_agent = templates["json-agent-cycle"]["source"]
+    probe_gate = templates["evidence-gated-probe-cycle"]["source"]
     compile(user_journey, "user-journey-cycle.py", "exec")
     compile(adapter, "external-command-adapter.py", "exec")
     compile(improvement, "native-improvement-cycle.py", "exec")
+    compile(json_agent, "json-agent-cycle.py", "exec")
+    compile(probe_gate, "evidence-gated-probe-cycle.py", "exec")
     assert "playwright_journey" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
     assert "previous_supervisor_feedback" in user_journey
@@ -166,6 +170,12 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "update_prompt_from_accepted_proposals" in improvement
     assert "ctx.accept_proposal" in improvement
     assert "ctx.update_file" in improvement
+    assert "ORBIT_AGENT_COMMAND" in json_agent
+    assert "ORBIT_PROBE_COMMAND" in probe_gate
+    assert "Insighta" not in json_agent
+    assert "Jgent" not in json_agent
+    assert "Insighta" not in probe_gate
+    assert "Jgent" not in probe_gate
 
 
 def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):
