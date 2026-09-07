@@ -5,6 +5,12 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-09-07
+
+### Changed
+
+- Evaluation Builds and evaluation execution history now share the same pagination component, layout, and range display.
+
 ## [0.4.0] - 2026-09-07
 
 ### Added
@@ -98,3 +104,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.2.0]: https://github.com/forthfate/openorbit/releases/tag/v0.2.0
 [0.3.0]: https://github.com/forthfate/openorbit/releases/tag/v0.3.0
 [0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0
+[0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1

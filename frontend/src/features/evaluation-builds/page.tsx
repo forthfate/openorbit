@@ -17,6 +17,7 @@ import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { Pagination } from "../../components/ui/pagination";
 import { SectionInfo } from "../../components/ui/section-info";
 import type {
   Build,
@@ -782,27 +783,7 @@ export function EvaluationBuildsPage(props: {
           className="evaluation-build-table"
           gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
         />
-        <div className="run-pagination">
-          <span>
-            {page} / {pages}
-          </span>
-          <div>
-            <button
-              className="ghost"
-              disabled={page === 1}
-              onClick={() => setPage(page - 1)}
-            >
-              {ui.previous}
-            </button>
-            <button
-              className="ghost"
-              disabled={page === pages}
-              onClick={() => setPage(page + 1)}
-            >
-              {ui.next}
-            </button>
-          </div>
-        </div>
+        <Pagination locale={locale} page={page} totalPages={pages} totalItems={builds.length} pageSize={size} onPageChange={setPage}/>
       </section>
       {testRun && <EvaluationsPage runs={[testRun]} locale={locale} initialSelectedRun={testRun} onSelectedRunClose={closeTest} onStop={() => undefined} onApprove={() => undefined} onReject={() => undefined} onEmergencyStop={() => undefined} onDeleteRuns={() => Promise.resolve()} />}
       <Modal
