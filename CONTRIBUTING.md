@@ -44,7 +44,9 @@ identifies a verified `main` commit.
 4. Merge the pull request, then wait for the CI run triggered on `main` to
    pass as well.
 5. Create an annotated `vX.Y.Z` tag at that verified `main` commit, push it,
-   and create the GitHub Release from the matching changelog entry.
+   and create the GitHub Release from the matching changelog entry. The release
+   workflow builds the frontend-inclusive wheel, attaches it to that release,
+   and publishes it to PyPI through Trusted Publishing.
 6. Delete superseded tags only after the new tag and GitHub Release are
    available. Never move or overwrite an existing release tag.
 

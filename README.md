@@ -114,16 +114,20 @@ or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
 
 ### Run the packaged app
 
-Install a tagged release directly from GitHub:
+Install the packaged release:
 
 ```bash
-python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.git@v0.3.0"
+python -m pip install openorbit
 orbit run
 ```
 
-The Git install builds the bundled control-room UI, so it requires Node.js 24+
-and pnpm. To try the latest development version instead, replace `v0.3.0` with
-`main`.
+The wheel already includes the bundled control-room UI, so Node.js and pnpm are
+not required at runtime. To try an unpublished Git revision instead, install
+from its tag or branch; this source installation requires Node.js 24+ and pnpm:
+
+```bash
+python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.git@v0.3.0"
+```
 
 Or run it once with npm:
 

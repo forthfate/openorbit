@@ -1,0 +1,86 @@
+name: Publish release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: true
+        type: string
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.3.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter agent-improvement-console-ui run build
+      - name: Verify the tag matches the package version
+        run: python -c "import os, tomllib; version = tomllib.load(open('pyproject.toml', 'rb'))['project']['version']; expected = 'v' + version; actual = os.environ['RELEASE_TAG']; assert actual == expected, f'{actual} does not match {expected}'"
+      - run: OPENORBIT_SKIP_FRONTEND_BUILD=1 uv build --wheel
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+
+  verify-wheel:
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv --python 3.13 "$RUNNER_TEMP/openorbit-wheel"
+      - run: uv pip install --python "$RUNNER_TEMP/openorbit-wheel/bin/python" dist/*.whl
+      - run: >-
+          "$RUNNER_TEMP/openorbit-wheel/bin/python" -c "from app.main import app; from orbit.cli import main; print('wheel import OK')"
+
+  attach-wheel:
+    needs: build-wheel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist
+      - run: gh release upload "$RELEASE_TAG" dist/*.whl --clobber
+
+  publish-pypi:
+    needs: verify-wheel
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/openorbit
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-wheel
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
