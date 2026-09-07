@@ -42,6 +42,10 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter agent-improvement-console-ui run build
+      - name: Verify bundled release version
+        run: |
+          expected="v$(node -p 'require("./frontend/package.json").version')"
+          grep --recursive --fixed-strings --quiet "$expected" frontend/dist/assets
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
