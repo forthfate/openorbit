@@ -56,6 +56,28 @@ pnpm --filter agent-improvement-console-ui run dev
 
 Open `http://localhost:5173`.
 
+## Cycle Improvement AI
+
+Use Cycle Improvement AI to assess whether an evaluation build's PDCA loop is
+learning effectively across runs and iterations, rather than reviewing a
+single result in isolation.
+
+1. In **Settings**, create or select a **System AI model**. This reusable
+   profile is shared by the Orbit chat assistant and cycle diagnosis.
+2. Run an evaluation build at least once with a configured supervisor model so
+   that scores, proposals, and reported issues are retained.
+3. Open **Improvement results → Cycle Improvement AI**, then select the
+   evaluation build from the dropdown.
+4. Review the cycle health, latest score, iteration count, and the proposal
+   decision tree (`run → iteration → proposal → decision`).
+5. Select **Ask AI to diagnose this cycle**. The System AI model returns a
+   Markdown diagnosis in the interface's current language, covering PDCA
+   health, evidence, bottlenecks, and the recommended next operating change.
+
+Cycle diagnosis only recommends changes to the operating cycle—runners,
+workflows, tests, supervisor prompts, or cadence. It does not automatically
+modify the evaluated target project.
+
 ## API
 
 OpenOrbit provides a GitLab-inspired, versioned local API. Evaluation builds
