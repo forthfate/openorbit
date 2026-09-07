@@ -320,6 +320,17 @@ def test_evaluation_build(build_id: str):
     return safely(lambda: store.test_evaluation_build(build_id))
 
 
+@app.get("/api/evaluation-build-tests/{session_id}")
+def evaluation_build_test(session_id: str):
+    """Return a process-local test session; it is never part of run history."""
+    return safely(lambda: store.test_session(session_id))
+
+
+@app.delete("/api/evaluation-build-tests/{session_id}", status_code=204)
+def discard_evaluation_build_test(session_id: str):
+    safely(lambda: store.discard_test_session(session_id))
+
+
 class EvaluationBuildCreate(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)

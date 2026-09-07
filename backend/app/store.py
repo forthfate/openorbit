@@ -467,9 +467,6 @@ RUNNERS = APP_DATA / "runners"
 RUNNER_TEMPLATES = APP_DATA / "runner-templates"
 QUICK_STARTS = APP_DATA / "quick-starts"
 QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
-# Workflow files are trusted, versioned operator configuration. The API itself
-# never accepts an executable or directory from a browser request.
-ALLOWED_WORKSPACE_ROOTS = (ROOT.parent.resolve(), Path("/mnt/c/users/forth/projects").resolve())
 
 
 def now() -> datetime:
@@ -487,6 +484,10 @@ class ConsoleStore:
         QUICK_STARTS.mkdir(parents=True, exist_ok=True)
         self._migrate_evaluation_environments()
         self._processes: dict[str, subprocess.Popen[str]] = {}
+        # Test runs are deliberately process-local: they support the build-page
+        # test dialog without becoming an evaluation-run record or surviving a
+        # server restart.
+        self._test_sessions: dict[str, Run] = {}
         self._lock = threading.Lock()
         self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
@@ -1835,12 +1836,11 @@ if __name__ == "__main__":
 
     def workspaces(self, path: str | None = None) -> dict[str, Any]:
         if path is None:
-            roots = [root for root in ALLOWED_WORKSPACE_ROOTS if root.is_dir()]
-            return {"path": "", "directories": [{"name": root.name, "path": str(root)} for root in roots]}
+            root = Path(Path.cwd().anchor)
+            return {"path": "", "directories": [{"name": str(root), "path": str(root)}]}
         directory = Path(path).expanduser().resolve()
-        approved = any(directory == root or root in directory.parents for root in ALLOWED_WORKSPACE_ROOTS)
-        if not directory.is_dir() or not approved:
-            raise ValueError("workspace path must be an approved directory")
+        if not directory.is_dir():
+            raise ValueError("workspace path must be an existing directory")
         children = sorted(
             (entry for entry in directory.iterdir() if entry.is_dir()),
             key=lambda entry: entry.name.lower(),
@@ -1859,16 +1859,15 @@ if __name__ == "__main__":
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
         repository = Path(repository_value).expanduser().resolve()
-        approved = any(repository == root or root in repository.parents for root in ALLOWED_WORKSPACE_ROOTS)
-        if executor["type"] != "remote-http" and (not repository.is_dir() or not approved):
-            raise ValueError("repository must be an existing approved workspace")
+        if executor["type"] != "remote-http" and not repository.is_dir():
+            raise ValueError("repository must be an existing directory")
         if (
             executor["type"] == "remote-http"
             and not repository_value.startswith("remote://")
-            and (not repository.is_dir() or not approved)
+            and not repository.is_dir()
         ):
             raise ValueError(
-                "remote HTTP builds require an approved repository or a remote:// repository label"
+                "remote HTTP builds require an existing repository or a remote:// repository label"
             )
         if "manager_template_id" in values and not any(
             item.get("id") == values.get("manager_template_id") for item in self.prompt_templates()
@@ -1926,16 +1925,15 @@ if __name__ == "__main__":
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
         repository = Path(repository_value).expanduser().resolve()
-        approved = any(repository == root or root in repository.parents for root in ALLOWED_WORKSPACE_ROOTS)
-        if executor["type"] != "remote-http" and (not repository.is_dir() or not approved):
-            raise ValueError("repository must be an existing approved workspace")
+        if executor["type"] != "remote-http" and not repository.is_dir():
+            raise ValueError("repository must be an existing directory")
         if (
             executor["type"] == "remote-http"
             and not repository_value.startswith("remote://")
-            and (not repository.is_dir() or not approved)
+            and not repository.is_dir()
         ):
             raise ValueError(
-                "remote HTTP builds require an approved repository or a remote:// repository label"
+                "remote HTTP builds require an existing repository or a remote:// repository label"
             )
         if "manager_template_id" in values and not any(
             item.get("id") == values.get("manager_template_id") for item in self.prompt_templates()
@@ -2430,11 +2428,21 @@ if __name__ == "__main__":
         return RUNS / f"{run_id}.json"
 
     def _save(self, run: Run) -> None:
+        with self._lock:
+            if run.id in self._test_sessions:
+                self._test_sessions[run.id] = run
+                return
         temporary = self._path(run.id).with_suffix(".tmp")
         temporary.write_text(run.model_dump_json(indent=2), encoding="utf-8")
         temporary.replace(self._path(run.id))
 
     def _load(self, run_id: str) -> Run:
+        with self._lock:
+            session = self._test_sessions.get(run_id)
+            if session is not None:
+                # Do not expose the mutable in-memory instance to a caller that
+                # may run concurrently with the worker thread.
+                return Run.model_validate(session.model_dump(mode="python"))
         path = self._path(run_id)
         if not path.exists():
             raise KeyError(run_id)
@@ -2453,6 +2461,22 @@ if __name__ == "__main__":
             raise ValueError("Active runs must be stopped before they can be deleted")
         self._path(run.id).unlink()
 
+    def test_session(self, session_id: str) -> Run:
+        with self._lock:
+            session = self._test_sessions.get(session_id)
+            if session is None:
+                raise KeyError(session_id)
+            return Run.model_validate(session.model_dump(mode="python"))
+
+    def discard_test_session(self, session_id: str) -> None:
+        with self._lock:
+            session = self._test_sessions.get(session_id)
+            if session is None:
+                raise KeyError(session_id)
+            if session.status in {"queued", "running", "awaiting_approval"}:
+                raise ValueError("An active test session cannot be discarded")
+            del self._test_sessions[session_id]
+
     def create_run(
         self,
         runner_id: str,
@@ -2466,6 +2490,7 @@ if __name__ == "__main__":
         repeat_interval_minutes: int = 0,
         approval_score: int | None = None,
         repository: str | None = None,
+        transient: bool = False,
     ) -> Run:
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
@@ -2491,6 +2516,9 @@ if __name__ == "__main__":
             updated_at=now(),
             approval_reason="변경 적용 또는 고위험 단계가 포함되어 있습니다." if needs_approval else None,
         )
+        if transient:
+            with self._lock:
+                self._test_sessions[run.id] = run
         self._save(run)
         if not needs_approval:
             self._start(run.id)
@@ -3044,12 +3072,14 @@ if __name__ == "__main__":
                 return
             run.current_step, run.current_phase, run.updated_at = step.id, step.phase, now()
             self._save(run)
-            directory = (ROOT / step.working_directory).resolve()
-            is_approved = any(
-                directory == root or root in directory.parents for root in ALLOWED_WORKSPACE_ROOTS
+            configured_directory = Path(step.working_directory).expanduser()
+            directory = (
+                configured_directory.resolve()
+                if configured_directory.is_absolute()
+                else (ROOT / configured_directory).resolve()
             )
-            if not directory.is_dir() or not is_approved:
-                self._fail(run, step.id, "working_directory is outside an approved workspace or missing")
+            if not directory.is_dir():
+                self._fail(run, step.id, "working_directory is missing")
                 return
             started = now()
             try:
@@ -3191,6 +3221,7 @@ if __name__ == "__main__":
                 else int(build.get("repeat_interval_minutes", 0)),
                 approval_score=int(build.get("approval_score", 0)),
                 repository=build.get("repository"),
+                transient=execution_mode == "test",
             )
         run = Run(
             id=uuid.uuid4().hex[:12],
@@ -3208,6 +3239,9 @@ if __name__ == "__main__":
             prompt_source=prompt_source,
             prompt_snapshot=prompt_snapshot,
         )
+        if execution_mode == "test":
+            with self._lock:
+                self._test_sessions[run.id] = run
         self._save(run)
         threading.Thread(target=self._execute_remote, args=(run.id, executor), daemon=True).start()
         return run
