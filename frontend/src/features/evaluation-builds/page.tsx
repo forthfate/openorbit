@@ -609,6 +609,19 @@ export function EvaluationBuildsPage(props: {
   };
   const cols: Column<Build>[] = [
       {
+        id: "select",
+        header: <span className="visually-hidden">Select</span>,
+        render: (b) => (
+          <input
+            aria-label={`Select ${b.name}`}
+            checked={selected === b.id}
+            name="evaluation-build-selection"
+            onChange={() => setSelected(b.id)}
+            type="radio"
+          />
+        ),
+      },
+      {
         id: "name",
         header: locales[locale].evaluation.name,
         render: (b) => b.name,
@@ -703,7 +716,7 @@ export function EvaluationBuildsPage(props: {
             setOpen(true);
           }}
           className="evaluation-build-table"
-          gridTemplateColumns="1fr 1fr 180px 110px"
+          gridTemplateColumns="36px 1fr 1fr 180px 110px"
         />
         <div className="run-pagination">
           <span>
