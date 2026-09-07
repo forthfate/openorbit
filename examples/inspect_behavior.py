@@ -1,4 +1,7 @@
-"""Inspect a public behavior definition without calling a model or process."""
+"""Inspect a bundled behavior definition without calling a model or process.
+
+Run from a repository checkout with ``uv run python examples/inspect_behavior.py``.
+"""
 
 from orbit import load_bundle, render_prompt
 
