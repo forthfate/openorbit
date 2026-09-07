@@ -3516,7 +3516,7 @@ if __name__ == "__main__":
                 "output": str(item.get("output", ""))[-4_000:],
             }
             for item in run.step_results
-            if item.get("phase") in {"run", "eval"} and item.get("loop_index") == iteration
+            if item.get("phase") in {"setup", "run", "eval"} and item.get("loop_index") == iteration
         ]
         # A native improvement runner can update its rollback-protected prompt
         # during setup. Reassemble before every supervision pass so the next
