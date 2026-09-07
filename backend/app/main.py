@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -710,11 +711,6 @@ def improvements():
     return store.improvements()
 
 
-@app.get("/api/proposal-decisions")
-def proposal_decisions():
-    return store.proposal_decisions()
-
-
 @app.get("/api/cycle-interventions")
 def cycle_interventions():
     return store.cycle_interventions()
@@ -783,6 +779,59 @@ class ChatTurn(BaseModel):
 class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+
+
+class CycleAnalysisRequest(BaseModel):
+    evaluation_build_id: str = Field(min_length=1, max_length=200)
+    locale: Literal["en", "ko", "ja"] = "en"
+
+
+@app.post("/api/cycle-improvements/analyze")
+def analyze_cycle(values: CycleAnalysisRequest):
+    """Use the configured system AI to diagnose a build's PDCA loop."""
+    profile_name = store.application_settings()["chat_model_profile_name"]
+    if not profile_name:
+        raise HTTPException(409, "Select a System AI model in Settings first.")
+    configured = profile(store.profiles(), profile_name)
+    analytics = store.improvement_analytics(720)
+    trend = next(
+        (item for item in analytics["iteration_trends"] if item["build_id"] == values.evaluation_build_id),
+        None,
+    )
+    if trend is None:
+        raise HTTPException(404, "Evaluation build has no cycle data.")
+    context = {
+        "trend": trend,
+        "feedback_status": next(
+            (item for item in analytics["feedback_status"] if item["build_id"] == values.evaluation_build_id),
+            {},
+        ),
+        "run_health": next(
+            (item for item in analytics["run_health"] if item["build_id"] == values.evaluation_build_id),
+            {},
+        ),
+        "proposals": store.proposal_lifecycles(values.evaluation_build_id),
+        "cycle_interventions": [
+            item
+            for item in store.cycle_interventions()
+            if item.get("evaluation_build_id") == values.evaluation_build_id
+        ],
+    }
+    language = {"en": "English", "ko": "Korean", "ja": "Japanese"}[values.locale]
+    prompt = (
+        "You are OpenOrbit's Cycle Improvement AI. Diagnose the health of the entire PDCA loop, "
+        "not a single iteration. Identify evidence of plan, do, check, and act; score trends, "
+        "repeated proposals, and whether accepted work was verified. Recommend only operating-cycle "
+        "changes (runner, workflow, tests, supervisor prompt, or cadence). Respond only in "
+        f"concise {language} Markdown, with headings for Health, Evidence, Bottleneck, and Recommended next action.\n\n"
+        + json.dumps(context, ensure_ascii=False, default=str)
+    )
+    settings = ModelSettings(**{key: value for key, value in configured.items() if key != "profile_name"})
+    try:
+        provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+        return {"response": provider.complete(settings, prompt), "profile_name": profile_name}
+    except RuntimeError as error:
+        raise HTTPException(409, str(error))
 
 
 @app.post("/api/chat")
@@ -937,20 +986,10 @@ def list_improvements_v1():
 
 
 @app.get(
-    "/api/v1/improvements/proposal-decisions",
-    tags=["Improvements"],
-    operation_id="listProposalDecisions",
-    summary="List SDK-recorded accepted and rejected proposals",
-)
-def list_proposal_decisions_v1():
-    return store.proposal_decisions()
-
-
-@app.get(
     "/api/v1/improvements/proposals",
     tags=["Improvements"],
     operation_id="listProposalLifecycles",
-    summary="List proposal lifecycles with decisions and prompt versions",
+    summary="List proposals and decisions from evaluation-run results",
 )
 def list_proposal_lifecycles_v1(
     evaluation_build_id: str | None = None,

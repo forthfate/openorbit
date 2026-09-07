@@ -117,50 +117,6 @@ def candidate(ctx):
     return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed
 
 
-def proposal_id(proposal):
-    '''Prefer a supplied proposal ID; otherwise derive a stable content ID.'''
-    explicit = str(proposal.get("id") or "").strip()
-    if explicit:
-        return explicit
-    source = json.dumps(proposal, ensure_ascii=False, sort_keys=True)
-    return f"supervisor-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]}"
-
-
-def record_feedback_decisions(ctx):
-    '''Record only explicit supervisor decisions; undecided feedback remains pending.'''
-    feedback = ctx.previous_supervisor_feedback
-    decisions = []
-    for proposal in feedback.get("improvements", []):
-        if not isinstance(proposal, dict):
-            continue
-        status = str(proposal.get("status") or "").lower()
-        rationale = str(proposal.get("rationale") or proposal.get("acceptanceEvidence") or "")
-        if status in {"adopted", "accepted"}:
-            outcome = ctx.accept_proposal(proposal, proposal_id=proposal_id(proposal), rationale=rationale)
-        elif status == "rejected":
-            outcome = ctx.reject_proposal(proposal, proposal_id=proposal_id(proposal), rationale=rationale)
-        else:
-            continue
-        decisions.append({"proposal_id": proposal_id(proposal), "status": status, **outcome})
-    return decisions
-
-
-def accepted_proposals(ctx):
-    # Keep accepted proposals from prior iterations until a later decision
-    # explicitly rejects the same proposal ID.
-    latest = {}
-    for decision in reversed(ctx.proposal_decisions()):
-        proposal = decision.get("proposal")
-        proposal_key = decision.get("proposal_id")
-        if isinstance(proposal, dict) and proposal_key:
-            latest[str(proposal_key)] = decision
-    return {
-        proposal_id: item["proposal"]
-        for proposal_id, item in latest.items()
-        if item.get("decision") == "accepted"
-    }
-
-
 def update_prompt_from_accepted_proposals(ctx, proposals):
     '''Replace only OpenOrbit's managed prompt block and retain a rollback version.'''
     prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
@@ -200,11 +156,13 @@ def init(ctx):
 
 @runner.phase("setup")
 def setup(ctx):
-    # Apply already accepted feedback before validating the next candidate.
-    decisions = record_feedback_decisions(ctx)
-    active_proposals = accepted_proposals(ctx)
-    prompt_update = update_prompt_from_accepted_proposals(ctx, list(active_proposals.values()))
-    prompt_applications = ctx.record_proposal_application(list(active_proposals), prompt_update)
+    # Apply the latest accepted supervisor feedback before the next validation.
+    feedback = ctx.previous_supervisor_feedback
+    accepted = [
+        proposal for proposal in feedback.get("improvements", [])
+        if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
+    ]
+    prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -213,12 +171,10 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
-                "prompt_applications": prompt_applications,
-                "proposal_decisions": decisions,
             }
         }
     )
-    ctx.log("Recorded proposal decisions and refreshed the rollback-protected prompt")
+    ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
 
 
 @runner.phase("run")
@@ -1498,77 +1454,85 @@ if __name__ == "__main__": runner.main()
             else []
         )
 
-    def proposal_decisions(self) -> list[dict[str, Any]]:
-        """Read SDK-recorded proposal choices for a future visual review surface.
-
-        Runner SDKs write one ledger per target repository in AppData.  Invalid
-        or interrupted ledger files are ignored here so an individual runner's
-        local history cannot prevent the control room from loading.
-        """
-        values: list[dict[str, Any]] = []
-        directory = APP_DATA / "proposal-history"
-        for path in directory.glob("*/decisions.json") if directory.exists() else []:
-            try:
-                document = json.loads(path.read_text(encoding="utf-8"))
-                decisions = document.get("decisions", []) if isinstance(document, dict) else []
-                values.extend(item for item in decisions if isinstance(item, dict))
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-        return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
-
     def proposal_lifecycles(
         self, evaluation_build_id: str | None = None, status: str | None = None
     ) -> list[dict[str, Any]]:
-        """Group append-only SDK events into reviewable proposal lifecycles."""
-        grouped: dict[str, dict[str, Any]] = {}
-        for event in sorted(self.proposal_decisions(), key=lambda item: str(item.get("recorded_at", ""))):
-            build_id = event.get("evaluation_build_id")
-            if evaluation_build_id and build_id != evaluation_build_id:
+        """Present supervisor proposals directly from evaluation-run results.
+
+        Proposal history is an analysis view of what supervisors proposed and
+        decided in each run. It deliberately does not depend on a separate
+        runner-owned decision ledger, which could omit ordinary evaluations.
+        """
+        values: list[dict[str, Any]] = []
+        for run in self.runs():
+            if evaluation_build_id and run.evaluation_build_id != evaluation_build_id:
                 continue
-            proposal_id = str(event.get("proposal_id") or "")
-            if not proposal_id:
-                continue
-            lifecycle = grouped.setdefault(
-                proposal_id,
-                {
-                    "proposal_id": proposal_id,
-                    "title": "Untitled proposal",
-                    "target": "prompt",
-                    "proposal": {},
-                    "decision": "pending",
-                    "decision_rationale": "",
-                    "status": "proposed",
-                    "evaluation_build_id": build_id,
-                    "evaluation_build_name": event.get("evaluation_build_name"),
-                    "run_id": event.get("run_id"),
-                    "iteration": event.get("iteration"),
-                    "recorded_at": event.get("recorded_at"),
-                    "prompt_version": None,
-                    "events": [],
-                },
-            )
-            lifecycle["events"].append(event)
-            lifecycle["recorded_at"] = event.get("recorded_at") or lifecycle["recorded_at"]
-            lifecycle["run_id"] = event.get("run_id") or lifecycle["run_id"]
-            lifecycle["iteration"] = event.get("iteration") or lifecycle["iteration"]
-            if event.get("evaluation_build_id"):
-                lifecycle["evaluation_build_id"] = event["evaluation_build_id"]
-                lifecycle["evaluation_build_name"] = event.get("evaluation_build_name")
-            if event.get("event_type", "decision") == "decision":
-                proposal = event.get("proposal") if isinstance(event.get("proposal"), dict) else {}
-                lifecycle["proposal"] = proposal
-                lifecycle["title"] = str(proposal.get("title") or lifecycle["title"])
-                lifecycle["target"] = str(proposal.get("target") or lifecycle["target"])
-                lifecycle["decision"] = str(event.get("decision") or "pending")
-                lifecycle["decision_rationale"] = str(event.get("rationale") or "")
-                lifecycle["status"] = lifecycle["decision"]
-            elif event.get("event_type") == "prompt_updated":
-                prompt_version = event.get("prompt_version")
-                if isinstance(prompt_version, dict):
-                    lifecycle["prompt_version"] = prompt_version
-                    if lifecycle["decision"] == "accepted":
-                        lifecycle["status"] = "applied"
-        values = list(grouped.values())
+            records = run.supervisor_results or []
+            if not records and run.supervisor_response:
+                records = [
+                    {
+                        "iteration": 1,
+                        "recorded_at": run.updated_at.isoformat(),
+                        "response": run.supervisor_response,
+                    }
+                ]
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                response = record.get("response")
+                if not isinstance(response, dict):
+                    continue
+                improvements = response.get("improvements", [])
+                evaluation = response.get("evaluation")
+                score = evaluation.get("score") if isinstance(evaluation, dict) else None
+                if isinstance(score, bool) or not isinstance(score, (int, float)):
+                    score = None
+                if not isinstance(improvements, list):
+                    continue
+                for index, proposal in enumerate(improvements):
+                    if not isinstance(proposal, dict):
+                        continue
+                    source_status = str(proposal.get("status") or "proposed").lower()
+                    decision = (
+                        "accepted"
+                        if source_status in {"adopted", "accepted"}
+                        else "rejected"
+                        if source_status == "rejected"
+                        else "pending"
+                    )
+                    values.append(
+                        {
+                            "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                            "title": str(proposal.get("title") or "Untitled proposal"),
+                            "target": str(proposal.get("target") or "prompt"),
+                            "proposal": proposal,
+                            "decision": decision,
+                            "score": score,
+                            "decision_rationale": str(
+                                proposal.get("rationale") or proposal.get("acceptanceEvidence") or ""
+                            ),
+                            "status": "proposed" if decision == "pending" else decision,
+                            "evaluation_build_id": run.evaluation_build_id,
+                            "evaluation_build_name": run.evaluation_build_name,
+                            "run_id": run.id,
+                            "iteration": record.get("iteration"),
+                            "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                            "prompt_version": None,
+                            "events": [
+                                {
+                                    "id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "event_type": "decision",
+                                    "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "decision": decision,
+                                    "rationale": str(proposal.get("rationale") or ""),
+                                    "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                                    "iteration": record.get("iteration"),
+                                    "phase": "supervisor",
+                                    "run_id": run.id,
+                                }
+                            ],
+                        }
+                    )
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)

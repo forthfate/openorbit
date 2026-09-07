@@ -84,6 +84,10 @@ const copy = {
     noSupervisorPrompt: "No supervisor prompt was recorded for this run.",
     noLogs: "No process output is available yet.",
     noResults: "No data recorded for this iteration.",
+    noCommandsForPhase: "No commands were executed for this phase.",
+    openTelemetryTrace: "OpenTelemetry trace",
+    loadingOpenTelemetryTrace: "Loading OpenTelemetry trace…",
+    noOpenTelemetrySpans: "No exported OpenTelemetry spans are available yet.",
     complete: "Completed",
     cancelled: "Cancelled",
     failed: "Failed",
@@ -144,6 +148,10 @@ const copy = {
     noSupervisorPrompt: "이 실행에는 감독관 프롬프트가 기록되지 않았습니다.",
     noLogs: "아직 확인할 프로세스 출력이 없습니다.",
     noResults: "이 반복에 기록된 데이터가 없습니다.",
+    noCommandsForPhase: "이 단계에서 실행된 명령이 없습니다.",
+    openTelemetryTrace: "OpenTelemetry 추적",
+    loadingOpenTelemetryTrace: "OpenTelemetry 추적을 불러오는 중…",
+    noOpenTelemetrySpans: "아직 내보낸 OpenTelemetry 스팬이 없습니다.",
     complete: "완료",
     cancelled: "취소됨",
     failed: "실패",
@@ -204,6 +212,10 @@ const copy = {
     noSupervisorPrompt: "この実行には監督AIプロンプトが記録されていません。",
     noLogs: "プロセス出力はまだありません。",
     noResults: "この反復には記録済みのデータがありません。",
+    noCommandsForPhase: "このフェーズで実行されたコマンドはありません。",
+    openTelemetryTrace: "OpenTelemetry トレース",
+    loadingOpenTelemetryTrace: "OpenTelemetry トレースを読み込み中…",
+    noOpenTelemetrySpans: "エクスポートされた OpenTelemetry スパンはまだありません。",
     complete: "完了",
     cancelled: "キャンセル済み",
     failed: "失敗",
@@ -282,6 +294,18 @@ function BrowserEvidence({ result }: { result: Record<string, unknown> }) {
     </div>
   );
 }
+function LineNumberedOutput({ value }: { value: string }) {
+  return (
+    <div className="line-numbered-output">
+      {value.split("\n").map((line, index) => (
+        <div key={index}>
+          <span aria-hidden="true">{index + 1}</span>
+          <code>{line || " "}</code>
+        </div>
+      ))}
+    </div>
+  );
+}
 function WorkflowLogOutput({
   steps,
   locale,
@@ -289,6 +313,7 @@ function WorkflowLogOutput({
   steps: RunStepResult[];
   locale: Locale;
 }) {
+  const l = copy[locale];
   return (
     <div className="console-output workflow-log-output">
       {steps.length ? (
@@ -311,28 +336,35 @@ function WorkflowLogOutput({
               </small>
             )}
             {step.result && <BrowserEvidence result={step.result} />}
-            <pre>{step.output ?? step.error ?? "—"}</pre>
+            <LineNumberedOutput value={step.output ?? step.error ?? "—"} />
           </section>
         ))
       ) : (
-        <p className="hint">No commands were executed for this phase.</p>
+        <p className="hint">{l.noCommandsForPhase}</p>
       )}
     </div>
   );
 }
 function IterationLogOutput({
   steps,
+  locale,
 }: {
   steps: RunStepResult[];
+  locale: Locale;
 }) {
-  const output = steps
-    .map((step) => step.output ?? step.error ?? "")
-    .filter(Boolean)
-    .join("\n");
+  const logSteps = steps.filter((step) => step.output || step.error);
   return (
     <div className="console-output iteration-log-output">
-      {output ? (
-        <pre>{output}</pre>
+      {logSteps.length ? (
+        logSteps.map((step, index) => (
+          <section key={`${step.step_id}-${index}`}>
+            <div>
+              <strong>{step.name ?? step.step_id}</strong>
+              <small>{time(locale, step.ended_at ?? step.started_at)}</small>
+            </div>
+            <LineNumberedOutput value={step.output ?? step.error ?? "—"} />
+          </section>
+        ))
       ) : (
         <p className="hint">No logs were emitted for this iteration.</p>
       )}
@@ -427,7 +459,13 @@ function ResultList({
     </div>
   );
 }
-function TelemetryTree({ telemetry }: { telemetry: RunTelemetry | undefined }) {
+function TelemetryTree({
+  telemetry,
+  l,
+}: {
+  telemetry: RunTelemetry | undefined;
+  l: (typeof copy)["en"];
+}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set()),
     tree = useMemo(() => {
       const spans = telemetry?.spans ?? [],
@@ -447,11 +485,10 @@ function TelemetryTree({ telemetry }: { telemetry: RunTelemetry | undefined }) {
         children,
       };
     }, [telemetry]);
-  if (!telemetry) return <p className="hint">Loading OpenTelemetry trace…</p>;
+  if (!telemetry)
+    return <p className="hint">{l.loadingOpenTelemetryTrace}</p>;
   if (!tree.roots.length)
-    return (
-      <p className="hint">No exported OpenTelemetry spans are available yet.</p>
-    );
+    return <p className="hint">{l.noOpenTelemetrySpans}</p>;
   const render = (span: TelemetrySpan): React.ReactNode => {
     const children = tree.children.get(span.spanId) ?? [],
       expandable = children.length > 0,
@@ -526,19 +563,19 @@ function SupervisorOutput({
             label={record?.status ?? "pending"}
           />
         </div>
-        <pre>{record?.prompt || l.noSupervisorPrompt}</pre>
+        <LineNumberedOutput value={record?.prompt || l.noSupervisorPrompt} />
       </section>
       <section>
         <strong>{l.supervisorResponse}</strong>
         {response ? (
-          <pre>{JSON.stringify(response, null, 2)}</pre>
+          <LineNumberedOutput value={JSON.stringify(response, null, 2)} />
         ) : (
           <p>{record?.error || l.supervisorWaiting}</p>
         )}
       </section>
       <section>
-        <strong>OpenTelemetry trace</strong>
-        <TelemetryTree telemetry={iterationTelemetry} />
+        <strong>{l.openTelemetryTrace}</strong>
+        <TelemetryTree telemetry={iterationTelemetry} l={l} />
       </section>
     </div>
   );
@@ -1303,7 +1340,7 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "logs" && (
-            <IterationLogOutput steps={selectedSteps} />
+            <IterationLogOutput locale={locale} steps={selectedSteps} />
           )}{" "}
           {tab === "supervisor" && (
             <SupervisorOutput
