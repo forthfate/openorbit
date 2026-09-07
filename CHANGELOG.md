@@ -5,6 +5,25 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-07
+
+### Added
+
+- Evaluation run detail now records and displays timestamps for individual log lines; the Logs tab presents one continuous output stream while Workflow logs retain phase-specific inspection.
+- The README now includes a product tour with English demo data, standalone/BYOA guidance, Chat Assistant usage, development-partner attribution, and Git-based installation instructions.
+- Source and Git installations build the bundled control-room UI into the wheel; Python CI reuses the verified frontend artifact.
+
+### Changed
+
+- OpenOrbit is positioned as a local control plane for continuously evaluating, supervising, and improving AI systems.
+- Evaluation Builds now display localized created and last-started timestamps.
+- Interface text is consolidated through locale resources, including evaluation-run filtering and status labels.
+
+### Fixed
+
+- Failed runner phases now stop evaluation runs and correctly mark them as failed instead of completed.
+- Evaluation Build selection and the Last started column are restored.
+
 ## [0.2.0] - 2026-09-07
 
 ### Added
@@ -70,3 +89,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.0.5]: https://github.com/forthfate/openorbit/releases/tag/v0.0.5
 [0.1.0]: https://github.com/forthfate/openorbit/releases/tag/v0.1.0
 [0.2.0]: https://github.com/forthfate/openorbit/releases/tag/v0.2.0
+[0.3.0]: https://github.com/forthfate/openorbit/releases/tag/v0.3.0
