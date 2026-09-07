@@ -15,7 +15,7 @@ from .store import ConsoleStore
 
 app = FastAPI(
     title="OpenOrbit API",
-    version="0.0.4",
+    version="0.1.0",
     summary="A local control plane API for recurring AI automations.",
     description="""\
 The versioned API follows a GitLab-inspired resource model: an evaluation build
