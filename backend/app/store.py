@@ -1360,7 +1360,10 @@ if __name__ == "__main__":
                 working_directory=str(ROOT),
                 timeout_seconds=86_400 if phase == "run" else 300,
                 approval="not_required",
-                on_failure="continue" if phase == "run" else "stop",
+                # A non-zero process exit means the lifecycle did not produce
+                # a valid evaluation. Runners that intentionally tolerate a
+                # probe failure must model it as structured evidence instead.
+                on_failure="stop",
             )
             for phase in phases
         ]
@@ -3111,16 +3114,26 @@ if __name__ == "__main__":
                     creationflags=creation_flags,
                     env=environment,
                 )
+                captured_lines: list[tuple[str, str]] = []
+
+                def capture_output() -> None:
+                    assert process.stdout is not None
+                    for line in process.stdout:
+                        captured_lines.append((now(), line.rstrip("\r\n")))
+
+                output_reader = threading.Thread(target=capture_output, daemon=True)
+                output_reader.start()
                 with self._lock:
                     self._processes[run_id] = process
                 run = self._load(run_id)
                 run.pid, run.last_pid, run.updated_at = process.pid, process.pid, now()
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
-                output, _ = process.communicate(timeout=step.timeout_seconds)
+                process.wait(timeout=step.timeout_seconds)
+                output_reader.join()
                 structured_result: dict[str, Any] | None = None
-                visible_lines = []
-                for line in output.splitlines():
+                visible_lines: list[tuple[str, str]] = []
+                for timestamp, line in captured_lines:
                     if line.startswith("__ORBIT_RESULT__"):
                         try:
                             emitted = json.loads(line.removeprefix("__ORBIT_RESULT__"))
@@ -3128,9 +3141,18 @@ if __name__ == "__main__":
                                 raise ValueError("structured runner result must be an object")
                             structured_result = {**(structured_result or {}), **emitted}
                         except json.JSONDecodeError:
-                            visible_lines.append(line)
+                            visible_lines.append((timestamp, line))
                     else:
-                        visible_lines.append(line)
+                        visible_lines.append((timestamp, line))
+                retained_lines: list[tuple[str, str]] = []
+                retained_size = 0
+                for item in reversed(visible_lines):
+                    line_size = len(item[1]) + (1 if retained_lines else 0)
+                    if retained_lines and retained_size + line_size > 12_000:
+                        break
+                    retained_lines.append(item)
+                    retained_size += line_size
+                retained_lines.reverse()
                 result: dict[str, Any] = {
                     "step_id": step.id,
                     "phase": step.phase,
@@ -3141,7 +3163,10 @@ if __name__ == "__main__":
                     "started_at": started,
                     "ended_at": now(),
                     "exit_code": process.returncode,
-                    "output": "\n".join(visible_lines)[-12_000:],
+                    "output": "\n".join(line for _, line in retained_lines),
+                    "log_lines": [
+                        {"timestamp": timestamp, "value": line} for timestamp, line in retained_lines
+                    ],
                 }
                 if structured_result is not None:
                     result["result"] = structured_result

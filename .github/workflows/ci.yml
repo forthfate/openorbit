@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --extra dev --locked
+      - run: OPENORBIT_SKIP_FRONTEND_BUILD=1 uv sync --extra dev --locked
       - run: uv run ruff check orbit/ backend/ tests/
       - run: PYTHONPATH=backend uv run pytest -q
   frontend:

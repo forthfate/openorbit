@@ -17,26 +17,26 @@ import type {
 import { MetricCard } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
-import { locales, type Locale } from "../../locales";
+import { intlLocales, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 
 const hero = {
   en: {
-    title: "Operate, supervise, and improve recurring AI automations.",
+    title: "Operate, supervise, and improve AI systems.",
     description:
-      "Connect runners and workflows, retain observable evidence, and keep every automated action within a controlled operating flow.",
+      "Continuously evaluate AI behavior, retain observable evidence, and keep every improvement decision in a controlled operating flow.",
     quickStart: "Start with Quick Start",
   },
   ko: {
-    title: "AI가 수행하는 자동화 작업을 실행하고, 감독하고, 개선합니다.",
+    title: "AI 시스템을 운영하고, 감독하고, 개선합니다.",
     description:
-      "러너와 워크플로를 연결하고 관찰 가능한 증거를 남기며, 모든 자동화 작업을 통제된 운영 흐름 안에서 관리합니다.",
+      "AI 동작을 지속적으로 평가하고 관찰 가능한 증거를 남기며, 모든 개선 결정을 통제된 운영 흐름 안에서 관리합니다.",
     quickStart: "퀵 스타트 시작",
   },
   ja: {
-    title: "AIによる自動化を実行し、監督し、改善します。",
+    title: "AIシステムを運用し、監督し、改善します。",
     description:
-      "ランナーとワークフローをつなぎ、観測可能な証跡を残しながら、すべての自動化を統制された運用フローで管理します。",
+      "AIの振る舞いを継続的に評価し、観測可能な証跡を残しながら、すべての改善判断を統制された運用フローで管理します。",
     quickStart: "クイックスタートを始める",
   },
 };
@@ -105,7 +105,7 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
         ? ([Math.floor(minutes / 60), "hour"] as const)
         : ([Math.floor(minutes / 1440), "day"] as const);
   return new Intl.RelativeTimeFormat(
-    locale === "ko" ? "ko-KR" : locale === "ja" ? "ja-JP" : "en-US",
+    intlLocales[locale],
     { numeric: "auto" },
   ).format(-amount, unit);
 }
@@ -180,11 +180,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
                 dataKey="time"
                 tickFormatter={(value) =>
                   new Date(`${value}:00:00Z`).toLocaleTimeString(
-                    locale === "ko"
-                      ? "ko-KR"
-                      : locale === "ja"
-                        ? "ja-JP"
-                        : "en-US",
+                    intlLocales[locale],
                     { hour: "2-digit", minute: "2-digit" },
                   )
                 }
@@ -235,6 +231,7 @@ export function DashboardPage({
 }) {
   const t = locales[locale].common,
     h = hero[locale],
+    dashboard = locales[locale].dashboardUi,
     help = dashboardHelp[locale],
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length;
@@ -278,17 +275,7 @@ export function DashboardPage({
               run.status,
             ),
             eventTime = completed ? run.finished_at : run.created_at,
-            eventLabel = completed
-              ? locale === "ko"
-                ? "완료"
-                : locale === "ja"
-                  ? "完了"
-                  : "Completed"
-              : locale === "ko"
-                ? "생성"
-                : locale === "ja"
-                  ? "作成"
-                  : "Created";
+            eventLabel = completed ? dashboard.completed : dashboard.created;
           return (
             <button
               className="evaluation-card"
@@ -312,13 +299,7 @@ export function DashboardPage({
             <p className="eyebrow">ORBIT</p>
             <h2>
               <SectionInfo
-                title={
-                  locale === "ko"
-                    ? "Orbit 운영 로그"
-                    : locale === "ja"
-                      ? "Orbit 運用ログ"
-                      : "Orbit operational logs"
-                }
+                title={dashboard.operationalLogs}
                 description={help.logs}
               />
             </h2>
@@ -339,7 +320,7 @@ export function DashboardPage({
               </div>
             ))
           ) : (
-            <p className="hint">No Orbit events recorded yet.</p>
+            <p className="hint">{dashboard.noEvents}</p>
           )}
         </div>
       </section>

@@ -36,6 +36,8 @@ include = ["orbit/resources/**/*.yaml", "orbit/resources/**/*.json", "orbit/reso
 "frontend/dist" = "frontend/dist"
 "backend/orbit_sdk.py" = "orbit_sdk.py"
 
+[tool.hatch.build.hooks.custom]
+
 [tool.pytest.ini_options]
 testpaths = ["tests", "backend/tests"]
 

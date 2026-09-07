@@ -10,12 +10,7 @@ export function PageSizeSelect({
   onChange: (value: number) => void;
 }) {
   const label = locales[locale].ui.itemsPerPage;
-  const option = (size: number) =>
-    locale === "ko"
-      ? `${size}개씩`
-      : locale === "ja"
-        ? `${size}件ずつ`
-        : `${size} per page`;
+  const option = locales[locale].ui.itemsPerPageValue;
   return (
     <label className="page-size-control">
       <span className="visually-hidden">{label}</span>

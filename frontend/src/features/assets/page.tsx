@@ -2,7 +2,7 @@
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Children, useEffect, useRef, useState } from 'react'
 import type { ExecutionEnvironment, PromptTemplate, RunnerAsset, RunnerTemplate, TargetEnvironment, TargetTestCaseSet, TestCase, Workflow, WorkflowStep } from '../../domain/models'
-import type { Locale } from '../../locales'
+import { locales, type Locale } from '../../locales'
 import { Modal } from '../../components/ui/modal'
 import { PanelHeader } from '../../components/ui/page-header'
 import { SectionInfo } from '../../components/ui/section-info'
@@ -56,7 +56,7 @@ function AssetRow({name,detail,onClick,onDelete,deleteLabel='Delete'}:{name:stri
 function RunnerCatalog({locale,items,onRefresh}:{locale:Locale;items:RunnerAsset[];onRefresh:()=>Promise<unknown>}){const [open,setOpen]=useState(false),[editing,setEditing]=useState<RunnerAsset|null>(null);const copy=runnerLabels[locale];const remove=(id:string)=>api(`/api/runners/${id}`,'DELETE').then(onRefresh);return <section className="panel app-settings"><div className="panel-title-action"><PanelHeader title={<SectionInfo title={copy.title} description={text[locale].emptyRunners}/>}/><button className="approve" onClick={()=>{setEditing(null);setOpen(true)}}><Plus size={14}/>{copy.create}</button></div><div className="catalog-list">{items.length?items.map(item=><AssetRow key={item.id} name={item.name} detail={`${item.id} · ${item.description}`} onClick={()=>{setEditing(item);setOpen(true)}} onDelete={()=>remove(item.id)} deleteLabel={copy.delete}/>):<p className="catalog-empty">{text[locale].emptyRunners}</p>}</div>{open&&<RunnerModal locale={locale} editing={editing} onClose={()=>setOpen(false)} onSaved={onRefresh}/>}</section>}
 
 function LegacyAssetsPage({locale,workflows,runners,promptTemplates,testCaseSets,onRefresh,onCreateWorkflow,onUpdateWorkflow,onDelete}:{locale:Locale;workflows:Workflow[];runners:RunnerAsset[];promptTemplates:PromptTemplate[];testCaseSets:TargetTestCaseSet[];onRefresh:()=>Promise<unknown>;onCreateWorkflow:(values:unknown)=>Promise<unknown>;onUpdateWorkflow:(id:string,values:unknown)=>Promise<unknown>;onDelete:(kind:'template'|'test-set'|'workflow',id:string)=>void}){
-  const createLabel=locale==='ko'?'생성':locale==='ja'?'作成':'Create',l={...text[locale],addTemplate:createLabel,addTests:createLabel,addFlow:createLabel}
+  const createLabel=locales[locale].ui.create,l={...text[locale],addTemplate:createLabel,addTests:createLabel,addFlow:createLabel}
   const help=fieldHelp[locale]
   const [flowOpen,setFlowOpen]=useState(false),[editingWorkflow,setEditingWorkflow]=useState<Workflow|null>(null),[template,setTemplate]=useState<PromptTemplate|null>(null),[testSet,setTestSet]=useState<TargetTestCaseSet|null>(null),[notice,setNotice]=useState('')
   const saveTemplate=()=>{if(!template)return;const existing=promptTemplates.some(item=>item.id===template.id);api<PromptTemplate>(existing?`/api/prompt-templates/${template.id}`:'/api/prompt-templates',existing?'PUT':'POST',template).then(()=>{setTemplate(null);onRefresh()}).catch(error=>setNotice(error.message))}

@@ -6,18 +6,13 @@ import {
   type ReactNode,
 } from "react";
 import { ToastContext, type ToastTone } from "./toast-context";
-import { locales } from "../../locales";
+import { locales, resolveLocale } from "../../locales";
 
 type Toast = { id: number; message: string; tone: ToastTone };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const locale =
-    localStorage.getItem("orbit.locale") === "ko"
-      ? "ko"
-      : localStorage.getItem("orbit.locale") === "ja"
-        ? "ja"
-        : "en";
+  const locale = resolveLocale(localStorage.getItem("orbit.locale"));
   const nextId = useRef(0);
   const timers = useRef(new Map<number, number>());
   const dismissToast = useCallback((id: number) => {

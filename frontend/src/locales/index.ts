@@ -289,6 +289,8 @@ const cycleJa = {
 const uiEn = {
   emptyEntries: "No entries",
   itemsPerPage: "Items per page",
+  itemsPerPageValue: (size: number) => `${size} per page`,
+  liveLocalState: "live local state",
   closeDialog: "Close dialog",
   dismissNotification: "Dismiss notification",
   previous: "Previous",
@@ -297,6 +299,7 @@ const uiEn = {
   duplicate: "Duplicate",
   repository: "Repository",
   created: "Created",
+  lastStarted: "Last started",
   action: "Action",
   back: "Back",
   cancel: "Cancel",
@@ -338,6 +341,8 @@ const uiEn = {
 const uiKo = {
   emptyEntries: "표시할 항목이 없습니다",
   itemsPerPage: "페이지당 표시",
+  itemsPerPageValue: (size: number) => `${size}개씩`,
+  liveLocalState: "실시간 로컬 상태",
   closeDialog: "대화상자 닫기",
   dismissNotification: "알림 닫기",
   previous: "이전",
@@ -346,6 +351,7 @@ const uiKo = {
   duplicate: "복제",
   repository: "저장소",
   created: "생성일시",
+  lastStarted: "마지막 시작 일시",
   action: "동작",
   back: "뒤로",
   cancel: "취소",
@@ -387,6 +393,8 @@ const uiKo = {
 const uiJa = {
   emptyEntries: "項目はありません",
   itemsPerPage: "ページごとの表示数",
+  itemsPerPageValue: (size: number) => `${size}件ずつ`,
+  liveLocalState: "ライブローカル状態",
   closeDialog: "ダイアログを閉じる",
   dismissNotification: "通知を閉じる",
   previous: "前へ",
@@ -395,6 +403,7 @@ const uiJa = {
   duplicate: "複製",
   repository: "リポジトリ",
   created: "作成日時",
+  lastStarted: "最終開始日時",
   action: "操作",
   back: "戻る",
   cancel: "キャンセル",
@@ -433,6 +442,36 @@ const uiJa = {
   assetDeleted: "アセットを削除しました",
   apiConnectionFailed: "API 接続に失敗しました。",
 };
+const runUiEn = {
+  queued: "Queued", awaitingApproval: "Awaiting approval", running: "Running",
+  filter: "Filter", reset: "Reset", status: "Status", evaluationBuild: "Evaluation build",
+  allBuilds: "All builds", runType: "Run type", all: "All", phase: "Phase",
+  allPhases: "All phases", activeOnly: "Active only", selected: (count: number) => `${count} selected`,
+  deselect: "Deselect", deleteSelected: "Delete selected", deleteSelectedTitle: "Delete selected runs?",
+  deleteSelectedDescription: (count: number) => `${count} completed run records will be deleted. This cannot be undone.`,
+  delete: "Delete", previousIteration: "Previous iteration", nextIteration: "Next iteration",
+};
+const runUiKo = {
+  queued: "대기 중", awaitingApproval: "승인 대기", running: "실행 중",
+  filter: "필터", reset: "초기화", status: "상태", evaluationBuild: "평가 빌드",
+  allBuilds: "전체 빌드", runType: "실행 유형", all: "전체", phase: "단계",
+  allPhases: "전체 단계", activeOnly: "활성 실행만", selected: (count: number) => `${count}개 선택됨`,
+  deselect: "선택 해제", deleteSelected: "선택 삭제", deleteSelectedTitle: "선택한 실행을 삭제할까요?",
+  deleteSelectedDescription: (count: number) => `${count}개의 완료된 실행 이력이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.`,
+  delete: "삭제", previousIteration: "이전 반복", nextIteration: "다음 반복",
+};
+const runUiJa = {
+  queued: "待機中", awaitingApproval: "承認待ち", running: "実行中",
+  filter: "フィルター", reset: "リセット", status: "ステータス", evaluationBuild: "評価ビルド",
+  allBuilds: "すべてのビルド", runType: "実行タイプ", all: "すべて", phase: "フェーズ",
+  allPhases: "すべてのフェーズ", activeOnly: "実行中のみ", selected: (count: number) => `${count}件選択`,
+  deselect: "選択解除", deleteSelected: "選択を削除", deleteSelectedTitle: "選択した実行を削除しますか？",
+  deleteSelectedDescription: (count: number) => `${count}件の完了した実行履歴を削除します。この操作は元に戻せません。`,
+  delete: "削除", previousIteration: "前の反復", nextIteration: "次の反復",
+};
+const dashboardUiEn = { completed: "Completed", created: "Created", operationalLogs: "Orbit operational logs", noEvents: "No Orbit events recorded yet." };
+const dashboardUiKo = { completed: "완료", created: "생성", operationalLogs: "Orbit 운영 로그", noEvents: "아직 기록된 Orbit 이벤트가 없습니다." };
+const dashboardUiJa = { completed: "完了", created: "作成", operationalLogs: "Orbit 運用ログ", noEvents: "Orbit イベントはまだ記録されていません。" };
 export const locales = {
   ko: {
     dashboard: "대시보드",
@@ -446,6 +485,8 @@ export const locales = {
     common: commonKo,
     cycle: cycleKo,
     ui: uiKo,
+    runUi: runUiKo,
+    dashboardUi: dashboardUiKo,
   },
   en: {
     dashboard: "Dashboard",
@@ -459,6 +500,8 @@ export const locales = {
     common: commonEn,
     cycle: cycleEn,
     ui: uiEn,
+    runUi: runUiEn,
+    dashboardUi: dashboardUiEn,
   },
   ja: {
     dashboard: "ダッシュボード",
@@ -472,6 +515,15 @@ export const locales = {
     common: commonJa,
     cycle: cycleJa,
     ui: uiJa,
+    runUi: runUiJa,
+    dashboardUi: dashboardUiJa,
   },
 };
 export type Locale = keyof typeof locales;
+export const resolveLocale = (value: string | null | undefined): Locale =>
+  value && value in locales ? (value as Locale) : "en";
+export const intlLocales: Record<Locale, string> = {
+  en: "en-US",
+  ko: "ko-KR",
+  ja: "ja-JP",
+};
