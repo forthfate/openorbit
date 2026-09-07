@@ -221,6 +221,7 @@ class ExecutionEnvironmentCreate(BaseModel):
     remote_headers: dict[str, str] = Field(default_factory=dict)
     browser_executable_path: str = ""
     browser_library_path: str = ""
+    environment_variables: dict[str, str] = Field(default_factory=dict)
 
 
 class TargetEnvironmentCreate(BaseModel):
@@ -240,6 +241,7 @@ class ExecutionEnvironmentUpdate(BaseModel):
     remote_headers: dict[str, str] = Field(default_factory=dict)
     browser_executable_path: str = ""
     browser_library_path: str = ""
+    environment_variables: dict[str, str] = Field(default_factory=dict)
 
 
 class TargetEnvironmentUpdate(BaseModel):

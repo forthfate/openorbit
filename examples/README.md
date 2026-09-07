@@ -9,6 +9,7 @@ not contain a product name, a local absolute path, or a background scheduler.
 | `browser-user-journey-runner.py` | You want recurring, observable browser checks. | Browser base URL and at least one fixed test case. |
 | `external-command-runner.py` | You already have a command-line automation tool. | `ORBIT_ADAPTER_COMMAND` configured in the runner environment. |
 | `inspect_behavior.py` | You want to inspect the bundled behavior definition locally. | A repository checkout with the Python package available. |
+| `ai-slo-supportops/` | You want a safe local target for the AI SLO and behavior-drift Quick Start. | Python 3 only; no provider credentials for the fixture itself. |
 
 ## Browser user journey
 
@@ -49,3 +50,10 @@ uv run python examples/inspect_behavior.py
 For every sample, adapt only the configuration and bounded work for your
 project. Keep lifecycle ownership with OpenOrbit: `init` and `finalize` run
 once per process; `setup`, `run`, `eval`, and `teardown` run once per iteration.
+
+## AI SLO and behavior-drift demo
+
+[`ai-slo-supportops/`](ai-slo-supportops/README.md) is a complete local sample:
+a synthetic support website and an evaluator agent that returns structured SLO
+evidence. It is deliberately local-only and has no credentials, real customer
+data, external provider endpoint, or background scheduler.

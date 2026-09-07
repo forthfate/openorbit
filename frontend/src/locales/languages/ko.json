@@ -34,6 +34,17 @@
       "emptyRunners": "프로젝트별 자동화를 실행할 재사용 가능한 러너를 생성합니다.",
       "emptyFlows": "러너를 평가 빌드에 연결하기 위한 재사용 가능한 실행 파이프라인을 정의합니다."
     },
+    "chatAssistant": {
+      "open": "Orbit 어시스턴트 열기",
+      "title": "Orbit 어시스턴트",
+      "collapse": "채팅 접기",
+      "empty": "평가 작업, 러너 또는 컨트롤 룸에 관해 물어보세요.",
+      "requestFailed": "채팅 요청에 실패했습니다.",
+      "thinking": "생각 중…",
+      "message": "메시지",
+      "placeholder": "Orbit에 메시지 보내기…",
+      "send": "메시지 전송"
+    },
     "shell": {
       "dashboard": "평가 운영 상태, 최근 활동, 운영 이벤트를 한눈에 확인합니다.",
       "assets": "평가에 사용하는 재사용 환경, 러너, 템플릿, 테스트 케이스, 워크플로를 관리합니다.",

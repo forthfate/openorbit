@@ -24,6 +24,17 @@ test('shows the configured repositories and safely runs the approval-gated evalu
   await expect(jgentRun).toContainText('cancelled', { timeout: 10_000 })
 })
 
+test('collapses the sidebar and preserves the preference after reload', async ({ page }) => {
+  await page.goto('http://127.0.0.1:3001/#dashboard')
+  const toggle = page.getByRole('button', { name: 'Collapse navigation' })
+  await toggle.click()
+  await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
+  await expect(page.getByRole('button', { name: 'Evaluation builds' })).toBeVisible()
+  await page.reload()
+  await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
+  await page.getByRole('button', { name: 'Expand navigation' }).click()
+})
+
 test('opens the build and profile editors with editable lifecycle fields', async ({ page }) => {
   await page.goto('http://127.0.0.1:3001/#builds')
   await expect(page.getByRole('heading', { name: 'Evaluation builds' })).toBeVisible()

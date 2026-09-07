@@ -125,6 +125,11 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     target = ctx.project_path(prompt_path)
     current = target.read_text(encoding="utf-8")
+    if not proposals:
+        # Do not manufacture a changing candidate when the supervisor has not
+        # accepted a change. A stable candidate must retain the same fingerprint
+        # across repeated validations before it can be promoted.
+        return {"path": prompt_path, "changed": False, "reason": "no_accepted_proposals"}
     lines = ["## Accepted improvement proposals", "", f"Iteration: {ctx.loop_index}", ""]
     for proposal in proposals:
         lines.extend(
@@ -244,6 +249,84 @@ def teardown(ctx):
 def finalize(ctx):
     # Process-level finalization intentionally leaves the target repository uncommitted.
     ctx.log("Finalized the native improvement cycle without committing changes")
+
+
+if __name__ == "__main__":
+    runner.main()
+"""
+
+SITE_EXPLORATION_TEMPLATE = r"""# Requirements
+# - The target application is running at the evaluation build's browser base URL.
+# - Playwright Chromium and LangGraph are available.
+# This runner follows only same-site links and excludes destructive-looking routes.
+
+import json
+import subprocess
+from pathlib import Path
+from typing import TypedDict
+
+from langgraph.graph import END, START, StateGraph
+
+import orbit_sdk
+from orbit_sdk import runner
+
+
+class ExplorerState(TypedDict, total=False):
+    base_url: str
+    max_clicks: int
+    evidence: dict
+    opinion: str
+
+
+def explore_browser(ctx, state):
+    module = str(Path(orbit_sdk.__file__).resolve().parents[1] / "frontend" / "node_modules" / "playwright")
+    artifacts = ctx.app_data / "artifacts" / ctx.environment.get("ORBIT_RUN_ID", "manual") / f"loop-{ctx.loop_index}"
+    artifacts.mkdir(parents=True, exist_ok=True)
+    payload = {"baseUrl": state["base_url"], "maxClicks": state["max_clicks"], "screenshot": str(artifacts / "site-exploration.png")}
+    script = r'''const { chromium } = require(process.argv[1]); const input = JSON.parse(process.argv[2]);
+const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase|upgrade|unsubscribe)/i;
+(async () => { const browser = await chromium.launch({headless:true}); const page = await browser.newPage(); const visited = []; const origin = new URL(input.baseUrl).origin;
+  try { await page.goto(input.baseUrl, {waitUntil:"domcontentloaded", timeout:30000});
+    for (let step = 0; step <= input.maxClicks; step++) { const text = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 1200); visited.push({url:page.url(), title:await page.title(), text});
+      if (step === input.maxClicks) break;
+      const links = await page.locator("a[href]").evaluateAll(items => items.map((item, index) => ({index, href:item.href, text:(item.textContent || "").trim()})).filter(item => item.href));
+      const candidates = links.filter(item => { try { const url = new URL(item.href); return url.origin === origin && !blocked.test(url.pathname + " " + item.text); } catch { return false; } });
+      if (!candidates.length) break; const target = candidates[step % candidates.length]; await page.locator("a[href]").nth(target.index).click({timeout:5000}); await page.waitForLoadState("domcontentloaded", {timeout:10000}).catch(() => {}); await page.waitForTimeout(300);
+    }
+    await page.screenshot({path:input.screenshot, fullPage:true}); console.log(JSON.stringify({visited, screenshot:input.screenshot}));
+  } finally { await browser.close(); } })().catch(error => { console.error(error); process.exit(1); });'''
+    result = subprocess.run(["node", "-e", script, module, json.dumps(payload)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+    if result.returncode:
+        raise RuntimeError(result.stdout[-4000:] or "Site exploration failed")
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def form_opinion(state):
+    pages = state["evidence"].get("visited", [])
+    titles = [str(page.get("title") or page.get("url")) for page in pages]
+    return {"opinion": f"Explored {len(pages)} rendered page(s): " + "; ".join(titles[:3]) + ". Review the captured pages for clarity, usefulness, and friction."}
+
+
+def graph(ctx):
+    workflow = StateGraph(ExplorerState)
+    workflow.add_node("explore", lambda state: {"evidence": explore_browser(ctx, state)})
+    workflow.add_node("form_opinion", form_opinion)
+    workflow.add_edge(START, "explore")
+    workflow.add_edge("explore", "form_opinion")
+    workflow.add_edge("form_opinion", END)
+    return workflow.compile()
+
+
+@runner.phase("init")
+def init(ctx):
+    if not ctx.evaluation_build.get("browser_base_url"):
+        raise ValueError("Set a browser base URL before exploring a site")
+
+
+@runner.phase("run")
+def run(ctx):
+    result = graph(ctx).invoke({"base_url": ctx.evaluation_build["browser_base_url"], "max_clicks": 3})
+    ctx.emit_result({"site_exploration": {"opinion": result["opinion"], "evidence": result["evidence"]}})
 
 
 if __name__ == "__main__":
@@ -547,11 +630,11 @@ class ConsoleStore:
             {
                 "id": "user-journey-cycle",
                 "name": "Browser journey validation",
-                "description": "Validates fixed browser journeys directly and retains page evidence and screenshots for every bounded iteration.",
+                "description": "Validates fixed browser journeys and retains page evidence. Requires a running app and Playwright browser.",
                 "source": """# Requirements
 # - The target application is running at the evaluation build's browser base URL.
 # - The evaluation build selects at least one fixed test case.
-# - OpenOrbit's bundled Playwright dependency and browser are available.
+# - Playwright Chromium and its operating-system libraries are available.
 # No external runner script, adapter repository, or background program is required.
 
 import json
@@ -680,6 +763,12 @@ if __name__ == "__main__": runner.main()
         }
         templates.extend(
             (
+                {
+                    "id": "site-exploration",
+                    "name": "Site exploration review",
+                    "description": "Explores safe same-site links through LangGraph and retains rendered evidence for product feedback.",
+                    "source": SITE_EXPLORATION_TEMPLATE,
+                },
                 {
                     "id": "json-agent-cycle",
                     "name": "User journey simulation",
@@ -828,9 +917,9 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.user-journey-smoke-test",
-                "version": "1.0.0",
+                "version": "1.0.1",
                 "name": "User journey smoke test",
-                "description": "Create a browser-based smoke test for one important user journey.",
+                "description": "Create a browser-based smoke test. Requires a running app and Playwright browser.",
                 "publisher": {"name": "OpenOrbit"},
                 "parameters": [
                     {
@@ -995,10 +1084,145 @@ if __name__ == "__main__":
             },
             {
                 "schema_version": 1,
-                "id": "openorbit.agent-self-improvement",
+                "id": "openorbit.site-exploration-review",
                 "version": "1.0.0",
+                "name": "Site exploration review",
+                "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph.",
+                "publisher": {"name": "OpenOrbit"},
+                "parameters": [
+                    {
+                        "key": "build_name",
+                        "label": "Evaluation name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Site exploration review",
+                    },
+                    {
+                        "key": "repository",
+                        "label": "Target repository",
+                        "type": "workspace",
+                        "required": True,
+                        "placeholder": "/absolute/path/to/your-repository",
+                    },
+                    {
+                        "key": "base_url",
+                        "label": "Browser base URL",
+                        "type": "url",
+                        "required": True,
+                        "placeholder": "http://localhost:3000",
+                    },
+                    {
+                        "key": "review_focus",
+                        "label": "Review focus",
+                        "type": "string",
+                        "required": True,
+                        "default": "clarity, usefulness, and friction",
+                        "placeholder": "e.g. first-time visitor experience",
+                    },
+                    {
+                        "key": "profile_name",
+                        "label": "AI model profile name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Site exploration AI",
+                    },
+                    {
+                        "key": "provider",
+                        "label": "AI provider",
+                        "type": "select",
+                        "required": True,
+                        "default": "azure-openai",
+                        "options": [
+                            {"value": "azure-openai", "label": "Azure OpenAI"},
+                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
+                        ],
+                    },
+                    {
+                        "key": "model",
+                        "label": "Model / deployment",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. gpt-4o",
+                    },
+                    {
+                        "key": "endpoint",
+                        "label": "Provider endpoint",
+                        "type": "url",
+                        "required": False,
+                        "placeholder": "https://your-resource.openai.azure.com",
+                    },
+                    {
+                        "key": "region",
+                        "label": "Region",
+                        "type": "string",
+                        "required": True,
+                        "default": "us-east-1",
+                    },
+                    {
+                        "key": "secret_env",
+                        "label": "API key environment variable",
+                        "type": "string",
+                        "required": True,
+                        "default": "AZURE_OPENAI_API_KEY",
+                    },
+                ],
+                "assets": {
+                    "runner": {
+                        "name": "${build_name} runner",
+                        "description": "LangGraph site exploration runner created by Quick Start.",
+                        "template_id": "site-exploration",
+                        "source": SITE_EXPLORATION_TEMPLATE,
+                    },
+                    "prompt_template": {
+                        "name": "${build_name} policy",
+                        "version": 1,
+                        "content": "Review the site-exploration evidence for ${review_focus}. Give an evidence-backed product opinion and report reproducible friction or defects only.",
+                    },
+                    "test_case_set": {
+                        "name": "${build_name} exploration",
+                        "description": "Bounded site exploration created by Quick Start.",
+                        "cases": [
+                            {
+                                "id": "site-exploration",
+                                "name": "Explore site",
+                                "path": "/",
+                                "prompt": "Follow safe same-site links.",
+                                "acceptance": "Capture rendered page evidence.",
+                            }
+                        ],
+                    },
+                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
+                    "target_environment": {
+                        "name": "${build_name} target",
+                        "repository": "${repository}",
+                        "browser_base_url": "${base_url}",
+                    },
+                    "model_profile": {
+                        "profile_name": "${profile_name}",
+                        "provider": "${provider}",
+                        "model": "${model}",
+                        "endpoint": "${endpoint}",
+                        "region": "${region}",
+                        "secret_env": "${secret_env}",
+                    },
+                },
+                "build": {
+                    "name": "${build_name}",
+                    "purpose": "Explore a site and assess the rendered experience.",
+                    "model_profile_name": "${profile_name}",
+                    "timezone": "Asia/Tokyo",
+                    "repeat_interval_minutes": 30,
+                    "run_limit": 1,
+                    "approval_score": 8,
+                    "enabled": True,
+                },
+            },
+            {
+                "schema_version": 1,
+                "id": "openorbit.agent-self-improvement",
+                "version": "1.0.1",
                 "name": "Agent self-improvement",
-                "description": "Validate agent or prompt changes against a fixed user journey and retain rollback-ready improvement evidence.",
+                "description": "Improve an agent prompt with browser validation. Requires a Git repository, running app, prompt file, and Playwright browser.",
                 "publisher": {"name": "OpenOrbit"},
                 "parameters": [
                     {
@@ -1169,6 +1393,142 @@ if __name__ == "__main__":
                     "enabled": True,
                 },
             },
+            {
+                "schema_version": 1,
+                "id": "openorbit.ai-slo-drift-monitor",
+                "version": "1.0.0",
+                "name": "AI SLO and behavior drift monitor",
+                "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
+                "publisher": {"name": "OpenOrbit"},
+                "parameters": [
+                    {
+                        "key": "build_name",
+                        "label": "Evaluation name",
+                        "type": "string",
+                        "required": True,
+                        "default": "AI operational SLO monitor",
+                    },
+                    {
+                        "key": "repository",
+                        "label": "Evaluator workspace",
+                        "type": "workspace",
+                        "required": True,
+                        "placeholder": "/absolute/path/to/your-ai-evaluator",
+                    },
+                    {
+                        "key": "probe_command",
+                        "label": "Structured evaluator command",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. uv run ai-eval",
+                        "description": "A command that supports preflight, prepare, run-probes, and collect-evidence and returns JSON for each action.",
+                    },
+                    {
+                        "key": "slo_focus",
+                        "label": "SLO focus",
+                        "type": "string",
+                        "required": True,
+                        "default": "response quality, policy compliance, latency, and cost",
+                        "placeholder": "e.g. grounded answers and p95 latency under 3 seconds",
+                    },
+                    {
+                        "key": "profile_name",
+                        "label": "AI model profile name",
+                        "type": "string",
+                        "required": True,
+                        "default": "AI operations supervisor",
+                    },
+                    {
+                        "key": "provider",
+                        "label": "AI provider",
+                        "type": "select",
+                        "required": True,
+                        "default": "azure-openai",
+                        "options": [
+                            {"value": "azure-openai", "label": "Azure OpenAI"},
+                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
+                        ],
+                    },
+                    {
+                        "key": "model",
+                        "label": "Model / deployment",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. gpt-4o",
+                    },
+                    {
+                        "key": "endpoint",
+                        "label": "Provider endpoint",
+                        "type": "url",
+                        "required": False,
+                        "placeholder": "https://your-resource.openai.azure.com",
+                    },
+                    {
+                        "key": "region",
+                        "label": "Region",
+                        "type": "string",
+                        "required": True,
+                        "default": "us-east-1",
+                    },
+                    {
+                        "key": "secret_env",
+                        "label": "API key environment variable",
+                        "type": "string",
+                        "required": True,
+                        "default": "AZURE_OPENAI_API_KEY",
+                    },
+                ],
+                "assets": {
+                    "runner": {
+                        "name": "${build_name} runner",
+                        "description": "Evidence-gated AI SLO and drift monitor created by Quick Start.",
+                        "template_id": "evidence-gated-probe-cycle",
+                        "source": EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE,
+                    },
+                    "prompt_template": {
+                        "name": "${build_name} policy",
+                        "version": 1,
+                        "content": "Review the fixed AI SLO evidence for ${slo_focus}. Compare each reported metric with its retained baseline and threshold. Report only evidence-backed drift, regressions, or risks; propose reversible improvements with explicit validation and rollback steps.",
+                    },
+                    "test_case_set": {
+                        "name": "${build_name} probe matrix",
+                        "description": "A fixed, repeatable AI operational SLO probe matrix.",
+                        "cases": [
+                            {
+                                "id": "ai-slo-drift",
+                                "name": "AI SLO and behavior drift",
+                                "path": "/",
+                                "prompt": "Evaluate ${slo_focus} against the evaluator's fixed representative input matrix.",
+                                "acceptance": "Return structured current metrics, baseline comparisons, configured thresholds, outliers, and reproducible evidence for every detected drift.",
+                            }
+                        ],
+                    },
+                    "execution_environment": {
+                        "name": "${build_name} execution",
+                        "executor_type": "local",
+                        "environment_variables": {"ORBIT_PROBE_COMMAND": "${probe_command}"},
+                    },
+                    "target_environment": {"name": "${build_name} target", "repository": "${repository}"},
+                    "model_profile": {
+                        "profile_name": "${profile_name}",
+                        "provider": "${provider}",
+                        "model": "${model}",
+                        "endpoint": "${endpoint}",
+                        "region": "${region}",
+                        "secret_env": "${secret_env}",
+                    },
+                },
+                "build": {
+                    "name": "${build_name}",
+                    "purpose": "Continuously monitor AI operational SLOs and behavior drift with retained evidence.",
+                    "model_profile_name": "${profile_name}",
+                    "timezone": "Asia/Tokyo",
+                    "repeat_interval_minutes": 1440,
+                    "run_limit": 30,
+                    "approval_score": 8,
+                    "enabled": True,
+                },
+            },
         ]
 
     @staticmethod
@@ -1266,6 +1626,7 @@ if __name__ == "__main__":
                 values[key] = str(parameter["default"])
             if parameter.get("required") and not values.get(key):
                 raise ValueError(f"quick start parameter '{key}' is required")
+            values.setdefault(key, "")
         token = uuid.uuid4().hex[:8]
         prefix = re.sub(r"[^a-z0-9]+", "-", quick_start_id.lower()).strip("-")[-36:]
         generated = {
@@ -1565,6 +1926,25 @@ if __name__ == "__main__":
         }
 
     @staticmethod
+    def _environment_variables_from_values(values: dict[str, Any]) -> dict[str, str]:
+        variables = values.get("environment_variables", {})
+        if not isinstance(variables, dict):
+            raise ValueError("execution environment variables must be an object")
+        allowed_orbit_variables = {
+            "ORBIT_ADAPTER_COMMAND",
+            "ORBIT_AGENT_COMMAND",
+            "ORBIT_PROBE_COMMAND",
+        }
+        normalized = {str(key).strip(): str(value) for key, value in variables.items()}
+        if any(
+            not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+            or (key.startswith("ORBIT_") and key not in allowed_orbit_variables)
+            for key in normalized
+        ):
+            raise ValueError("execution environment variables include an unsupported name")
+        return normalized
+
+    @staticmethod
     def _asset_list(path: Path) -> list[dict[str, Any]]:
         if not path.exists():
             return []
@@ -1623,6 +2003,7 @@ if __name__ == "__main__":
             "executor": self._executor_from_values(values),
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "environment_variables": self._environment_variables_from_values(values),
         }
         items.append(item)
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -1654,6 +2035,7 @@ if __name__ == "__main__":
             "executor": self._executor_from_values(values),
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "environment_variables": self._environment_variables_from_values(values),
         }
         items[index] = item
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2784,6 +3166,9 @@ if __name__ == "__main__":
             resources["evaluation_build"] = {
                 key: value for key, value in build.items() if key not in {"executor"}
             }
+            resources["execution_environment"] = self._execution_environment(
+                str(build.get("execution_environment_id", ""))
+            )
             selected = next(
                 (
                     item
@@ -3182,6 +3567,17 @@ if __name__ == "__main__":
                 self._wait_for_tool_interval(step.id, step.minimum_interval_seconds)
                 creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
                 environment = os.environ.copy()
+                execution_environment = (resources or {}).get("execution_environment", {})
+                if isinstance(execution_environment, dict):
+                    configured_variables = execution_environment.get("environment_variables", {})
+                    if isinstance(configured_variables, dict):
+                        environment.update(
+                            {
+                                str(key): str(value)
+                                for key, value in configured_variables.items()
+                                if str(key).strip()
+                            }
+                        )
                 environment["PYTHONPATH"] = str(ROOT / "backend") + (
                     os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else ""
                 )
