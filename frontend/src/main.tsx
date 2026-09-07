@@ -10,7 +10,7 @@ import { EvaluationBuildsPage } from "./features/evaluation-builds/page";
 import { EvaluationsPage } from "./features/evaluations/page";
 import { ImprovementsPage } from "./features/improvements/page";
 import { SettingsPage } from "./features/settings/page";
-import { locales, resolveLocale, type Locale } from "./locales";
+import { localeMessages, locales, resolveLocale, type Locale } from "./locales";
 import { api } from "./services/api";
 import { useControlRoom } from "./services/use-control-room";
 import "./styles.css";
@@ -35,6 +35,7 @@ const pageFromHash = (): Page => {
   const page = window.location.hash.slice(1);
   return pages.includes(page as Page) ? (page as Page) : "dashboard";
 };
+type ConfirmCopy = { title: string; description: string; cancel: string; confirm: string };
 
 export default function App() {
   const [page, setPageState] = useState<Page>(pageFromHash);
@@ -295,50 +296,9 @@ export default function App() {
       />
     ),
   }[page];
-  const confirmation = {
-    en: {
-      title: "Delete evaluation build?",
-      description:
-        "This permanently removes the evaluation build and its configuration.",
-      cancel: "Cancel",
-      confirm: "Delete",
-    },
-    ko: {
-      title: "평가 빌드를 삭제할까요?",
-      description: "평가 빌드와 해당 설정이 영구적으로 삭제됩니다.",
-      cancel: "취소",
-      confirm: "삭제",
-    },
-    ja: {
-      title: "評価ビルドを削除しますか？",
-      description: "評価ビルドとその設定が完全に削除されます。",
-      cancel: "キャンセル",
-      confirm: "削除",
-    },
-  }[locale];
-  const emergencyConfirmation = {
-    en: {
-      title: "Stop all active evaluations?",
-      description:
-        "This immediately cancels every active evaluation run. This action cannot be undone.",
-      cancel: "Cancel",
-      confirm: "Emergency stop",
-    },
-    ko: {
-      title: "모든 활성 평가를 긴급 정지할까요?",
-      description:
-        "현재 실행 중인 모든 평가가 즉시 취소됩니다. 이 작업은 되돌릴 수 없습니다.",
-      cancel: "취소",
-      confirm: "긴급 정지",
-    },
-    ja: {
-      title: "すべての実行中評価を緊急停止しますか？",
-      description:
-        "実行中の評価がすべて直ちにキャンセルされます。この操作は元に戻せません。",
-      cancel: "キャンセル",
-      confirm: "緊急停止",
-    },
-  }[locale];
+  const confirmations = localeMessages<{ deleteBuild: ConfirmCopy; emergencyStop: ConfirmCopy }>(locale, "confirmations");
+  const confirmation = confirmations.deleteBuild;
+  const emergencyConfirmation = confirmations.emergencyStop;
   return (
     <AppShell
       page={page}

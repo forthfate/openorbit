@@ -126,9 +126,34 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
         "/api/v1/logs",
         "/api/v1/improvements/analytics",
         "/api/v1/improvements/proposals",
+        "/api/v1/template-translations",
     }
     assert expected <= paths.keys()
     assert {"Projects", "Pipelines", "Observability", "Runners"} <= {tag["name"] for tag in schema["tags"]}
+
+
+def test_template_translation_cache_only_accepts_display_text_shape(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "TEMPLATE_TRANSLATIONS", tmp_path / "template-translations.json")
+    store = store_module.ConsoleStore()
+    source = {"name": "Browser journey validation", "description": "Checks browser journeys."}
+
+    saved = store.save_template_translation(
+        "runner-template",
+        "browser-journey",
+        "test-locale",
+        source,
+        {"name": "브라우저 여정 검증", "description": "브라우저 여정을 확인합니다."},
+    )
+
+    assert saved["name"] == "브라우저 여정 검증"
+    assert (
+        store.cached_template_translation("runner-template", "browser-journey", "test-locale", source)
+        == saved
+    )
+    with pytest.raises(ValueError):
+        store.save_template_translation(
+            "runner-template", "browser-journey", "test-locale", source, {"name": "Only one field"}
+        )
 
 
 def test_v1_project_list_uses_gitlab_style_pagination_headers():
@@ -154,7 +179,7 @@ def test_v1_read_only_control_room_resources_are_available():
         "/api/v1/telemetry",
         "/api/v1/logs",
         "/api/v1/improvements",
-        "/api/v1/improvements/proposal-decisions",
+        "/api/v1/improvements/proposals",
         "/api/v1/reported-issues",
     ):
         assert client.get(path).status_code == 200

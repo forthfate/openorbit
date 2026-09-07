@@ -62,4 +62,23 @@ has completed successfully.
 - Commands must be token arrays; do not introduce shell-string execution.
 - Add tests for behavior or schema changes.
 
+## Localization
+
+- Put shared, static UI copy in `frontend/src/locales/index.ts`; do not add new
+  user-facing UI strings inline in a component.
+- Add every new locale key to the English, Korean, and Japanese dictionaries
+  with the same nesting and key name. Group keys by feature rather than adding
+  unrelated keys to an existing group.
+- Use the selected application locale (`orbit.locale`) as the source of truth.
+  `resolveLocale` must continue to fall back to English for an unsupported or
+  missing value.
+- Use `intlLocales` for locale-sensitive date, time, and number formatting.
+- Do not treat runtime content as a locale resource. For example, an AI
+  translation of a runner template or quick start is cached display data;
+  static controls such as **Translate**, **Show original**, and error messages
+  remain locale keys.
+- Translation must not change executable or identity-bearing values: IDs,
+  parameter keys and values, source code, URLs, paths, and API payloads retain
+  their original values.
+
 Contributions are licensed under MIT.

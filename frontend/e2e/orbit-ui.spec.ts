@@ -89,12 +89,13 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
 
 test('persists the selected interface language across pages and reloads', async ({ page }) => {
   await page.goto('http://127.0.0.1:3001/#settings')
-  await page.locator('select').first().selectOption('ja')
+  const languageSelect = page.locator('select').first()
+  await languageSelect.selectOption('ja')
   await page.getByRole('button', { name: '評価ビルド' }).click()
   await expect(page.getByRole('heading', { name: '評価ビルド', exact: true })).toBeVisible()
   await expect(page.getByText('評価ビルド一覧')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: '評価ビルド' })).toBeVisible()
   await page.goto('http://127.0.0.1:3001/#settings')
-  await page.locator('select').first().selectOption('en')
+  await languageSelect.selectOption('en')
 })

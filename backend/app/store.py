@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -467,6 +468,7 @@ RUNNERS = APP_DATA / "runners"
 RUNNER_TEMPLATES = APP_DATA / "runner-templates"
 QUICK_STARTS = APP_DATA / "quick-starts"
 QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
+TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
 
 
 def now() -> datetime:
@@ -706,6 +708,97 @@ if __name__ == "__main__": runner.main()
     def available_runner_templates(self) -> list[dict[str, str]]:
         builtins = [{**item, "origin": "built-in"} for item in self.runner_templates()]
         return [*builtins, *self._custom_runner_templates()]
+
+    def template_translation_input(self, kind: str, template_id: str) -> dict[str, Any]:
+        """Return only display text that may safely be translated."""
+        if kind == "runner-template":
+            template = next(
+                (item for item in self.available_runner_templates() if item["id"] == template_id), None
+            )
+            if template is None:
+                raise KeyError(template_id)
+            return {"name": template["name"], "description": template["description"]}
+        if kind == "quick-start":
+            quick_start = next((item for item in self.quick_starts() if item["id"] == template_id), None)
+            if quick_start is None:
+                raise KeyError(template_id)
+            return {
+                "name": quick_start["name"],
+                "description": quick_start["description"],
+                "parameters": [
+                    {
+                        **{"label": parameter["label"]},
+                        **({"description": parameter["description"]} if "description" in parameter else {}),
+                        **({"placeholder": parameter["placeholder"]} if "placeholder" in parameter else {}),
+                        **(
+                            {
+                                "options": [
+                                    {"label": option["label"]} for option in parameter.get("options", [])
+                                ]
+                            }
+                            if "options" in parameter
+                            else {}
+                        ),
+                    }
+                    for parameter in quick_start["parameters"]
+                ],
+            }
+        raise ValueError("template translation kind must be runner-template or quick-start")
+
+    @staticmethod
+    def validate_template_translation(source: Any, translated: Any) -> dict[str, Any]:
+        """Accept the exact display-text shape and no executable metadata."""
+        if isinstance(source, str):
+            if not isinstance(translated, str):
+                raise ValueError("translation must retain the requested text structure")
+            return translated
+        if isinstance(source, list):
+            if not isinstance(translated, list) or len(source) != len(translated):
+                raise ValueError("translation must retain the requested text structure")
+            return [
+                ConsoleStore.validate_template_translation(item, translated[index])
+                for index, item in enumerate(source)
+            ]
+        if isinstance(source, dict):
+            if not isinstance(translated, dict) or set(source) != set(translated):
+                raise ValueError("translation must retain the requested text structure")
+            return {
+                key: ConsoleStore.validate_template_translation(value, translated[key])
+                for key, value in source.items()
+            }
+        raise ValueError("translation source must contain text only")
+
+    @staticmethod
+    def _template_translation_key(kind: str, template_id: str, locale: str, source: dict[str, Any]) -> str:
+        digest = hashlib.sha256(
+            json.dumps(source, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return f"{kind}:{template_id}:{locale}:{digest}"
+
+    def cached_template_translation(
+        self, kind: str, template_id: str, locale: str, source: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        if not TEMPLATE_TRANSLATIONS.exists():
+            return None
+        translations = json.loads(TEMPLATE_TRANSLATIONS.read_text(encoding="utf-8"))
+        cached = translations.get(self._template_translation_key(kind, template_id, locale, source))
+        return self.validate_template_translation(source, cached) if cached is not None else None
+
+    def save_template_translation(
+        self, kind: str, template_id: str, locale: str, source: dict[str, Any], translated: Any
+    ) -> dict[str, Any]:
+        content = self.validate_template_translation(source, translated)
+        translations = (
+            json.loads(TEMPLATE_TRANSLATIONS.read_text(encoding="utf-8"))
+            if TEMPLATE_TRANSLATIONS.exists()
+            else {}
+        )
+        translations[self._template_translation_key(kind, template_id, locale, source)] = content
+        TEMPLATE_TRANSLATIONS.parent.mkdir(parents=True, exist_ok=True)
+        temporary = TEMPLATE_TRANSLATIONS.with_suffix(".tmp")
+        temporary.write_text(json.dumps(translations, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(TEMPLATE_TRANSLATIONS)
+        return content
 
     @staticmethod
     def _quick_start_browser_runner() -> str:

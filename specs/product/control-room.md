@@ -32,5 +32,15 @@ Quick starts are specified by the [quick-start product contract](quick-starts.md
 ## Localization and theme
 
 - English, Korean and Japanese are supplied by default. Shared text uses locale resources; remaining legacy text is being migrated.
+- The selected application locale is the display-language source of truth; an
+  unsupported or missing locale falls back to English.
+- Static UI controls and messages are supplied by locale resources. Runtime
+  content, including translated template metadata, is not added to those
+  resources.
+- Runner-template and quick-start metadata may be translated on demand with
+  the configured System AI and cached by source content and target locale.
+  Translation changes display text only: IDs, parameter keys and values,
+  source code, URLs, paths, and instantiation payloads always retain their
+  original values. The UI must allow the original text to be shown again.
 - Dark mode is the default. Shared colors, typography and layout use theme resources; remaining legacy color literals are being migrated.
 - A fork must be able to replace locale, theme, workflow and prompt resources without modifying runner core.

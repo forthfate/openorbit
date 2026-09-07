@@ -5,6 +5,13 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-07
+
+### Added
+
+- Runner-template and Quick Start catalogs can translate all visible template metadata at once, with cached display-only translations and an option to restore the originals.
+- Added icons to catalog translation/import actions and the Evaluation Build duplicate action for clearer controls.
+
 ## [0.3.0] - 2026-09-07
 
 ### Added
@@ -90,3 +97,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.1.0]: https://github.com/forthfate/openorbit/releases/tag/v0.1.0
 [0.2.0]: https://github.com/forthfate/openorbit/releases/tag/v0.2.0
 [0.3.0]: https://github.com/forthfate/openorbit/releases/tag/v0.3.0
+[0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0

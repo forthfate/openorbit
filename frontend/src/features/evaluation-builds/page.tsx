@@ -2,7 +2,9 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileUp,
+  Languages,
   Play,
   Plus,
   Sparkles,
@@ -15,6 +17,7 @@ import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { SectionInfo } from "../../components/ui/section-info";
 import type {
   Build,
   ExecutionEnvironment,
@@ -26,8 +29,9 @@ import type {
   TargetEnvironment,
   TargetTestCaseSet,
 } from "../../domain/models";
-import { intlLocales, locales, type Locale } from "../../locales";
+import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
+import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
 
 type Draft = {
@@ -46,6 +50,57 @@ type Draft = {
   approval_score: number;
   enabled: boolean;
 };
+
+type QuickStartTranslation = {
+  name: string;
+  description: string;
+  parameters: {
+    label: string;
+    description?: string;
+    placeholder?: string;
+    options?: { label: string }[];
+  }[];
+};
+type LabelCopy = { label: string; hint: string };
+export type ProfileFormCopy = {
+  profileName: LabelCopy;
+  provider: LabelCopy;
+  modelDeployment: LabelCopy;
+};
+type BuildWizardCopy = {
+  buildId: LabelCopy;
+  buildName: LabelCopy;
+  runner: LabelCopy;
+  targetEnvironment: LabelCopy;
+  executionEnvironment: LabelCopy;
+  purpose: LabelCopy;
+  managerTemplate: LabelCopy;
+  testCaseSet: LabelCopy;
+  aiProfile: LabelCopy;
+  timezone: LabelCopy;
+  repeatInterval: LabelCopy;
+  runLimit: LabelCopy;
+  approvalScore: LabelCopy;
+  name: string;
+  next: string;
+};
+
+const withQuickStartTranslation = (item: QuickStart, translation: QuickStartTranslation | null): QuickStart =>
+  translation
+    ? {
+        ...item,
+        name: translation.name,
+        description: translation.description,
+        parameters: item.parameters.map((parameter, index) => ({
+          ...parameter,
+          ...translation.parameters[index],
+          options: parameter.options?.map((option, optionIndex) => ({
+            ...option,
+            ...translation.parameters[index]?.options?.[optionIndex],
+          })),
+        })),
+      }
+    : item;
 const formatDate = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -87,9 +142,9 @@ const draftOf = (b: Build, copy = false): Draft => ({
   approval_score: b.approval_score,
   enabled: b.enabled,
 });
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+const Field = ({ label, description, children }: { label: string; description?: string; children: ReactNode }) => (
   <label className="modal-setting-row">
-    <span>{label}</span>
+    <span>{description ? <SectionInfo title={label} description={description} /> : label}</span>
     {children}
   </label>
 );
@@ -101,6 +156,7 @@ export function ProfileForm({
   tested,
   onClose,
   t,
+  help,
 }: {
   settings: Settings;
   setSettings: (v: Settings) => void;
@@ -109,10 +165,11 @@ export function ProfileForm({
   tested: boolean;
   onClose: () => void;
   t: typeof locales.en.evaluation;
+  help: ProfileFormCopy;
 }) {
   return (
     <div className="modal-form">
-      <Field label={t.profileName}>
+      <Field label={t.profileName} description={help.profileName.hint}>
         <input
           value={settings.profile_name}
           onChange={(e) =>
@@ -120,7 +177,7 @@ export function ProfileForm({
           }
         />
       </Field>
-      <Field label={t.provider}>
+      <Field label={t.provider} description={help.provider.hint}>
         <select
           value={settings.provider}
           onChange={(e) =>
@@ -131,7 +188,7 @@ export function ProfileForm({
           <option value="aws-bedrock">AWS Bedrock</option>
         </select>
       </Field>
-      <Field label={t.modelDeployment}>
+      <Field label={t.modelDeployment} description={help.modelDeployment.hint}>
         <input
           value={settings.model}
           onChange={(e) => setSettings({ ...settings, model: e.target.value })}
@@ -178,7 +235,7 @@ function Direct({
   onClose: () => void;
   locale: Locale;
 }) {
-  const t = locales[locale];
+  const t = locales[locale], copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
   const [step, setStep] = useState(1);
   return (
     <div className="build-wizard">
@@ -195,19 +252,19 @@ function Direct({
       </ol>
       {step === 1 && (
         <div className="modal-form">
-          <Field label={t.evaluation.buildId}>
+          <Field label={copy.buildId.label} description={copy.buildId.hint}>
             <input
               value={d.id}
               onChange={(e) => setD({ ...d, id: e.target.value })}
             />
           </Field>
-          <Field label={t.evaluation.buildName}>
+          <Field label={copy.buildName.label} description={copy.buildName.hint}>
             <input
               value={d.name}
               onChange={(e) => setD({ ...d, name: e.target.value })}
             />
           </Field>
-          <Field label="Runner">
+          <Field label={copy.runner.label} description={copy.runner.hint}>
             <select
               value={d.runner_id}
               onChange={(e) => setD({ ...d, runner_id: e.target.value })}
@@ -220,7 +277,7 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label="Target environment">
+          <Field label={copy.targetEnvironment.label} description={copy.targetEnvironment.hint}>
             <select
               value={d.target_environment_id}
               onChange={(e) =>
@@ -235,7 +292,7 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label="Execution environment">
+          <Field label={copy.executionEnvironment.label} description={copy.executionEnvironment.hint}>
             <select
               value={d.execution_environment_id}
               onChange={(e) =>
@@ -250,7 +307,7 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={t.evaluation.purpose}>
+          <Field label={copy.purpose.label} description={copy.purpose.hint}>
             <textarea
               value={d.purpose}
               onChange={(e) => setD({ ...d, purpose: e.target.value })}
@@ -260,7 +317,7 @@ function Direct({
       )}
       {step === 2 && (
         <div className="modal-form">
-          <Field label="Manager template">
+          <Field label={copy.managerTemplate.label} description={copy.managerTemplate.hint}>
             <select
               value={d.manager_template_id}
               onChange={(e) =>
@@ -274,7 +331,7 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label="Test case set">
+          <Field label={copy.testCaseSet.label} description={copy.testCaseSet.hint}>
             <select
               value={d.test_case_set_id}
               onChange={(e) => setD({ ...d, test_case_set_id: e.target.value })}
@@ -286,7 +343,7 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={t.evaluation.aiProfile}>
+          <Field label={copy.aiProfile.label} description={copy.aiProfile.hint}>
             <select
               value={d.model_profile_name}
               onChange={(e) =>
@@ -300,13 +357,13 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={t.evaluation.timezone}>
+          <Field label={copy.timezone.label} description={copy.timezone.hint}>
             <input
               value={d.timezone}
               onChange={(e) => setD({ ...d, timezone: e.target.value })}
             />
           </Field>
-          <Field label="Repeat interval">
+          <Field label={copy.repeatInterval.label} description={copy.repeatInterval.hint}>
             <input
               type="number"
               value={d.repeat_interval_minutes}
@@ -315,7 +372,7 @@ function Direct({
               }
             />
           </Field>
-          <Field label={t.evaluation.runLimit}>
+          <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
               value={d.run_limit}
@@ -324,7 +381,7 @@ function Direct({
               }
             />
           </Field>
-          <Field label={t.evaluation.approvalScore}>
+          <Field label={copy.approvalScore.label} description={copy.approvalScore.hint}>
             <input
               type="number"
               value={d.approval_score}
@@ -339,9 +396,9 @@ function Direct({
         <div className="wizard-review">
           <p>{t.ui.review}</p>
           <dl>
-            <dt>Name</dt>
+            <dt>{copy.name}</dt>
             <dd>{d.name || "—"}</dd>
-            <dt>Runner</dt>
+            <dt>{copy.runner.label}</dt>
             <dd>{runners.find((x) => x.id === d.runner_id)?.name || "—"}</dd>
           </dl>
         </div>
@@ -355,7 +412,7 @@ function Direct({
         )}
         {step < 3 ? (
           <button className="approve" onClick={() => setStep(step + 1)}>
-            Next
+            {copy.next}
             <ChevronRight size={15} />
           </button>
         ) : (
@@ -387,6 +444,7 @@ function Quick({
   locale: Locale;
 }) {
   const t = locales[locale].ui;
+  const display = item;
   const [v, setV] = useState<Record<string, string>>(() =>
       Object.fromEntries(
         item.parameters.map((p) => [
@@ -421,15 +479,15 @@ function Quick({
       <div className="quick-start-form__heading">
         <Sparkles size={19} />
         <div>
-          <strong>{item.name}</strong>
-          <p>{item.description}</p>
+          <strong>{display.name}</strong>
+          <p>{display.description}</p>
         </div>
       </div>
       {review ? (
         <div className="quick-start-review">
           <p>{t.quickStartReview}</p>
           <dl>
-            {item.parameters.map((p) => (
+            {display.parameters.map((p) => (
               <>
                 <dt key={`${p.key}a`}>{p.label}</dt>
                 <dd key={`${p.key}b`}>{v[p.key] || "—"}</dd>
@@ -439,7 +497,7 @@ function Quick({
         </div>
       ) : (
         <div className="modal-form">
-          {item.parameters.map((p) => (
+          {display.parameters.map((p) => (
             <Field key={p.key} label={p.label}>
               {p.type === "select" ? (
                 <select
@@ -500,6 +558,11 @@ function Quick({
   );
 }
 
+function QuickStartCard({item,translation,pick}:{item:QuickStart;translation:QuickStartTranslation|null;pick:(item:QuickStart)=>void}){
+  const display=withQuickStartTranslation(item,translation)
+  return <article className="quick-start-card"><button className="quick-start-card__select" onClick={()=>pick(item)}><Sparkles size={18}/><span><strong>{display.name}</strong><small>{display.description}</small><em>{item.publisher?.name??'Community'} · v{item.version}</em></span><ChevronRight size={16}/></button></article>
+}
+
 export function EvaluationBuildsPage(props: {
   locale: Locale;
   builds: Build[];
@@ -553,6 +616,8 @@ export function EvaluationBuildsPage(props: {
     [selected, setSelected] = useState(""),
     [testRun, setTestRun] = useState<Run | null>(null),
     file = useRef<HTMLInputElement>(null);
+  const translations = useTemplateTranslations<QuickStartTranslation>("quick-start", items.map((item) => item.id), locale);
+  const translationCopy = locales[locale].templateTranslation;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -685,6 +750,7 @@ export function EvaluationBuildsPage(props: {
                 }
               }}
             >
+              <Copy size={15} />
               {ui.duplicate}
             </button>
             <button className="approve" onClick={() => start()}>
@@ -788,36 +854,26 @@ export function EvaluationBuildsPage(props: {
                 accept="application/json,.json"
                 onChange={(e) => importItem(e.target.files?.[0])}
               />
-              <button className="ghost" onClick={() => file.current?.click()}>
-                <FileUp size={15} />
-                {ui.importQuickStart}
-              </button>
+              <div className="template-picker-actions">
+                <button className="ghost" type="button" disabled={translations.loading} onClick={translations.content(items[0]?.id ?? "") ? translations.showOriginal : translations.translate}>
+                  <Languages size={15} />
+                  {translations.loading ? translationCopy.translating : translations.content(items[0]?.id ?? "") ? translationCopy.showOriginal : translationCopy.translate}
+                </button>
+                <button className="ghost" onClick={() => file.current?.click()}>
+                  <FileUp size={15} />
+                  {ui.importQuickStart}
+                </button>
+              </div>
             </div>
             <div className="quick-start-list">
-              {items.map((x) => (
-                <button
-                  className="quick-start-card"
-                  key={x.id}
-                  onClick={() => setPicked(x)}
-                >
-                  <Sparkles size={18} />
-                  <span>
-                    <strong>{x.name}</strong>
-                    <small>{x.description}</small>
-                    <em>
-                      {x.publisher?.name ?? "Community"} · v{x.version}
-                    </em>
-                  </span>
-                  <ChevronRight size={16} />
-                </button>
-              ))}
+              {items.map((item) => <QuickStartCard key={item.id} item={item} translation={translations.content(item.id)} pick={setPicked} />)}
             </div>
-            {error && <small className="hint">{error}</small>}
+            {(error || translations.error) && <small className="hint">{error || translationCopy.failed}</small>}
           </div>
         )}
         {mode === "quick" && picked && (
           <Quick
-            item={picked}
+            item={withQuickStartTranslation(picked, translations.content(picked.id))}
             profiles={profiles}
             create={onQuickStartCreate}
             back={() => setPicked(null)}
