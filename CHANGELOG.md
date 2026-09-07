@@ -5,6 +5,13 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-09-08
+
+### Fixed
+
+- Frontend release labels now use the packaged release version, so a release build cannot retain an earlier Git tag.
+- Supervisor review now includes setup-phase managed-prompt evidence, allowing directly evidenced prompt-only improvements to be adopted and applied on the next iteration.
+
 ## [0.5.0] - 2026-09-08
 
 ### Added
