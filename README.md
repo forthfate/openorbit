@@ -122,11 +122,15 @@ orbit run
 ```
 
 The wheel already includes the bundled control-room UI, so Node.js and pnpm are
-not required at runtime. To try an unpublished Git revision instead, install
-from its tag or branch; this source installation requires Node.js 24+ and pnpm:
+not required at runtime.
+
+> PyPI publication is made possible with the support of insighta cloud Inc.
+
+To use the latest development version, install directly from the main OpenOrbit
+repository. This source installation requires Node.js 24+ and pnpm:
 
 ```bash
-python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.git@v0.3.0"
+python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.git@main"
 ```
 
 Or run it once with npm:
