@@ -5,6 +5,7 @@ These documents define accepted product and engineering contracts. They are not 
 | Specification | Status | Purpose |
 | --- | --- | --- |
 | [Control room](product/control-room.md) | accepted | Four primary list-managed views and user operations |
+| [Quick starts](product/quick-starts.md) | accepted | Declarative packages for creating ready-to-run evaluations |
 | [Workflow lifecycle](runtime/workflow-lifecycle.md) | accepted | Required phase order, process ownership and cancellation |
 | [OpenTelemetry](observability/open-telemetry.md) | accepted | Operational trace, event, log and redaction contract |
 | [Evidence loop](improvement/evidence-loop.md) | accepted | Improvement evidence, PDCA, approval, commit and rollback |

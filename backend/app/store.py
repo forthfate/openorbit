@@ -465,6 +465,8 @@ SETTINGS = DATA / "settings.json"
 TOOL_TIMES = DATA / "tool-times.json"
 RUNNERS = APP_DATA / "runners"
 RUNNER_TEMPLATES = APP_DATA / "runner-templates"
+QUICK_STARTS = APP_DATA / "quick-starts"
+QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
 # Workflow files are trusted, versioned operator configuration. The API itself
 # never accepts an executable or directory from a browser request.
 ALLOWED_WORKSPACE_ROOTS = (ROOT.parent.resolve(), Path("/mnt/c/users/forth/projects").resolve())
@@ -482,6 +484,7 @@ class ConsoleStore:
         RUNS.mkdir(parents=True, exist_ok=True)
         RUNNERS.mkdir(parents=True, exist_ok=True)
         RUNNER_TEMPLATES.mkdir(parents=True, exist_ok=True)
+        QUICK_STARTS.mkdir(parents=True, exist_ok=True)
         self._migrate_evaluation_environments()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.Lock()
@@ -702,6 +705,550 @@ if __name__ == "__main__": runner.main()
     def available_runner_templates(self) -> list[dict[str, str]]:
         builtins = [{**item, "origin": "built-in"} for item in self.runner_templates()]
         return [*builtins, *self._custom_runner_templates()]
+
+    @staticmethod
+    def _quick_start_browser_runner() -> str:
+        return """from orbit_sdk import runner
+
+@runner.phase("init")
+def init(ctx):
+    if not ctx.evaluation_build.get("browser_base_url"):
+        raise ValueError("Quick start browser evaluation requires a browser base URL")
+
+@runner.phase("run")
+def run(ctx):
+    evidence = ctx.playwright_journey()
+    if not all(item["passed"] for item in evidence["results"]):
+        raise SystemExit("A browser journey failed")
+
+@runner.phase("eval")
+def evaluate(ctx):
+    ctx.log("Quick start browser evaluation completed")
+
+if __name__ == "__main__":
+    runner.main()
+"""
+
+    def _built_in_quick_starts(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "schema_version": 1,
+                "id": "openorbit.user-journey-smoke-test",
+                "version": "1.0.0",
+                "name": "User journey smoke test",
+                "description": "Create a browser-based smoke test for one important user journey.",
+                "publisher": {"name": "OpenOrbit"},
+                "parameters": [
+                    {
+                        "key": "build_name",
+                        "label": "Evaluation name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Browser quality check",
+                    },
+                    {
+                        "key": "repository",
+                        "label": "Target repository",
+                        "type": "workspace",
+                        "required": True,
+                        "placeholder": "/absolute/path/to/your-repository",
+                    },
+                    {
+                        "key": "base_url",
+                        "label": "Browser base URL",
+                        "type": "url",
+                        "required": True,
+                        "placeholder": "http://localhost:3000",
+                    },
+                    {
+                        "key": "journey_name",
+                        "label": "User journey name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Home page smoke test",
+                        "placeholder": "e.g. Sign in and view orders",
+                    },
+                    {
+                        "key": "journey_path",
+                        "label": "Journey start path",
+                        "type": "string",
+                        "required": True,
+                        "default": "/",
+                        "placeholder": "e.g. /login",
+                    },
+                    {
+                        "key": "journey_prompt",
+                        "label": "User actions",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. Sign in with the test account and open order history.",
+                    },
+                    {
+                        "key": "acceptance",
+                        "label": "Success condition",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. The order history page loads without an error.",
+                    },
+                    {
+                        "key": "expected_text",
+                        "label": "Expected visible text (optional)",
+                        "type": "string",
+                        "required": False,
+                        "placeholder": "e.g. Recent orders",
+                    },
+                    {
+                        "key": "profile_name",
+                        "label": "AI model profile name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Browser quality AI",
+                        "placeholder": "e.g. Evaluation GPT-4o",
+                    },
+                    {
+                        "key": "provider",
+                        "label": "AI provider",
+                        "type": "select",
+                        "required": True,
+                        "default": "azure-openai",
+                        "options": [
+                            {"value": "azure-openai", "label": "Azure OpenAI"},
+                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
+                        ],
+                    },
+                    {
+                        "key": "model",
+                        "label": "Model / deployment",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. gpt-4o",
+                    },
+                    {
+                        "key": "endpoint",
+                        "label": "Provider endpoint",
+                        "type": "url",
+                        "required": False,
+                        "placeholder": "https://your-resource.openai.azure.com",
+                    },
+                    {
+                        "key": "region",
+                        "label": "Region",
+                        "type": "string",
+                        "required": True,
+                        "default": "us-east-1",
+                        "placeholder": "e.g. eastus",
+                    },
+                    {
+                        "key": "secret_env",
+                        "label": "API key environment variable",
+                        "type": "string",
+                        "required": True,
+                        "default": "AZURE_OPENAI_API_KEY",
+                        "placeholder": "e.g. AZURE_OPENAI_API_KEY",
+                    },
+                ],
+                "assets": {
+                    "runner": {
+                        "name": "${build_name} runner",
+                        "description": "Browser journey runner created by Quick Start.",
+                        "template_id": "quickstart-browser",
+                        "source": self._quick_start_browser_runner(),
+                    },
+                    "prompt_template": {
+                        "name": "${build_name} policy",
+                        "version": 1,
+                        "content": "Assess the fixed browser journey evidence and return the required evaluation JSON.",
+                    },
+                    "test_case_set": {
+                        "name": "${build_name} smoke tests",
+                        "description": "A smoke journey created by Quick Start.",
+                        "cases": [
+                            {
+                                "id": "primary-journey",
+                                "name": "${journey_name}",
+                                "path": "${journey_path}",
+                                "prompt": "${journey_prompt}",
+                                "acceptance": "${acceptance}",
+                                "expected_text": "${expected_text}",
+                            }
+                        ],
+                    },
+                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
+                    "target_environment": {
+                        "name": "${build_name} target",
+                        "repository": "${repository}",
+                        "browser_base_url": "${base_url}",
+                    },
+                    "model_profile": {
+                        "profile_name": "${profile_name}",
+                        "provider": "${provider}",
+                        "model": "${model}",
+                        "endpoint": "${endpoint}",
+                        "region": "${region}",
+                        "secret_env": "${secret_env}",
+                    },
+                },
+                "build": {
+                    "name": "${build_name}",
+                    "purpose": "Evaluate the browser journey created by Quick Start.",
+                    "model_profile_name": "${profile_name}",
+                    "timezone": "Asia/Tokyo",
+                    "repeat_interval_minutes": 30,
+                    "run_limit": 1,
+                    "approval_score": 8,
+                    "enabled": True,
+                },
+            },
+            {
+                "schema_version": 1,
+                "id": "openorbit.agent-self-improvement",
+                "version": "1.0.0",
+                "name": "Agent self-improvement",
+                "description": "Validate agent or prompt changes against a fixed user journey and retain rollback-ready improvement evidence.",
+                "publisher": {"name": "OpenOrbit"},
+                "parameters": [
+                    {
+                        "key": "build_name",
+                        "label": "Evaluation name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Agent self-improvement",
+                    },
+                    {
+                        "key": "repository",
+                        "label": "Git repository",
+                        "type": "workspace",
+                        "required": True,
+                        "placeholder": "/absolute/path/to/your-git-repository",
+                    },
+                    {
+                        "key": "base_url",
+                        "label": "Browser base URL",
+                        "type": "url",
+                        "required": True,
+                        "placeholder": "http://localhost:3000",
+                    },
+                    {
+                        "key": "managed_prompt_path",
+                        "label": "Agent prompt file path",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. prompts/system.md",
+                    },
+                    {
+                        "key": "journey_name",
+                        "label": "Validation journey name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Agent quality journey",
+                        "placeholder": "e.g. Resolve a customer support request",
+                    },
+                    {
+                        "key": "journey_path",
+                        "label": "Journey start path",
+                        "type": "string",
+                        "required": True,
+                        "default": "/",
+                        "placeholder": "e.g. /chat",
+                    },
+                    {
+                        "key": "journey_prompt",
+                        "label": "User actions",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. Ask the agent to find and explain a policy.",
+                    },
+                    {
+                        "key": "acceptance",
+                        "label": "Success condition",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. The response is complete, grounded, and has no error.",
+                    },
+                    {
+                        "key": "expected_text",
+                        "label": "Expected visible text (optional)",
+                        "type": "string",
+                        "required": False,
+                        "placeholder": "e.g. Return policy",
+                    },
+                    {
+                        "key": "profile_name",
+                        "label": "AI model profile name",
+                        "type": "string",
+                        "required": True,
+                        "default": "Agent improvement AI",
+                        "placeholder": "e.g. Agent evaluation GPT-4o",
+                    },
+                    {
+                        "key": "provider",
+                        "label": "AI provider",
+                        "type": "select",
+                        "required": True,
+                        "default": "azure-openai",
+                        "options": [
+                            {"value": "azure-openai", "label": "Azure OpenAI"},
+                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
+                        ],
+                    },
+                    {
+                        "key": "model",
+                        "label": "Model / deployment",
+                        "type": "string",
+                        "required": True,
+                        "placeholder": "e.g. gpt-4o",
+                    },
+                    {
+                        "key": "endpoint",
+                        "label": "Provider endpoint",
+                        "type": "url",
+                        "required": False,
+                        "placeholder": "https://your-resource.openai.azure.com",
+                    },
+                    {
+                        "key": "region",
+                        "label": "Region",
+                        "type": "string",
+                        "required": True,
+                        "default": "us-east-1",
+                        "placeholder": "e.g. eastus",
+                    },
+                    {
+                        "key": "secret_env",
+                        "label": "API key environment variable",
+                        "type": "string",
+                        "required": True,
+                        "default": "AZURE_OPENAI_API_KEY",
+                        "placeholder": "e.g. AZURE_OPENAI_API_KEY",
+                    },
+                ],
+                "assets": {
+                    "runner": {
+                        "name": "${build_name} runner",
+                        "description": "Agent self-improvement runner created by Quick Start.",
+                        "template_id": "native-improvement-cycle",
+                        "source": NATIVE_IMPROVEMENT_CYCLE_TEMPLATE,
+                    },
+                    "prompt_template": {
+                        "name": "${build_name} policy",
+                        "version": 1,
+                        "content": "Assess fixed browser evidence and approve improvement proposals only when the evidence supports them.",
+                    },
+                    "test_case_set": {
+                        "name": "${build_name} validation",
+                        "description": "A fixed agent validation journey created by Quick Start.",
+                        "cases": [
+                            {
+                                "id": "agent-journey",
+                                "name": "${journey_name}",
+                                "path": "${journey_path}",
+                                "prompt": "${journey_prompt}",
+                                "acceptance": "${acceptance}",
+                                "expected_text": "${expected_text}",
+                            }
+                        ],
+                    },
+                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
+                    "target_environment": {
+                        "name": "${build_name} target",
+                        "repository": "${repository}",
+                        "browser_base_url": "${base_url}",
+                        "managed_prompt_path": "${managed_prompt_path}",
+                    },
+                    "model_profile": {
+                        "profile_name": "${profile_name}",
+                        "provider": "${provider}",
+                        "model": "${model}",
+                        "endpoint": "${endpoint}",
+                        "region": "${region}",
+                        "secret_env": "${secret_env}",
+                    },
+                },
+                "build": {
+                    "name": "${build_name}",
+                    "purpose": "Validate and improve an agent or managed prompt with fixed browser evidence.",
+                    "model_profile_name": "${profile_name}",
+                    "timezone": "Asia/Tokyo",
+                    "repeat_interval_minutes": 30,
+                    "run_limit": 3,
+                    "approval_score": 8,
+                    "enabled": True,
+                },
+            },
+        ]
+
+    @staticmethod
+    def _public_quick_start(manifest: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: deepcopy(manifest.get(key))
+            for key in ("schema_version", "id", "version", "name", "description", "publisher", "parameters")
+        }
+
+    def quick_starts(self) -> list[dict[str, Any]]:
+        custom = []
+        for path in sorted(QUICK_STARTS.glob("*.json")):
+            try:
+                custom.append(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+        manifests = [*self._built_in_quick_starts(), *custom]
+        return [self._public_quick_start(item) for item in manifests]
+
+    def _quick_start(self, quick_start_id: str) -> dict[str, Any]:
+        for manifest in self._built_in_quick_starts():
+            if manifest["id"] == quick_start_id:
+                return manifest
+        path = QUICK_STARTS / f"{quick_start_id}.json"
+        if not path.exists():
+            raise KeyError(quick_start_id)
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _validate_quick_start(manifest: dict[str, Any]) -> dict[str, Any]:
+        required = ("schema_version", "id", "version", "name", "description", "parameters", "assets", "build")
+        if not isinstance(manifest, dict) or any(key not in manifest for key in required):
+            raise ValueError("quick start requires schema_version, identity, parameters, assets, and build")
+        if manifest["schema_version"] != 1 or not re.fullmatch(
+            r"[a-z][a-z0-9.-]{2,127}", str(manifest["id"])
+        ):
+            raise ValueError("quick start must use schema version 1 and a lowercase qualified ID")
+        if (
+            not isinstance(manifest["parameters"], list)
+            or not isinstance(manifest["assets"], dict)
+            or not isinstance(manifest["build"], dict)
+        ):
+            raise ValueError("quick start parameters, assets, and build must be structured values")
+        keys = [str(item.get("key", "")) for item in manifest["parameters"] if isinstance(item, dict)]
+        if (
+            len(keys) != len(manifest["parameters"])
+            or not all(re.fullmatch(r"[a-z][a-z0-9_]{0,63}", key) for key in keys)
+            or len(set(keys)) != len(keys)
+        ):
+            raise ValueError("quick start parameter keys must be unique lowercase identifiers")
+        for key in (
+            "runner",
+            "prompt_template",
+            "test_case_set",
+            "execution_environment",
+            "target_environment",
+        ):
+            if not isinstance(manifest["assets"].get(key), dict):
+                raise ValueError(f"quick start requires a {key} asset")
+        if not str(manifest["assets"]["runner"].get("source", "")).strip():
+            raise ValueError("quick start runner requires source")
+        compile(str(manifest["assets"]["runner"]["source"]), f"{manifest['id']}.py", "exec")
+        return manifest
+
+    def import_quick_start(self, manifest: dict[str, Any]) -> dict[str, Any]:
+        manifest = self._validate_quick_start(manifest)
+        if (
+            any(item["id"] == manifest["id"] for item in self._built_in_quick_starts())
+            or (QUICK_STARTS / f"{manifest['id']}.json").exists()
+        ):
+            raise ValueError("quick start ID already exists")
+        (QUICK_STARTS / f"{manifest['id']}.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return self._public_quick_start(manifest)
+
+    @staticmethod
+    def _substitute(value: Any, inputs: dict[str, str]) -> Any:
+        if isinstance(value, str):
+            return re.sub(
+                r"\$\{([a-z][a-z0-9_]*)\}", lambda match: inputs.get(match.group(1), match.group(0)), value
+            )
+        if isinstance(value, list):
+            return [ConsoleStore._substitute(item, inputs) for item in value]
+        if isinstance(value, dict):
+            return {key: ConsoleStore._substitute(item, inputs) for key, item in value.items()}
+        return value
+
+    def instantiate_quick_start(self, quick_start_id: str, inputs: dict[str, str]) -> dict[str, Any]:
+        manifest = self._validate_quick_start(self._quick_start(quick_start_id))
+        values = {str(key): str(value).strip() for key, value in inputs.items()}
+        for parameter in manifest["parameters"]:
+            key = parameter["key"]
+            if not values.get(key) and parameter.get("default") is not None:
+                values[key] = str(parameter["default"])
+            if parameter.get("required") and not values.get(key):
+                raise ValueError(f"quick start parameter '{key}' is required")
+        token = uuid.uuid4().hex[:8]
+        prefix = re.sub(r"[^a-z0-9]+", "-", quick_start_id.lower()).strip("-")[-36:]
+        generated = {
+            "runner_id": f"qs-{prefix}-{token}-runner",
+            "prompt_template_id": f"qs-{prefix}-{token}-policy",
+            "test_case_set_id": f"qs-{prefix}-{token}-tests",
+            "execution_environment_id": f"qs-{prefix}-{token}-execution",
+            "target_environment_id": f"qs-{prefix}-{token}-target",
+            "build_id": f"qs-{prefix}-{token}",
+        }
+        resolved = self._substitute(manifest, values)
+        assets, build = resolved["assets"], resolved["build"]
+        snapshots = {
+            path: path.read_bytes() if path.exists() else None
+            for path in (
+                EXECUTION_ENVIRONMENTS,
+                TARGET_ENVIRONMENTS,
+                TARGET_TEST_CASE_SETS,
+                CONFIG / "prompt-templates.yaml",
+                CONFIG / "evaluation-builds.yaml",
+                QUICK_START_INSTANCES,
+                SETTINGS,
+            )
+        }
+        runner_paths = [RUNNERS / f"{generated['runner_id']}.py", RUNNERS / f"{generated['runner_id']}.json"]
+        try:
+            runner = self.create_runner({"id": generated["runner_id"], **assets["runner"]})
+            prompt = self.create_prompt_template(
+                {"id": generated["prompt_template_id"], **assets["prompt_template"]}
+            )
+            tests = self.create_target_test_case_set(
+                {"id": generated["test_case_set_id"], **assets["test_case_set"]}
+            )
+            execution = self.create_execution_environment(
+                {"id": generated["execution_environment_id"], **assets["execution_environment"]}
+            )
+            target = self.create_target_environment(
+                {"id": generated["target_environment_id"], **assets["target_environment"]}
+            )
+            if isinstance(assets.get("model_profile"), dict):
+                profile_name = str(assets["model_profile"].get("profile_name", "")).strip()
+                if any(item["profile_name"] == profile_name for item in self.profiles()):
+                    raise ValueError("AI model profile name already exists")
+                self.save_settings(assets["model_profile"])
+            created = self.create_evaluation_build(
+                {
+                    "id": generated["build_id"],
+                    "runner_id": runner["id"],
+                    "manager_template_id": prompt["id"],
+                    "test_case_set_id": tests["id"],
+                    "execution_environment_id": execution["id"],
+                    "target_environment_id": target["id"],
+                    **build,
+                }
+            )
+            instances = self._asset_list(QUICK_START_INSTANCES)
+            instances.append(
+                {
+                    "quick_start_id": quick_start_id,
+                    "version": manifest["version"],
+                    "inputs": values,
+                    "generated": generated,
+                    "created_at": now().isoformat(),
+                }
+            )
+            self._save_asset_list(QUICK_START_INSTANCES, instances)
+            return {"build": created, "generated": generated}
+        except Exception:
+            for path, content in snapshots.items():
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+            for path in runner_paths:
+                path.unlink(missing_ok=True)
+            raise
 
     def create_runner_template(self, values: dict[str, str]) -> dict[str, str]:
         template_id = str(values["id"])

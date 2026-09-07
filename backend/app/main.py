@@ -35,6 +35,7 @@ operator's machine.
         {"name": "Runner templates", "description": "Reusable runner-source templates."},
         {"name": "Prompt templates", "description": "Versioned manager prompt assets."},
         {"name": "Test case sets", "description": "Reusable fixed target-AI test cases."},
+        {"name": "Quick starts", "description": "Declarative evaluation setup packages."},
         {
             "name": "Model profiles",
             "description": "Provider configuration; secrets remain environment variables.",
@@ -382,6 +383,29 @@ class RunnerTemplateUpdate(BaseModel):
     source: str = Field(min_length=1, max_length=100_000)
 
 
+class QuickStartImport(BaseModel):
+    manifest: dict
+
+
+class QuickStartInstantiate(BaseModel):
+    inputs: dict[str, str] = Field(default_factory=dict)
+
+
+@app.get("/api/quick-starts")
+def quick_starts():
+    return store.quick_starts()
+
+
+@app.post("/api/quick-starts/import", status_code=201)
+def import_quick_start(values: QuickStartImport):
+    return safely(lambda: store.import_quick_start(values.manifest))
+
+
+@app.post("/api/quick-starts/{quick_start_id}/instantiate", status_code=201)
+def instantiate_quick_start(quick_start_id: str, values: QuickStartInstantiate):
+    return safely(lambda: store.instantiate_quick_start(quick_start_id, values.inputs))
+
+
 @app.get("/api/runner-templates")
 def runner_templates():
     return store.available_runner_templates()
@@ -528,6 +552,26 @@ def list_project_pipelines(
 )
 def create_project_pipeline(project_id: str, values: PipelineCreate):
     return safely(lambda: store.invoke_remote_build(project_id, values.execution_mode))
+
+
+@app.get("/api/v1/quick-starts", tags=["Quick starts"], operation_id="listQuickStarts")
+def list_quick_starts_v1():
+    return store.quick_starts()
+
+
+@app.post("/api/v1/quick-starts", tags=["Quick starts"], operation_id="importQuickStart", status_code=201)
+def import_quick_start_v1(values: QuickStartImport):
+    return safely(lambda: store.import_quick_start(values.manifest))
+
+
+@app.post(
+    "/api/v1/quick-starts/{quick_start_id}/instances",
+    tags=["Quick starts"],
+    operation_id="instantiateQuickStart",
+    status_code=201,
+)
+def instantiate_quick_start_v1(quick_start_id: str, values: QuickStartInstantiate):
+    return safely(lambda: store.instantiate_quick_start(quick_start_id, values.inputs))
 
 
 @app.get(

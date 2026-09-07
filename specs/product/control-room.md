@@ -11,11 +11,17 @@ Provide one local web control room for configuring, running, observing and revie
 | View | Required list-managed content | Required actions |
 | --- | --- | --- |
 | Dashboard | active rules/builds, active evaluations, approval queue, warnings, daily counts | drill into a build or run; emergency stop |
-| Evaluation builds | prompt revision, model configuration, repository, purpose, criteria, run limit, timezone, interval, approval score | create, clone, edit, validate, enable, disable, run |
+| Evaluation builds | prompt revision, model configuration, repository, purpose, criteria, run limit, timezone, interval, approval score | quick start, create, clone, edit, validate, enable, disable, run |
 | Active evaluations | moving tasks, lifecycle phase, console events, run count, PR count, proposed/approved improvements, PID, trace ID | inspect, stop one run, emergency stop all |
 | Improvement results | proposal, policy decision, baseline/current evidence, PDCA state, commit/revert state | approve, reject, inspect diff, commit, revert |
 
 All three management views are list-first. Detail is opened from a row and must preserve a link back to the list state.
+
+## Quick-start entry
+
+Evaluation-build creation begins with a choice between a quick start and manual
+configuration. The dashboard may open the same quick-start flow directly.
+Quick starts are specified by the [quick-start product contract](quick-starts.md).
 
 ## Localization and theme
 

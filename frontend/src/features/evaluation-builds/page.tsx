@@ -1,29 +1,791 @@
-import { Bot, CheckCircle2, ChevronLeft, ChevronRight, Play, Plus, TestTube2, Trash2 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
-import { DataTable, type Column } from '../../components/ui/data-table'
-import { Modal } from '../../components/ui/modal'
-import { PanelHeader } from '../../components/ui/page-header'
-import { PageSizeSelect } from '../../components/ui/page-size-select'
-import { SectionInfo } from '../../components/ui/section-info'
-import type { Build, ExecutionEnvironment, PromptTemplate, Run, RunnerAsset, Settings, TargetEnvironment, TargetTestCaseSet } from '../../domain/models'
-import { locales, type Locale } from '../../locales'
+import {
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  FileUp,
+  Play,
+  Plus,
+  Sparkles,
+  TestTube2,
+  Trash2,
+  Wrench,
+} from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { DataTable, type Column } from "../../components/ui/data-table";
+import { Modal } from "../../components/ui/modal";
+import { PanelHeader } from "../../components/ui/page-header";
+import { PageSizeSelect } from "../../components/ui/page-size-select";
+import type {
+  Build,
+  ExecutionEnvironment,
+  PromptTemplate,
+  QuickStart,
+  RunnerAsset,
+  Settings,
+  TargetEnvironment,
+  TargetTestCaseSet,
+} from "../../domain/models";
+import { locales, type Locale } from "../../locales";
+import { api } from "../../services/api";
 
-type Draft={id:string;name:string;runner_id:string;execution_environment_id:string;target_environment_id:string;purpose:string;manager_template_id:string;model_profile_name:string;test_case_set_id:string;timezone:string;repeat_interval_minutes:number;run_limit:number;approval_score:number;enabled:boolean}
-const blank:Draft={id:'',name:'',runner_id:'',execution_environment_id:'',target_environment_id:'',purpose:'',manager_template_id:'',model_profile_name:'',test_case_set_id:'',timezone:'Asia/Tokyo',repeat_interval_minutes:30,run_limit:1,approval_score:8,enabled:true}
-const fromBuild=(build:Build,copy=false):Draft=>({...blank,id:copy?'':build.id,name:copy?`${build.name} copy`:build.name,runner_id:build.runner_id,execution_environment_id:build.execution_environment_id??'',target_environment_id:build.target_environment_id??'',purpose:build.purpose,manager_template_id:build.manager_template_id??'',model_profile_name:build.model_profile_name??'',test_case_set_id:build.test_case_set_id??'',timezone:build.timezone,repeat_interval_minutes:build.repeat_interval_minutes,run_limit:build.run_limit,approval_score:build.approval_score,enabled:build.enabled})
-type Text=typeof locales.en.evaluation
-const c={en:{create:'Create',edit:'Edit evaluation build',duplicate:'Duplicate',runner:'Runner',execution:'Execution environment',target:'Target environment',repository:'Target repository',policy:'Evaluation policy',save:'Save',created:'Created',lastRun:'Last run',status:'Status',basic:'Basics',review:'Review',next:'Next',back:'Back'},ko:{create:'생성',edit:'평가 빌드 수정',duplicate:'복제',runner:'러너',execution:'실행 환경',target:'대상 환경',repository:'대상 리포지토리',policy:'평가 정책',save:'저장',created:'생성일시',lastRun:'마지막 실행일시',status:'상태',basic:'기본 정보',review:'검토',next:'다음',back:'이전'},ja:{create:'作成',edit:'評価ビルドを編集',duplicate:'複製',runner:'ランナー',execution:'実行環境',target:'対象環境',repository:'対象リポジトリ',policy:'評価ポリシー',save:'保存',created:'作成日時',lastRun:'最終実行日時',status:'状態',basic:'基本情報',review:'確認',next:'次へ',back:'戻る'}}
-const fieldHelp={
-  en:{buildId:'A stable identifier used by Orbit and its APIs. It cannot be changed after creation.',buildName:'A human-readable name shown throughout the console.',runner:'The reusable runner that executes this evaluation build.',target:'The target repository and browser-accessible application to evaluate.',execution:'The environment and invocation method used to run the selected runner.',purpose:'Describe what this evaluation is intended to validate.',template:'The reusable manager instructions and response format for this build.',testCases:'The fixed target-AI inputs and acceptance evidence used for every run.',profile:'The saved AI connection profile used by this evaluation.',timezone:'Timezone used to schedule and display this build’s runs.',interval:'Minutes to wait between repeated evaluation runs.',runLimit:'Maximum number of runs allowed for this evaluation build.',approvalScore:'Minimum score required before a result can be approved.'},
-  ko:{buildId:'Orbit과 API에서 이 평가 빌드를 식별하는 고유 ID입니다. 생성 후에는 변경할 수 없습니다.',buildName:'콘솔 전반에 표시되는 사람이 읽을 수 있는 평가 빌드 이름입니다.',runner:'이 평가 빌드를 실행할 재사용 가능한 러너입니다.',target:'평가할 대상 저장소와 브라우저로 접근 가능한 애플리케이션을 선택합니다.',execution:'선택한 러너를 실행할 환경과 호출 방식을 정합니다.',purpose:'이 평가에서 검증하려는 목적을 설명합니다.',template:'이 빌드에 사용할 재사용 가능한 관리자 지시문과 응답 형식입니다.',testCases:'매 실행마다 사용할 대상 AI 고정 입력과 승인 근거를 선택합니다.',profile:'이 평가에서 사용할 저장된 AI 연결 프로필입니다.',timezone:'이 평가 빌드의 실행 일정과 시간을 표시할 시간대입니다.',interval:'반복 평가 실행 사이에 기다릴 시간(분)입니다.',runLimit:'이 평가 빌드에서 허용하는 최대 실행 횟수입니다.',approvalScore:'결과를 승인하기 위해 필요한 최소 점수입니다.'},
-  ja:{buildId:'Orbit と API でこの評価ビルドを識別する固定 ID です。作成後は変更できません。',buildName:'コンソール全体に表示する、人が読める評価ビルド名です。',runner:'この評価ビルドを実行する再利用可能なランナーです。',target:'評価する対象リポジトリと、ブラウザーからアクセス可能なアプリケーションを選びます。',execution:'選択したランナーを実行する環境と呼び出し方法です。',purpose:'この評価で検証する目的を記述します。',template:'このビルドで使用する、再利用可能な管理者向け指示と応答形式です。',testCases:'各実行で使用する対象 AI への固定入力と合格根拠を選びます。',profile:'この評価で使用する保存済み AI 接続プロファイルです。',timezone:'この評価ビルドの実行スケジュールと時刻表示に使うタイムゾーンです。',interval:'繰り返し評価の実行間で待機する時間（分）です。',runLimit:'この評価ビルドで許可する最大実行回数です。',approvalScore:'結果を承認するために必要な最小スコアです。'}
+type Draft = {
+  id: string;
+  name: string;
+  runner_id: string;
+  execution_environment_id: string;
+  target_environment_id: string;
+  purpose: string;
+  manager_template_id: string;
+  model_profile_name: string;
+  test_case_set_id: string;
+  timezone: string;
+  repeat_interval_minutes: number;
+  run_limit: number;
+  approval_score: number;
+  enabled: boolean;
+};
+const empty: Draft = {
+  id: "",
+  name: "",
+  runner_id: "",
+  execution_environment_id: "",
+  target_environment_id: "",
+  purpose: "",
+  manager_template_id: "",
+  model_profile_name: "",
+  test_case_set_id: "",
+  timezone: "Asia/Tokyo",
+  repeat_interval_minutes: 30,
+  run_limit: 1,
+  approval_score: 8,
+  enabled: true,
+};
+const draftOf = (b: Build, copy = false): Draft => ({
+  ...empty,
+  id: copy ? "" : b.id,
+  name: copy ? `${b.name} copy` : b.name,
+  runner_id: b.runner_id,
+  execution_environment_id: b.execution_environment_id ?? "",
+  target_environment_id: b.target_environment_id ?? "",
+  purpose: b.purpose,
+  manager_template_id: b.manager_template_id ?? "",
+  model_profile_name: b.model_profile_name ?? "",
+  test_case_set_id: b.test_case_set_id ?? "",
+  timezone: b.timezone,
+  repeat_interval_minutes: b.repeat_interval_minutes,
+  run_limit: b.run_limit,
+  approval_score: b.approval_score,
+  enabled: b.enabled,
+});
+const Field = ({ label, children }: { label: string; children: ReactNode }) => (
+  <label className="modal-setting-row">
+    <span>{label}</span>
+    {children}
+  </label>
+);
+export function ProfileForm({
+  settings,
+  setSettings,
+  test,
+  save,
+  tested,
+  onClose,
+  t,
+}: {
+  settings: Settings;
+  setSettings: (v: Settings) => void;
+  test: () => void;
+  save: () => void;
+  tested: boolean;
+  onClose: () => void;
+  t: typeof locales.en.evaluation;
+}) {
+  return (
+    <div className="modal-form">
+      <Field label={t.profileName}>
+        <input
+          value={settings.profile_name}
+          onChange={(e) =>
+            setSettings({ ...settings, profile_name: e.target.value })
+          }
+        />
+      </Field>
+      <Field label={t.provider}>
+        <select
+          value={settings.provider}
+          onChange={(e) =>
+            setSettings({ ...settings, provider: e.target.value })
+          }
+        >
+          <option value="azure-openai">Azure OpenAI</option>
+          <option value="aws-bedrock">AWS Bedrock</option>
+        </select>
+      </Field>
+      <Field label={t.modelDeployment}>
+        <input
+          value={settings.model}
+          onChange={(e) => setSettings({ ...settings, model: e.target.value })}
+        />
+      </Field>
+      <div className="modal-actions">
+        <button className="ghost" onClick={onClose}>
+          {t.cancel}
+        </button>
+        <button className="ghost" onClick={test}>
+          <Bot size={15} />
+          {t.test}
+        </button>
+        <button className="approve" disabled={!tested} onClick={save}>
+          {t.saveProfile}
+        </button>
+      </div>
+    </div>
+  );
 }
-const stamp=(value:string|undefined,locale:Locale)=>value?new Date(value).toLocaleString(locale==='ko'?'ko-KR':locale==='ja'?'ja-JP':'en-US'):'—'
-const Row=({label,description,children}:{label:string;description?:string;children:ReactNode})=><label className="modal-setting-row">{description?<SectionInfo title={label} description={description}/>:<span>{label}</span>}{children}</label>
 
-function ProfileForm({settings,setSettings,test,save,tested,onClose,t}:{settings:Settings;setSettings:(settings:Settings)=>void;test:()=>void;save:()=>void;tested:boolean;onClose:()=>void;t:Text}){return <div className="modal-form">{<Row label={t.profileName}><input value={settings.profile_name} onChange={e=>setSettings({...settings,profile_name:e.target.value})}/></Row>}<Row label={t.provider}><select value={settings.provider} onChange={e=>setSettings({...settings,provider:e.target.value})}><option value="azure-openai">Azure OpenAI</option><option value="aws-bedrock">AWS Bedrock</option></select></Row><Row label={t.modelDeployment}><input value={settings.model} onChange={e=>setSettings({...settings,model:e.target.value})}/></Row><Row label={t.region}><input value={settings.region} onChange={e=>setSettings({...settings,region:e.target.value})}/></Row><div className="modal-actions"><button className="ghost" onClick={onClose}>{t.cancel}</button><button className="ghost" onClick={test}><Bot size={15}/>{t.test}</button><button className="approve" disabled={!tested} onClick={save}>{t.saveProfile}</button></div></div>}
-export { ProfileForm }
+function Direct({
+  d,
+  setD,
+  runners,
+  profiles,
+  prompts,
+  tests,
+  executions,
+  targets,
+  onSave,
+  onClose,
+  locale,
+}: {
+  d: Draft;
+  setD: (x: Draft) => void;
+  runners: RunnerAsset[];
+  profiles: Settings[];
+  prompts: PromptTemplate[];
+  tests: TargetTestCaseSet[];
+  executions: ExecutionEnvironment[];
+  targets: TargetEnvironment[];
+  onSave: () => void;
+  onClose: () => void;
+  locale: Locale;
+}) {
+  const t = locales[locale];
+  const [step, setStep] = useState(1);
+  return (
+    <div className="build-wizard">
+      <ol className="wizard-steps">
+        {[t.common.evaluationBuild, t.evaluation.criteria, t.ui.review].map(
+          (x, i) => (
+            <li key={x} className={step === i + 1 ? "current" : ""}>
+              <button onClick={() => setStep(i + 1)}>
+                {i + 1}. {x}
+              </button>
+            </li>
+          ),
+        )}
+      </ol>
+      {step === 1 && (
+        <div className="modal-form">
+          <Field label={t.evaluation.buildId}>
+            <input
+              value={d.id}
+              onChange={(e) => setD({ ...d, id: e.target.value })}
+            />
+          </Field>
+          <Field label={t.evaluation.buildName}>
+            <input
+              value={d.name}
+              onChange={(e) => setD({ ...d, name: e.target.value })}
+            />
+          </Field>
+          <Field label="Runner">
+            <select
+              value={d.runner_id}
+              onChange={(e) => setD({ ...d, runner_id: e.target.value })}
+            >
+              <option value="" />
+              {runners.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Target environment">
+            <select
+              value={d.target_environment_id}
+              onChange={(e) =>
+                setD({ ...d, target_environment_id: e.target.value })
+              }
+            >
+              <option value="" />
+              {targets.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Execution environment">
+            <select
+              value={d.execution_environment_id}
+              onChange={(e) =>
+                setD({ ...d, execution_environment_id: e.target.value })
+              }
+            >
+              <option value="" />
+              {executions.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t.evaluation.purpose}>
+            <textarea
+              value={d.purpose}
+              onChange={(e) => setD({ ...d, purpose: e.target.value })}
+            />
+          </Field>
+        </div>
+      )}
+      {step === 2 && (
+        <div className="modal-form">
+          <Field label="Manager template">
+            <select
+              value={d.manager_template_id}
+              onChange={(e) =>
+                setD({ ...d, manager_template_id: e.target.value })
+              }
+            >
+              {prompts.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Test case set">
+            <select
+              value={d.test_case_set_id}
+              onChange={(e) => setD({ ...d, test_case_set_id: e.target.value })}
+            >
+              {tests.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t.evaluation.aiProfile}>
+            <select
+              value={d.model_profile_name}
+              onChange={(e) =>
+                setD({ ...d, model_profile_name: e.target.value })
+              }
+            >
+              {profiles.map((x) => (
+                <option key={x.profile_name} value={x.profile_name}>
+                  {x.profile_name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t.evaluation.timezone}>
+            <input
+              value={d.timezone}
+              onChange={(e) => setD({ ...d, timezone: e.target.value })}
+            />
+          </Field>
+          <Field label="Repeat interval">
+            <input
+              type="number"
+              value={d.repeat_interval_minutes}
+              onChange={(e) =>
+                setD({ ...d, repeat_interval_minutes: Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label={t.evaluation.runLimit}>
+            <input
+              type="number"
+              value={d.run_limit}
+              onChange={(e) =>
+                setD({ ...d, run_limit: Number(e.target.value) })
+              }
+            />
+          </Field>
+          <Field label={t.evaluation.approvalScore}>
+            <input
+              type="number"
+              value={d.approval_score}
+              onChange={(e) =>
+                setD({ ...d, approval_score: Number(e.target.value) })
+              }
+            />
+          </Field>
+        </div>
+      )}
+      {step === 3 && (
+        <div className="wizard-review">
+          <p>{t.ui.review}</p>
+          <dl>
+            <dt>Name</dt>
+            <dd>{d.name || "—"}</dd>
+            <dt>Runner</dt>
+            <dd>{runners.find((x) => x.id === d.runner_id)?.name || "—"}</dd>
+          </dl>
+        </div>
+      )}
+      <div className="modal-actions">
+        {step > 1 && (
+          <button className="ghost" onClick={() => setStep(step - 1)}>
+            <ChevronLeft size={15} />
+            {t.ui.back}
+          </button>
+        )}
+        {step < 3 ? (
+          <button className="approve" onClick={() => setStep(step + 1)}>
+            Next
+            <ChevronRight size={15} />
+          </button>
+        ) : (
+          <button className="approve" onClick={onSave}>
+            {t.ui.save}
+          </button>
+        )}
+        <button className="ghost" onClick={onClose}>
+          {t.ui.cancel}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-function BuildForm({draft,setDraft,runners,profiles,promptTemplates,testCaseSets,executionEnvironments,targetEnvironments,t,locale,onSave,onClose,locked}:{draft:Draft;setDraft:(v:Draft)=>void;runners:RunnerAsset[];profiles:Settings[];promptTemplates:PromptTemplate[];testCaseSets:TargetTestCaseSet[];executionEnvironments:ExecutionEnvironment[];targetEnvironments:TargetEnvironment[];t:Text;locale:Locale;onSave:()=>void;onClose:()=>void;locked:boolean}){const text=c[locale],help=fieldHelp[locale],[step,setStep]=useState(1),steps=[text.basic,text.policy,text.review],summary=(label:string,value:string)=><><dt>{label}</dt><dd>{value||'—'}</dd></>;return <div className="build-wizard"><ol className="wizard-steps">{steps.map((name,index)=><li key={name} className={step===index+1?'current':step>index+1?'done':''}><button type="button" onClick={()=>setStep(index+1)}>{index+1}. {name}</button></li>)}</ol>{step===1&&<div className="modal-form"><Row label={t.buildId} description={help.buildId}><input disabled={locked} value={draft.id} onChange={e=>setDraft({...draft,id:e.target.value})}/></Row><Row label={t.buildName} description={help.buildName}><input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></Row><Row label={text.runner} description={help.runner}><select value={draft.runner_id} onChange={e=>setDraft({...draft,runner_id:e.target.value})}><option value="">{text.runner}</option>{runners.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></Row><Row label={text.target} description={help.target}><select value={draft.target_environment_id} onChange={e=>setDraft({...draft,target_environment_id:e.target.value})}><option value="">{text.target}</option>{targetEnvironments.map(x=><option key={x.id} value={x.id}>{x.name} · {x.repository}</option>)}</select></Row><Row label={text.execution} description={help.execution}><select value={draft.execution_environment_id} onChange={e=>setDraft({...draft,execution_environment_id:e.target.value})}><option value="">{text.execution}</option>{executionEnvironments.map(x=><option key={x.id} value={x.id}>{x.name} · {x.executor.type}</option>)}</select></Row><Row label={t.purpose} description={help.purpose}><textarea rows={3} value={draft.purpose} onChange={e=>setDraft({...draft,purpose:e.target.value})}/></Row></div>}{step===2&&<div className="modal-form"><Row label="Manager template" description={help.template}><select value={draft.manager_template_id} onChange={e=>setDraft({...draft,manager_template_id:e.target.value})}><option value="">Manager template</option>{promptTemplates.map(x=><option key={x.id} value={x.id}>{x.name} · v{x.version}</option>)}</select></Row><Row label="Target-AI fixed test case set" description={help.testCases}><select value={draft.test_case_set_id} onChange={e=>setDraft({...draft,test_case_set_id:e.target.value})}><option value="">Test case set</option>{testCaseSets.map(x=><option key={x.id} value={x.id}>{x.name} · {x.cases.length}</option>)}</select></Row><Row label={t.aiProfile} description={help.profile}><select value={draft.model_profile_name} onChange={e=>setDraft({...draft,model_profile_name:e.target.value})}><option value="">AI model profile</option>{profiles.map(x=><option key={x.profile_name} value={x.profile_name}>{x.profile_name}</option>)}</select></Row><Row label={t.timezone} description={help.timezone}><input value={draft.timezone} onChange={e=>setDraft({...draft,timezone:e.target.value})}/></Row><Row label={t.interval} description={help.interval}><input type="number" value={draft.repeat_interval_minutes} onChange={e=>setDraft({...draft,repeat_interval_minutes:Number(e.target.value)})}/></Row><Row label={t.runLimit} description={help.runLimit}><input type="number" value={draft.run_limit} onChange={e=>setDraft({...draft,run_limit:Number(e.target.value)})}/></Row><Row label={t.approvalScore} description={help.approvalScore}><input type="number" value={draft.approval_score} onChange={e=>setDraft({...draft,approval_score:Number(e.target.value)})}/></Row></div>}{step===3&&<div className="wizard-review"><p>{locale==='ko'?'저장 전 구성을 검토하세요.':'Review the configuration before saving.'}</p><dl>{summary(t.buildName,draft.name)}{summary(text.runner,runners.find(x=>x.id===draft.runner_id)?.name??'')}{summary(text.target,targetEnvironments.find(x=>x.id===draft.target_environment_id)?.name??'')}{summary('Manager template',promptTemplates.find(x=>x.id===draft.manager_template_id)?.name??'')}</dl></div>}<div className="modal-actions">{step>1&&<button className="ghost" onClick={()=>setStep(step-1)}><ChevronLeft size={15}/>{text.back}</button>}{step<3?<button className="approve" onClick={()=>setStep(step+1)}>{text.next}<ChevronRight size={15}/></button>:<button className="approve" disabled={locked} onClick={onSave}>{text.save}</button>}<button className="ghost" onClick={onClose}>{t.cancel}</button></div></div>}
+function Quick({
+  item,
+  profiles,
+  create,
+  back,
+  close,
+  locale,
+}: {
+  item: QuickStart;
+  profiles: Settings[];
+  create: (id: string, v: Record<string, string>) => Promise<unknown>;
+  back: () => void;
+  close: () => void;
+  locale: Locale;
+}) {
+  const t = locales[locale].ui;
+  const [v, setV] = useState<Record<string, string>>(() =>
+      Object.fromEntries(
+        item.parameters.map((p) => [
+          p.key,
+          p.default ??
+            (p.type === "model_profile"
+              ? (profiles[0]?.profile_name ?? "")
+              : ""),
+        ]),
+      ),
+    ),
+    [review, setReview] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const submit = async () => {
+    setBusy(true);
+    try {
+      await create(item.id, v);
+      close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Creation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="quick-start-form">
+      <button className="ghost" onClick={back}>
+        <ChevronLeft size={15} />
+        {t.quickStarts}
+      </button>
+      <div className="quick-start-form__heading">
+        <Sparkles size={19} />
+        <div>
+          <strong>{item.name}</strong>
+          <p>{item.description}</p>
+        </div>
+      </div>
+      {review ? (
+        <div className="quick-start-review">
+          <p>{t.quickStartReview}</p>
+          <dl>
+            {item.parameters.map((p) => (
+              <>
+                <dt key={`${p.key}a`}>{p.label}</dt>
+                <dd key={`${p.key}b`}>{v[p.key] || "—"}</dd>
+              </>
+            ))}
+          </dl>
+        </div>
+      ) : (
+        <div className="modal-form">
+          {item.parameters.map((p) => (
+            <Field key={p.key} label={p.label}>
+              {p.type === "select" ? (
+                <select
+                  value={v[p.key]}
+                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
+                >
+                  {p.options?.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : p.type === "model_profile" ? (
+                <select
+                  value={v[p.key]}
+                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
+                >
+                  {profiles.map((x) => (
+                    <option key={x.profile_name} value={x.profile_name}>
+                      {x.profile_name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={p.type === "url" ? "url" : "text"}
+                  value={v[p.key]}
+                  placeholder={p.placeholder}
+                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
+                />
+              )}
+            </Field>
+          ))}
+        </div>
+      )}
+      <div className="modal-actions">
+        {error && <small className="hint">{error}</small>}
+        {review ? (
+          <>
+            <button className="ghost" onClick={() => setReview(false)}>
+              {t.edit}
+            </button>
+            <button className="approve" disabled={busy} onClick={submit}>
+              {busy ? t.creating : t.createAssetsAndBuild}
+            </button>
+          </>
+        ) : (
+          <button className="approve" onClick={() => setReview(true)}>
+            {t.review}
+            <ChevronRight size={15} />
+          </button>
+        )}
+        <button className="ghost" onClick={close}>
+          {t.cancel}
+        </button>
+      </div>
+    </div>
+  );
+}
 
-export function EvaluationBuildsPage({locale,builds,runners,runs,profiles,promptTemplates,testCaseSets,executionEnvironments,targetEnvironments,onInvoke,onTest,onCreate,onUpdate,onDelete}:{locale:Locale;builds:Build[];runners:RunnerAsset[];runs:Run[];profiles:Settings[];promptTemplates:PromptTemplate[];testCaseSets:TargetTestCaseSet[];executionEnvironments:ExecutionEnvironment[];targetEnvironments:TargetEnvironment[];onInvoke:(id:string)=>void;onTest:(id:string)=>void;onCreate:(draft:Draft)=>Promise<unknown>;onUpdate:(id:string,draft:Draft)=>Promise<unknown>;onDelete:(id:string)=>void}){const text=c[locale],t=locales[locale].evaluation,[open,setOpen]=useState(false),[editing,setEditing]=useState<Build|null>(null),[draft,setDraft]=useState(blank),[selected,setSelected]=useState(''),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(15),active=(b:Build)=>runs.some(run=>run.evaluation_build_id===b.id&&['queued','running','awaiting_approval'].includes(run.status));const columns:Column<Build>[]=[{id:'name',header:t.name,render:b=>b.name},{id:'repository',header:text.repository,render:b=>b.repository_name??targetEnvironments.find(x=>x.id===b.target_environment_id)?.name??b.repository},{id:'status',header:text.status,render:b=><CheckCircle2 size={16} className={b.enabled?'repository-valid':'muted'}/>},{id:'created',header:text.created,render:b=>stamp(b.created_at,locale)},{id:'last',header:text.lastRun,render:b=>stamp(b.last_run_at,locale)},{id:'action',header:t.action,render:b=><span className="build-actions">{!active(b)&&<><button className="ghost icon-button" onClick={()=>onTest(b.id)}><TestTube2 size={15}/></button><button className="approve icon-button" onClick={()=>onInvoke(b.id)}><Play size={15}/></button></>}<button className="icon-button danger" onClick={()=>onDelete(b.id)}><Trash2 size={15}/></button></span>}];const pages=Math.max(1,Math.ceil(builds.length/pageSize)),rows=builds.slice((page-1)*pageSize,page*pageSize),canCreate=runners.length>0&&executionEnvironments.length>0&&targetEnvironments.length>0,save=async()=>{await(editing?onUpdate(editing.id,draft):onCreate(draft));setOpen(false);setEditing(null)};return <><section className="panel evaluation-build-panel"><div className="panel-title-action"><PanelHeader title={t.evaluationBuildList}/><div className="build-list-actions"><button className="ghost" disabled={!selected} onClick={()=>{const source=builds.find(x=>x.id===selected);if(source){setDraft(fromBuild(source,true));setEditing(null);setOpen(true)}}}>{text.duplicate}</button><button className="approve" disabled={!canCreate} onClick={()=>{setDraft(blank);setEditing(null);setOpen(true)}}><Plus size={14}/>{text.create}</button></div></div><div className="build-list-toolbar"><PageSizeSelect locale={locale} value={pageSize} onChange={v=>{setPageSize(v);setPage(1)}}/></div><DataTable columns={columns} rows={rows} onRowClick={b=>{setSelected(b.id);setDraft(fromBuild(b));setEditing(b);setOpen(true)}} className="evaluation-build-table" gridTemplateColumns="minmax(180px,1fr) minmax(180px,1fr) 54px minmax(190px,.95fr) minmax(190px,.95fr) 110px"/><div className="run-pagination"><span>{page} / {pages}</span><div><button className="ghost" disabled={page===1} onClick={()=>setPage(page-1)}>Previous</button><button className="ghost" disabled={page===pages} onClick={()=>setPage(page+1)}>Next</button></div></div></section><Modal open={open} title={editing?text.edit:t.createEvaluationBuild} onClose={()=>setOpen(false)}><BuildForm draft={draft} setDraft={setDraft} runners={runners} profiles={profiles} promptTemplates={promptTemplates} testCaseSets={testCaseSets} executionEnvironments={executionEnvironments} targetEnvironments={targetEnvironments} t={t} locale={locale} locked={editing!==null&&active(editing)} onSave={save} onClose={()=>setOpen(false)}/></Modal></>}
+export function EvaluationBuildsPage(props: {
+  locale: Locale;
+  builds: Build[];
+  runners: RunnerAsset[];
+  profiles: Settings[];
+  promptTemplates: PromptTemplate[];
+  testCaseSets: TargetTestCaseSet[];
+  executionEnvironments: ExecutionEnvironment[];
+  targetEnvironments: TargetEnvironment[];
+  onInvoke: (id: string) => void;
+  onTest: (id: string) => void;
+  onCreate: (v: Draft) => Promise<unknown>;
+  onUpdate: (id: string, v: Draft) => Promise<unknown>;
+  onDelete: (id: string) => void;
+  onQuickStartCreate: (
+    id: string,
+    v: Record<string, string>,
+  ) => Promise<unknown>;
+  quickStartRequest?: number;
+  onQuickStartRequestHandled?: () => void;
+}) {
+  const {
+    locale,
+    builds,
+    runners,
+    profiles,
+    promptTemplates,
+    testCaseSets,
+    executionEnvironments,
+    targetEnvironments,
+    onInvoke,
+    onTest,
+    onCreate,
+    onUpdate,
+    onDelete,
+    onQuickStartCreate,
+    quickStartRequest,
+    onQuickStartRequestHandled,
+  } = props;
+  const t = locales[locale],
+    ui = t.ui;
+  const [open, setOpen] = useState(false),
+    [edit, setEdit] = useState<Build | null>(null),
+    [d, setD] = useState(empty),
+    [mode, setMode] = useState<"chooser" | "quick" | "direct">("chooser"),
+    [items, setItems] = useState<QuickStart[]>([]),
+    [picked, setPicked] = useState<QuickStart | null>(null),
+    [error, setError] = useState(""),
+    [page, setPage] = useState(1),
+    [size, setSize] = useState(15),
+    [selected, setSelected] = useState(""),
+    file = useRef<HTMLInputElement>(null);
+  const start = (initialMode: "chooser" | "quick" = "chooser") => {
+    setEdit(null);
+    setD(empty);
+    setMode(initialMode);
+    setPicked(null);
+    setOpen(true);
+    api<QuickStart[]>("/api/quick-starts")
+      .then(setItems)
+      .catch((e) => setError(e.message));
+  };
+  useEffect(() => {
+    if (!quickStartRequest) return;
+    queueMicrotask(() => {
+      start("quick");
+      onQuickStartRequestHandled?.();
+    });
+  }, [quickStartRequest, onQuickStartRequestHandled]);
+  const importItem = async (f: File | undefined) => {
+    if (!f) return;
+    try {
+      await api("/api/quick-starts/import", "POST", {
+        manifest: JSON.parse(await f.text()),
+      });
+      setItems(await api("/api/quick-starts"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    }
+  };
+  const cols: Column<Build>[] = [
+      {
+        id: "name",
+        header: locales[locale].evaluation.name,
+        render: (b) => b.name,
+      },
+      {
+        id: "repository",
+        header: ui.repository,
+        render: (b) => b.repository_name ?? b.repository,
+      },
+      { id: "created", header: ui.created, render: (b) => b.created_at ?? "—" },
+      {
+        id: "action",
+        header: ui.action,
+        render: (b) => (
+          <span className="build-actions">
+            <button className="ghost icon-button" onClick={() => onTest(b.id)}>
+              <TestTube2 size={15} />
+            </button>
+            <button
+              className="approve icon-button"
+              onClick={() => onInvoke(b.id)}
+            >
+              <Play size={15} />
+            </button>
+            <button
+              className="icon-button danger"
+              onClick={() => onDelete(b.id)}
+            >
+              <Trash2 size={15} />
+            </button>
+          </span>
+        ),
+      },
+    ],
+    pages = Math.max(1, Math.ceil(builds.length / size)),
+    rows = builds.slice((page - 1) * size, page * size),
+    save = async () => {
+      await (edit ? onUpdate(edit.id, d) : onCreate(d));
+      setOpen(false);
+    };
+  return (
+    <>
+      <section className="panel evaluation-build-panel">
+        <div className="panel-title-action">
+          <PanelHeader title={locales[locale].evaluation.evaluationBuildList} />
+          <div className="build-list-actions">
+            <button
+              className="ghost"
+              disabled={!selected}
+              onClick={() => {
+                const b = builds.find((x) => x.id === selected);
+                if (b) {
+                  setEdit(null);
+                  setD(draftOf(b, true));
+                  setMode("direct");
+                  setOpen(true);
+                }
+              }}
+            >
+              {ui.duplicate}
+            </button>
+            <button className="approve" onClick={() => start()}>
+              <Plus size={14} />
+              {ui.create}
+            </button>
+          </div>
+        </div>
+        <div className="build-list-toolbar">
+          <PageSizeSelect
+            locale={locale}
+            value={size}
+            onChange={(x) => {
+              setSize(x);
+              setPage(1);
+            }}
+          />
+        </div>
+        <DataTable
+          columns={cols}
+          rows={rows}
+          onRowClick={(b) => {
+            setSelected(b.id);
+            setEdit(b);
+            setD(draftOf(b));
+            setMode("direct");
+            setOpen(true);
+          }}
+          className="evaluation-build-table"
+          gridTemplateColumns="1fr 1fr 180px 110px"
+        />
+        <div className="run-pagination">
+          <span>
+            {page} / {pages}
+          </span>
+          <div>
+            <button
+              className="ghost"
+              disabled={page === 1}
+              onClick={() => setPage(page - 1)}
+            >
+              {ui.previous}
+            </button>
+            <button
+              className="ghost"
+              disabled={page === pages}
+              onClick={() => setPage(page + 1)}
+            >
+              {ui.next}
+            </button>
+          </div>
+        </div>
+      </section>
+      <Modal
+        open={open}
+        title={
+          edit
+            ? t.evaluation.createEvaluationBuild
+            : t.evaluation.createEvaluationBuild
+        }
+        onClose={() => setOpen(false)}
+      >
+        {mode === "chooser" && (
+          <div className="create-mode-picker">
+            <button
+              className="create-mode-card"
+              onClick={() => setMode("quick")}
+            >
+              <Sparkles size={22} />
+              <span>
+                <strong>{ui.quickStart}</strong>
+                <small>{ui.quickStartDescription}</small>
+              </span>
+              <ChevronRight size={18} />
+            </button>
+            <button
+              className="create-mode-card"
+              onClick={() => setMode("direct")}
+            >
+              <Wrench size={22} />
+              <span>
+                <strong>{ui.manualSetup}</strong>
+                <small>{ui.manualSetupDescription}</small>
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+        {mode === "quick" && !picked && (
+          <div className="quick-start-picker">
+            <div className="quick-start-picker__head">
+              <button className="ghost" onClick={() => setMode("chooser")}>
+                <ChevronLeft size={15} />
+                {ui.back}
+              </button>
+              <input
+                className="visually-hidden"
+                ref={file}
+                type="file"
+                accept="application/json,.json"
+                onChange={(e) => importItem(e.target.files?.[0])}
+              />
+              <button className="ghost" onClick={() => file.current?.click()}>
+                <FileUp size={15} />
+                {ui.importQuickStart}
+              </button>
+            </div>
+            <div className="quick-start-list">
+              {items.map((x) => (
+                <button
+                  className="quick-start-card"
+                  key={x.id}
+                  onClick={() => setPicked(x)}
+                >
+                  <Sparkles size={18} />
+                  <span>
+                    <strong>{x.name}</strong>
+                    <small>{x.description}</small>
+                    <em>
+                      {x.publisher?.name ?? "Community"} · v{x.version}
+                    </em>
+                  </span>
+                  <ChevronRight size={16} />
+                </button>
+              ))}
+            </div>
+            {error && <small className="hint">{error}</small>}
+          </div>
+        )}
+        {mode === "quick" && picked && (
+          <Quick
+            item={picked}
+            profiles={profiles}
+            create={onQuickStartCreate}
+            back={() => setPicked(null)}
+            close={() => setOpen(false)}
+            locale={locale}
+          />
+        )}{" "}
+        {mode === "direct" && (
+          <Direct
+            d={d}
+            setD={setD}
+            runners={runners}
+            profiles={profiles}
+            prompts={promptTemplates}
+            tests={testCaseSets}
+            executions={executionEnvironments}
+            targets={targetEnvironments}
+            onSave={save}
+            onClose={() => setOpen(false)}
+            locale={locale}
+          />
+        )}
+      </Modal>
+    </>
+  );
+}

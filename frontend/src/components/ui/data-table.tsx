@@ -1,3 +1,63 @@
-import type { ReactNode } from 'react'
-export type Column<Row>={id:string;header:ReactNode;render:(row:Row)=>ReactNode}
-export function DataTable<Row extends {id:string}>({columns,rows,empty='No entries',className='',gridTemplateColumns,onRowClick}:{columns:Column<Row>[];rows:Row[];empty?:string;className?:string;gridTemplateColumns?:string;onRowClick?:(row:Row)=>void}){const template=gridTemplateColumns??`repeat(${columns.length},minmax(120px,1fr))`;return <div className={`table ${className}`}><div className="tr th" style={{gridTemplateColumns:template}}>{columns.map(c=><span key={c.id}>{c.header}</span>)}</div>{rows.length?rows.map(row=><div className={`tr${onRowClick?' tr--interactive':''}`} style={{gridTemplateColumns:template}} key={row.id} onClick={event=>{if(!(event.target as HTMLElement).closest('button,input,select,textarea'))onRowClick?.(row)}}>{columns.map(c=><span key={c.id}>{c.render(row)}</span>)}</div>):<div className="empty">{empty}</div>}</div>}
+import type { ReactNode } from "react";
+export type Column<Row> = {
+  id: string;
+  header: ReactNode;
+  render: (row: Row) => ReactNode;
+};
+import { locales } from "../../locales";
+export function DataTable<Row extends { id: string }>({
+  columns,
+  rows,
+  empty,
+  className = "",
+  gridTemplateColumns,
+  onRowClick,
+}: {
+  columns: Column<Row>[];
+  rows: Row[];
+  empty?: string;
+  className?: string;
+  gridTemplateColumns?: string;
+  onRowClick?: (row: Row) => void;
+}) {
+  const template =
+      gridTemplateColumns ?? `repeat(${columns.length},minmax(120px,1fr))`,
+    locale =
+      localStorage.getItem("orbit.locale") === "ko"
+        ? "ko"
+        : localStorage.getItem("orbit.locale") === "ja"
+          ? "ja"
+          : "en";
+  return (
+    <div className={`table ${className}`}>
+      <div className="tr th" style={{ gridTemplateColumns: template }}>
+        {columns.map((c) => (
+          <span key={c.id}>{c.header}</span>
+        ))}
+      </div>
+      {rows.length ? (
+        rows.map((row) => (
+          <div
+            className={`tr${onRowClick ? " tr--interactive" : ""}`}
+            style={{ gridTemplateColumns: template }}
+            key={row.id}
+            onClick={(event) => {
+              if (
+                !(event.target as HTMLElement).closest(
+                  "button,input,select,textarea",
+                )
+              )
+                onRowClick?.(row);
+            }}
+          >
+            {columns.map((c) => (
+              <span key={c.id}>{c.render(row)}</span>
+            ))}
+          </div>
+        ))
+      ) : (
+        <div className="empty">{empty ?? locales[locale].ui.emptyEntries}</div>
+      )}
+    </div>
+  );
+}
