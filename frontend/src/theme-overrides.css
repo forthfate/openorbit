@@ -1,3 +1,6 @@
+/* Keep the cycle iteration label and timestamp together in its compact header. */
+.proposal-tree__iteration > summary > span:first-of-type { display:flex!important; align-items:baseline; gap:8px; }
+
 main { display:block; background:var(--bg); color:var(--text); }
 aside { position:fixed; inset:0 auto 0 0; z-index:10; overflow-y:auto; }
 .content { width:calc(100% - 244px); margin-left:244px; }
