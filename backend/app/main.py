@@ -193,7 +193,6 @@ def target_environments():
 
 class PromptTemplateUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    version: int = Field(ge=1, le=10000)
     content: str = Field(min_length=1, max_length=100_000)
 
 

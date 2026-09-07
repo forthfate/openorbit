@@ -2190,7 +2190,18 @@ if __name__ == "__main__":
 
     def prompt_templates(self) -> list[dict[str, Any]]:
         path = CONFIG / "prompt-templates.yaml"
-        return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
+        templates = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
+        for template in templates:
+            versions = template.get("versions")
+            if not versions:
+                versions = [
+                    {"version": int(template.get("version", 1)), "content": template.get("content", "")}
+                ]
+                template["versions"] = versions
+            latest = max(versions, key=lambda item: int(item.get("version", 0)))
+            template["version"] = int(latest["version"])
+            template["content"] = str(latest["content"])
+        return templates
 
     def target_test_case_sets(self) -> list[dict[str, Any]]:
         return (
@@ -2277,10 +2288,22 @@ if __name__ == "__main__":
         if index is None:
             raise KeyError(template_id)
         name, content = str(values.get("name", "")).strip(), str(values.get("content", "")).strip()
-        version = int(values.get("version", 0))
-        if not name or not content or version < 1:
-            raise ValueError("prompt template requires a name, version, and content")
-        template = {"id": template_id, "name": name, "version": version, "content": content}
+        if not name or not content:
+            raise ValueError("prompt template requires a name and content")
+        current = templates[index]
+        versions = list(
+            current.get("versions")
+            or [{"version": int(current.get("version", 1)), "content": current.get("content", "")}]
+        )
+        version = max(int(item.get("version", 0)) for item in versions) + 1
+        versions.append({"version": version, "content": content})
+        template = {
+            "id": template_id,
+            "name": name,
+            "version": version,
+            "content": content,
+            "versions": versions,
+        }
         templates[index] = template
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2315,10 +2338,16 @@ if __name__ == "__main__":
         self, templates: list[dict[str, Any]], template_id: str, values: dict[str, Any]
     ) -> dict[str, Any]:
         name, content = str(values.get("name", "")).strip(), str(values.get("content", "")).strip()
-        version = int(values.get("version", 0))
-        if not name or not content or version < 1:
-            raise ValueError("prompt template requires a name, version, and content")
-        template = {"id": template_id, "name": name, "version": version, "content": content}
+        if not name or not content:
+            raise ValueError("prompt template requires a name and content")
+        version = 1
+        template = {
+            "id": template_id,
+            "name": name,
+            "version": version,
+            "content": content,
+            "versions": [{"version": version, "content": content}],
+        }
         templates.append(template)
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")

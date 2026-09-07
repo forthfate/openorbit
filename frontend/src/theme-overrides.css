@@ -1,5 +1,6 @@
 /* Keep the cycle iteration label and timestamp together in its compact header. */
 .proposal-tree__iteration > summary > span:first-of-type { display:flex!important; align-items:baseline; gap:8px; }
+.cycle-interventions__head label { display:flex!important; align-items:center; gap:8px; white-space:nowrap; }
 .analytics-chart .recharts-tooltip-wrapper { outline:none; }.analytics-chart .recharts-default-tooltip { padding:9px 11px!important; border:1px solid var(--line)!important; border-radius:7px!important; background:var(--surface-raised)!important; box-shadow:0 10px 28px rgb(0 0 0 / .25); }.analytics-chart .recharts-tooltip-label { margin:0 0 6px!important; color:var(--text)!important; font:600 10px 'DM Mono',monospace!important; }.analytics-chart .recharts-tooltip-item { padding:2px 0!important; color:var(--muted)!important; font:11px Manrope,sans-serif!important; }
 
 main { display:block; background:var(--bg); color:var(--text); }
