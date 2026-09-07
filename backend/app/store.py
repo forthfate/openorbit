@@ -1360,7 +1360,10 @@ if __name__ == "__main__":
                 working_directory=str(ROOT),
                 timeout_seconds=86_400 if phase == "run" else 300,
                 approval="not_required",
-                on_failure="continue" if phase == "run" else "stop",
+                # A non-zero process exit means the lifecycle did not produce
+                # a valid evaluation. Runners that intentionally tolerate a
+                # probe failure must model it as structured evidence instead.
+                on_failure="stop",
             )
             for phase in phases
         ]

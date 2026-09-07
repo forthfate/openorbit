@@ -4,7 +4,7 @@ export type Column<Row> = {
   header: ReactNode;
   render: (row: Row) => ReactNode;
 };
-import { locales } from "../../locales";
+import { locales, resolveLocale } from "../../locales";
 export function DataTable<Row extends { id: string }>({
   columns,
   rows,
@@ -22,12 +22,7 @@ export function DataTable<Row extends { id: string }>({
 }) {
   const template =
       gridTemplateColumns ?? `repeat(${columns.length},minmax(120px,1fr))`,
-    locale =
-      localStorage.getItem("orbit.locale") === "ko"
-        ? "ko"
-        : localStorage.getItem("orbit.locale") === "ja"
-          ? "ja"
-          : "en";
+    locale = resolveLocale(localStorage.getItem("orbit.locale"));
   return (
     <div className={`table ${className}`}>
       <div className="tr th" style={{ gridTemplateColumns: template }}>

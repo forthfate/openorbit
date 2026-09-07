@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
-import { locales } from "../../locales";
+import { locales, resolveLocale } from "../../locales";
 
 export function Modal({
   open,
@@ -24,12 +24,7 @@ export function Modal({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open, onClose]);
   if (!open) return null;
-  const locale =
-      localStorage.getItem("orbit.locale") === "ko"
-        ? "ko"
-        : localStorage.getItem("orbit.locale") === "ja"
-          ? "ja"
-          : "en",
+  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     close = locales[locale].ui.closeDialog;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { SectionInfo } from './section-info'
+import { locales, resolveLocale } from '../../locales'
 
 const sectionHints:Record<string,string>={
   'Evaluation build list':'Create and manage evaluation configurations that connect a target, workflow, and evaluation assets.',
@@ -33,4 +34,4 @@ const sectionHints:Record<string,string>={
   'チャットボットAIモデル':'Orbit チャットボットで使用する保存済み AI 接続プロファイルを選択します。',
 }
 export function PanelHeader({title,description,action}:{title:ReactNode;description?:string;action?:ReactNode}){const hint=description??(typeof title==='string'?sectionHints[title]:undefined);return <div className="panel-head"><h2>{hint?<SectionInfo title={title} description={hint}/>:title}</h2>{action}</div>}
-export function MetricCard({label,value,detail}:{label:string;value:string;detail?:string}){const locale=localStorage.getItem('orbit.locale');const caption=detail??(locale==='ko'?'실시간 로컬 상태':locale==='ja'?'ライブローカル状態':'live local state');return <article className="metric"><p>{label}</p><strong>{value}</strong><small>{caption}</small></article>}
+export function MetricCard({label,value,detail}:{label:string;value:string;detail?:string}){const locale=resolveLocale(localStorage.getItem('orbit.locale'));const caption=detail??locales[locale].ui.liveLocalState;return <article className="metric"><p>{label}</p><strong>{value}</strong><small>{caption}</small></article>}

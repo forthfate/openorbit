@@ -83,6 +83,24 @@ def test_transient_test_session_is_not_written_to_run_history(tmp_path, monkeypa
         store.test_session(session.id)
 
 
+def test_runner_execution_plan_stops_when_its_run_phase_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store = store_module.ConsoleStore()
+    store.create_runner(
+        {
+            "id": "failing-runner",
+            "name": "Failing runner",
+            "description": "A runner used to verify lifecycle failure handling.",
+            "source": "from orbit_sdk import runner\n\n@runner.phase('run')\ndef run(ctx): pass\n",
+        }
+    )
+
+    workflow = store._runner_execution_plan("failing-runner")
+
+    assert workflow.steps_for("run")[0].on_failure == "stop"
+    assert workflow.steps_for("test")[0].on_failure == "stop"
+
+
 def test_v1_openapi_contract_documents_project_and_pipeline_resources():
     client = TestClient(app)
     schema = client.get("/api/openapi.json")

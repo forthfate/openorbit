@@ -17,7 +17,7 @@ import type {
 import { MetricCard } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
-import { locales, type Locale } from "../../locales";
+import { intlLocales, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 
 const hero = {
@@ -105,7 +105,7 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
         ? ([Math.floor(minutes / 60), "hour"] as const)
         : ([Math.floor(minutes / 1440), "day"] as const);
   return new Intl.RelativeTimeFormat(
-    locale === "ko" ? "ko-KR" : locale === "ja" ? "ja-JP" : "en-US",
+    intlLocales[locale],
     { numeric: "auto" },
   ).format(-amount, unit);
 }
@@ -180,11 +180,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
                 dataKey="time"
                 tickFormatter={(value) =>
                   new Date(`${value}:00:00Z`).toLocaleTimeString(
-                    locale === "ko"
-                      ? "ko-KR"
-                      : locale === "ja"
-                        ? "ja-JP"
-                        : "en-US",
+                    intlLocales[locale],
                     { hour: "2-digit", minute: "2-digit" },
                   )
                 }
@@ -235,6 +231,7 @@ export function DashboardPage({
 }) {
   const t = locales[locale].common,
     h = hero[locale],
+    dashboard = locales[locale].dashboardUi,
     help = dashboardHelp[locale],
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length;
@@ -278,17 +275,7 @@ export function DashboardPage({
               run.status,
             ),
             eventTime = completed ? run.finished_at : run.created_at,
-            eventLabel = completed
-              ? locale === "ko"
-                ? "완료"
-                : locale === "ja"
-                  ? "完了"
-                  : "Completed"
-              : locale === "ko"
-                ? "생성"
-                : locale === "ja"
-                  ? "作成"
-                  : "Created";
+            eventLabel = completed ? dashboard.completed : dashboard.created;
           return (
             <button
               className="evaluation-card"
@@ -312,13 +299,7 @@ export function DashboardPage({
             <p className="eyebrow">ORBIT</p>
             <h2>
               <SectionInfo
-                title={
-                  locale === "ko"
-                    ? "Orbit 운영 로그"
-                    : locale === "ja"
-                      ? "Orbit 運用ログ"
-                      : "Orbit operational logs"
-                }
+                title={dashboard.operationalLogs}
                 description={help.logs}
               />
             </h2>
@@ -339,7 +320,7 @@ export function DashboardPage({
               </div>
             ))
           ) : (
-            <p className="hint">No Orbit events recorded yet.</p>
+            <p className="hint">{dashboard.noEvents}</p>
           )}
         </div>
       </section>

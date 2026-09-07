@@ -10,7 +10,7 @@ import { EvaluationBuildsPage } from "./features/evaluation-builds/page";
 import { EvaluationsPage } from "./features/evaluations/page";
 import { ImprovementsPage } from "./features/improvements/page";
 import { SettingsPage } from "./features/settings/page";
-import { locales, type Locale } from "./locales";
+import { locales, resolveLocale, type Locale } from "./locales";
 import { api } from "./services/api";
 import { useControlRoom } from "./services/use-control-room";
 import "./styles.css";
@@ -18,8 +18,7 @@ import "./theme-overrides.css";
 
 const localeStorageKey = "orbit.locale";
 const savedLocale = (): Locale => {
-  const value = localStorage.getItem(localeStorageKey);
-  return value === "ko" || value === "en" || value === "ja" ? value : "en";
+  return resolveLocale(localStorage.getItem(localeStorageKey));
 };
 const themeStorageKey = "orbit.theme";
 const savedTheme = () =>

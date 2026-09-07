@@ -589,6 +589,8 @@ export function EvaluationsPage({
   onEmergencyStop,
   onDeleteRuns,
   locale,
+  initialSelectedRun,
+  onSelectedRunClose,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
@@ -597,10 +599,13 @@ export function EvaluationsPage({
   onEmergencyStop: () => void;
   onDeleteRuns: (ids: string[]) => Promise<unknown>;
   locale: Locale;
+  initialSelectedRun?: Run | null;
+  onSelectedRunClose?: () => void;
 }) {
   const t = locales[locale].common,
-    l = copy[locale];
-  const [selected, setSelected] = useState<Run | null>(null),
+    l = copy[locale],
+    ui = locales[locale].runUi;
+  const [selectedInternal, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "result">(
       "result",
     ),
@@ -651,6 +656,7 @@ export function EvaluationsPage({
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+  const selected = initialSelectedRun ?? selectedInternal;
   const filterMenu = useRef<HTMLDivElement>(null),
     resultFilterMenu = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -661,9 +667,9 @@ export function EvaluationsPage({
   }, [selected]);
   const label = (status: string) =>
     ({
-      queued: locale === "ko" ? "대기 중" : "Queued",
-      awaiting_approval: locale === "ko" ? "승인 대기" : "Awaiting approval",
-      running: locale === "ko" ? "실행 중" : "Running",
+      queued: ui.queued,
+      awaiting_approval: ui.awaitingApproval,
+      running: ui.running,
       succeeded: l.complete,
       cancelled: l.cancelled,
       failed: l.failed,
@@ -1069,25 +1075,21 @@ export function EvaluationsPage({
           onClick={() => (filtersOpen ? closeFilters() : openFilters())}
         >
           <ListFilter size={15} />
-          {locale === "ko" ? "필터" : locale === "ja" ? "フィルター" : "Filter"}
+          {ui.filter}
           {appliedFilterCount > 0 && <span>{appliedFilterCount}</span>}
         </button>
         <PageSizeSelect locale={locale} value={pageSize} onChange={value=>{setPageSize(value);setPage(1)}}/>
         {filtersOpen && (
           <div className="run-filters run-filter-popover">
             <div className="run-filter-popover__header">
-              <strong>{locale === "ko" ? "필터" : locale === "ja" ? "フィルター" : "Filter"}</strong>
+              <strong>{ui.filter}</strong>
               <button className="ghost" onClick={resetFilters}>
-                {locale === "ko" ? "초기화" : locale === "ja" ? "リセット" : "Reset"}
+                {ui.reset}
               </button>
             </div>
             <fieldset>
               <legend>
-                {locale === "ko"
-                  ? "상태"
-                  : locale === "ja"
-                    ? "ステータス"
-                    : "Status"}
+                {ui.status}
               </legend>
               <div className="run-filters__statuses">
                 {runStatuses.map((status) => (
@@ -1103,21 +1105,13 @@ export function EvaluationsPage({
               </div>
             </fieldset>
             <label>
-              {locale === "ko"
-                ? "평가 빌드"
-                : locale === "ja"
-                  ? "評価ビルド"
-                  : "Evaluation build"}
+              {ui.evaluationBuild}
               <select
                 value={draftBuildFilter}
                 onChange={(event) => setDraftBuildFilter(event.target.value)}
               >
                 <option value="">
-                  {locale === "ko"
-                    ? "전체 빌드"
-                    : locale === "ja"
-                      ? "すべてのビルド"
-                      : "All builds"}
+                  {ui.allBuilds}
                 </option>
                 {builds.map((build) => (
                   <option key={build.id} value={build.id}>
@@ -1127,11 +1121,7 @@ export function EvaluationsPage({
               </select>
             </label>
             <label>
-              {locale === "ko"
-                ? "실행 유형"
-                : locale === "ja"
-                  ? "実行タイプ"
-                  : "Run type"}
+              {ui.runType}
               <select
                 value={draftModeFilter}
                 onChange={(event) =>
@@ -1139,24 +1129,20 @@ export function EvaluationsPage({
                 }
               >
                 <option value="all">
-                  {locale === "ko"
-                    ? "전체"
-                    : locale === "ja"
-                      ? "すべて"
-                      : "All"}
+                  {ui.all}
                 </option>
                 <option value="run">Run</option>
                 <option value="test">Test</option>
               </select>
             </label>
             <label>
-              {locale === "ko" ? "단계" : locale === "ja" ? "フェーズ" : "Phase"}
+              {ui.phase}
               <select
                 value={draftPhaseFilter}
                 onChange={(event) => setDraftPhaseFilter(event.target.value)}
               >
                 <option value="">
-                  {locale === "ko" ? "전체 단계" : locale === "ja" ? "すべてのフェーズ" : "All phases"}
+                  {ui.allPhases}
                 </option>
                 {availablePhases.map((phase) => (
                   <option key={phase} value={phase}>
@@ -1172,27 +1158,23 @@ export function EvaluationsPage({
                 checked={draftActiveOnly}
                 onChange={(event) => setDraftActiveOnly(event.target.checked)}
               />
-              {locale === "ko"
-                ? "활성 실행만"
-                : locale === "ja"
-                  ? "実行中のみ"
-                  : "Active only"}
+              {ui.activeOnly}
             </label>
             <div className="run-filter-popover__footer">
               <button className="ghost" onClick={closeFilters}>
-                {locale === "ko" ? "취소" : locale === "ja" ? "キャンセル" : "Cancel"}
+                {l.cancel}
               </button>
               <button className="approve" onClick={applyFilters}>
-                {locale === "ko" ? "적용" : locale === "ja" ? "適用" : "Apply"}
+                {l.apply}
               </button>
             </div>
           </div>
         )}
       </div>
       <div className="run-history-actions">
-        <span>{selectedRunIds.size} {locale === "ko" ? "개 선택됨" : locale === "ja" ? "件選択" : "selected"}</span>
-        <button className="ghost" onClick={() => setSelectedRunIds(new Set())} disabled={!selectedRunIds.size}>{locale === "ko" ? "선택 해제" : locale === "ja" ? "選択解除" : "Deselect"}</button>
-        <button className="icon-button danger" aria-label={locale === "ko" ? "선택 삭제" : "Delete selected"} title={locale === "ko" ? "선택 삭제" : "Delete selected"} onClick={deleteSelected} disabled={!selectedRunIds.size}><Trash2 size={15}/></button>
+        <span>{ui.selected(selectedRunIds.size)}</span>
+        <button className="ghost" onClick={() => setSelectedRunIds(new Set())} disabled={!selectedRunIds.size}>{ui.deselect}</button>
+        <button className="icon-button danger" aria-label={ui.deleteSelected} title={ui.deleteSelected} onClick={deleteSelected} disabled={!selectedRunIds.size}><Trash2 size={15}/></button>
       </div>
       <DataTable
         columns={columns}
@@ -1214,13 +1196,16 @@ export function EvaluationsPage({
         gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
         empty={t.noRuns}
       />
-      <div className="run-pagination"><span>{filteredRuns.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredRuns.length)} / ${filteredRuns.length}` : "0"}</span><div><button className="ghost" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>{locale === "ko" ? "이전" : locale === "ja" ? "前へ" : "Previous"}</button><span>{currentPage} / {totalPages}</span><button className="ghost" disabled={currentPage===totalPages} onClick={()=>setPage(currentPage+1)}>{locale === "ko" ? "다음" : locale === "ja" ? "次へ" : "Next"}</button></div></div>
-      <ConfirmDialog open={deleteSelectionOpen} title={locale === "ko" ? "선택한 실행을 삭제할까요?" : locale === "ja" ? "選択した実行を削除しますか？" : "Delete selected runs?"} description={locale === "ko" ? `${selectedRunIds.size}개의 완료된 실행 이력이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.` : locale === "ja" ? `${selectedRunIds.size}件の完了した実行履歴を削除します。この操作は元に戻せません。` : `${selectedRunIds.size} completed run records will be deleted. This cannot be undone.`} cancelLabel={locale === "ko" ? "취소" : locale === "ja" ? "キャンセル" : "Cancel"} confirmLabel={locale === "ko" ? "삭제" : locale === "ja" ? "削除" : "Delete"} onCancel={()=>setDeleteSelectionOpen(false)} onConfirm={confirmDeleteSelected}/>
+      <div className="run-pagination"><span>{filteredRuns.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredRuns.length)} / ${filteredRuns.length}` : "0"}</span><div><button className="ghost" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>{locales[locale].ui.previous}</button><span>{currentPage} / {totalPages}</span><button className="ghost" disabled={currentPage===totalPages} onClick={()=>setPage(currentPage+1)}>{locales[locale].ui.next}</button></div></div>
+      <ConfirmDialog open={deleteSelectionOpen} title={ui.deleteSelectedTitle} description={ui.deleteSelectedDescription(selectedRunIds.size)} cancelLabel={l.cancel} confirmLabel={ui.delete} onCancel={()=>setDeleteSelectionOpen(false)} onConfirm={confirmDeleteSelected}/>
       {selected && (
         <Modal
           open
           title={l.detail}
-          onClose={() => setSelected(null)}
+          onClose={() => {
+            setSelected(null);
+            onSelectedRunClose?.();
+          }}
           className="modal--run-detail"
         >
           <div className="run-detail-summary">
@@ -1286,8 +1271,8 @@ export function EvaluationsPage({
               <button
                 className="ghost icon-button"
                 type="button"
-                aria-label={locale === "ko" ? "이전 반복" : locale === "ja" ? "前の反復" : "Previous iteration"}
-                title={locale === "ko" ? "이전 반복" : locale === "ja" ? "前の反復" : "Previous iteration"}
+                aria-label={ui.previousIteration}
+                title={ui.previousIteration}
                 disabled={previousIteration === undefined}
                 onClick={() => {
                   if (previousIteration !== undefined) setIterationTab(previousIteration);
@@ -1307,8 +1292,8 @@ export function EvaluationsPage({
               <button
                 className="ghost icon-button"
                 type="button"
-                aria-label={locale === "ko" ? "다음 반복" : locale === "ja" ? "次の反復" : "Next iteration"}
-                title={locale === "ko" ? "다음 반복" : locale === "ja" ? "次の反復" : "Next iteration"}
+                aria-label={ui.nextIteration}
+                title={ui.nextIteration}
                 disabled={nextIteration === undefined}
                 onClick={() => {
                   if (nextIteration !== undefined) setIterationTab(nextIteration);
