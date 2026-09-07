@@ -413,12 +413,6 @@ function ProposalHistory({
                         </span>
                         <span className="proposal-tree__iteration-meta">
                           <small>{group.items.length}</small>
-                          {group.items[0]?.score !== undefined &&
-                            group.items[0]?.score !== null && (
-                              <b className="proposal-tree__score">
-                                {t.score} {group.items[0].score}/10
-                              </b>
-                            )}
                         </span>
                       </summary>
                       <div>
