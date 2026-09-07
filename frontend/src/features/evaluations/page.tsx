@@ -12,6 +12,7 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { Pagination } from "../../components/ui/pagination";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Tooltip } from "../../components/ui/tooltip";
 import { intlLocales, localeMessageMap, locales, type Locale } from "../../locales";
@@ -1019,7 +1020,7 @@ export function EvaluationsPage({
         gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
         empty={t.noRuns}
       />
-      <div className="run-pagination"><span>{filteredRuns.length ? `${(currentPage - 1) * pageSize + 1}–${Math.min(currentPage * pageSize, filteredRuns.length)} / ${filteredRuns.length}` : "0"}</span><div><button className="ghost" disabled={currentPage===1} onClick={()=>setPage(currentPage-1)}>{locales[locale].ui.previous}</button><span>{currentPage} / {totalPages}</span><button className="ghost" disabled={currentPage===totalPages} onClick={()=>setPage(currentPage+1)}>{locales[locale].ui.next}</button></div></div>
+      <Pagination locale={locale} page={currentPage} totalPages={totalPages} totalItems={filteredRuns.length} pageSize={pageSize} onPageChange={setPage}/>
       <ConfirmDialog open={deleteSelectionOpen} title={ui.deleteSelectedTitle} description={ui.deleteSelectedDescription(selectedRunIds.size)} cancelLabel={l.cancel} confirmLabel={ui.delete} onCancel={()=>setDeleteSelectionOpen(false)} onConfirm={confirmDeleteSelected}/>
       {selected && (
         <Modal
