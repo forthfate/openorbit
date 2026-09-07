@@ -67,4 +67,5 @@ and option values server-side.
 | Quick start | Purpose | Runner |
 | --- | --- | --- |
 | User journey smoke test | Validate a named browser journey with operator-provided path, actions and success evidence. | Browser journey runner |
+| Site exploration review | Explore safe same-site links and assess the rendered experience with evidence. | LangGraph site exploration runner |
 | Agent self-improvement | Validate prompt or agent changes in a Git repository against a fixed browser journey and retain rollback-ready evidence. | Native improvement cycle |

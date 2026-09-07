@@ -247,6 +247,18 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "Jgent" not in probe_gate
 
 
+def test_site_exploration_quick_start_uses_the_langgraph_runner():
+    store = store_module.ConsoleStore()
+    quick_start = next(
+        item for item in store._built_in_quick_starts() if item["id"] == "openorbit.site-exploration-review"
+    )
+    runner = quick_start["assets"]["runner"]
+    assert "LangGraph" in quick_start["description"]
+    assert runner["template_id"] == "site-exploration"
+    assert "StateGraph" in runner["source"]
+    assert "logout|signout|delete" in runner["source"]
+
+
 def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
     store = store_module.ConsoleStore()
