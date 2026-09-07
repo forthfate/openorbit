@@ -70,7 +70,6 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
     schema = TestClient(app).get("/api/openapi.json").json()
     paths = schema["paths"]
     expected = {
-        "/api/v1/workflows",
         "/api/v1/runners",
         "/api/v1/runner-templates",
         "/api/v1/prompt-templates",
@@ -102,7 +101,6 @@ def test_v1_read_only_control_room_resources_are_available():
     client = TestClient(app)
     for path in (
         "/api/v1/health",
-        "/api/v1/workflows",
         "/api/v1/runners",
         "/api/v1/prompt-templates",
         "/api/v1/test-case-sets",

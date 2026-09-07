@@ -687,12 +687,30 @@ export function EvaluationsPage({
       ) || "—",
   });
   const steps = selected?.step_results ?? [],
+    // `finalize` is bookkeeping after the last evaluation loop.  It must not
+    // become the default detail iteration because supervisor results belong to
+    // the actual run/eval loop.
     iterations = [
-      ...new Set(
-        steps.map((step) => step.loop_index ?? 0).filter((index) => index > 0),
-      ),
+      ...new Set([
+        ...steps
+          .filter((step) => ["run", "eval"].includes(step.phase ?? step.step_id ?? ""))
+          .map((step) => step.loop_index ?? 0)
+          .filter((index) => index > 0),
+        ...(selected?.supervisor_results ?? []).map((item) => item.iteration ?? 0).filter((index) => index > 0),
+      ]),
     ].sort((a, b) => a - b),
-    selectedSteps = steps.filter((step) => step.loop_index === iterationTab),
+    // `init` and `finalize` are process-level steps, not evaluation iterations.
+    // Include them beside the relevant iteration so their evidence remains
+    // visible without inventing a separate, misleading iteration.
+    selectedSteps = steps.filter(
+      (step) =>
+        step.loop_index === iterationTab ||
+        ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
+        ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1)),
+    ),
+    availablePhases = phases.filter((phase) =>
+      selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
+    ),
     supervision = selected?.supervisor_results?.find(
       (item) => item.iteration === iterationTab,
     ),
@@ -815,7 +833,7 @@ export function EvaluationsPage({
                 <option value="">
                   {locale === "ko" ? "전체 단계" : locale === "ja" ? "すべてのフェーズ" : "All phases"}
                 </option>
-                {phases.map((phase) => (
+                {availablePhases.map((phase) => (
                   <option key={phase} value={phase}>
                     {phase}
                   </option>
@@ -857,7 +875,10 @@ export function EvaluationsPage({
         onRowClick={(r) => {
           const latest = Math.max(
             1,
-            ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
+            ...(r.step_results ?? [])
+              .filter((step) => ["run", "eval"].includes(step.phase ?? step.step_id ?? ""))
+              .map((step) => step.loop_index ?? 0),
+            ...(r.supervisor_results ?? []).map((item) => item.iteration ?? 0),
           );
           setSelected(r);
           setTab("logs");

@@ -29,8 +29,7 @@ operator's machine.
     redoc_url="/api/redoc",
     openapi_tags=[
         {"name": "Projects", "description": "Configured evaluation builds and their assets."},
-        {"name": "Pipelines", "description": "Workflow executions and approval actions."},
-        {"name": "Workflows", "description": "Reusable lifecycle definitions."},
+        {"name": "Pipelines", "description": "Runner executions and approval actions."},
         {"name": "Runners", "description": "Executable local runner assets."},
         {"name": "Runner templates", "description": "Reusable runner-source templates."},
         {"name": "Prompt templates", "description": "Versioned manager prompt assets."},
@@ -107,20 +106,33 @@ def api_info_v1():
     }
 
 
-@app.get("/api/workflows")
-def workflows():
-    return store.workflows()
-
-
-@app.get("/api/tasks")
-def tasks():
-    """Expose executable workflows under the operator-facing task name."""
-    return store.workflows()
-
-
 @app.get("/api/runs")
 def runs():
-    return store.runs()
+    # The run-history table needs the supervisor totals without making the
+    # frontend re-derive them from every full response.  Keep `store.runs()`
+    # model-oriented for internal scheduling callers and enrich only this API
+    # representation.
+    values = []
+    for run in store.runs():
+        item = run.model_dump(mode="json")
+        response = run.supervisor_response or {"improvements": [], "reported_issues": []}
+        improvements = response.get("improvements", [])
+        item["proposed_improvements"] = len(improvements) if isinstance(improvements, list) else 0
+        item["approved_improvements"] = (
+            len(
+                [
+                    entry
+                    for entry in improvements
+                    if isinstance(entry, dict) and entry.get("status") == "adopted"
+                ]
+            )
+            if isinstance(improvements, list)
+            else 0
+        )
+        issues = response.get("reported_issues", [])
+        item["reported_issues"] = len(issues) if isinstance(issues, list) else 0
+        values.append(item)
+    return values
 
 
 @app.get("/api/active-evaluations")
@@ -309,7 +321,7 @@ def test_evaluation_build(build_id: str):
 class EvaluationBuildCreate(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
-    workflow_id: str
+    runner_id: str
     repository: str = ""  # Legacy target-environment input.
     target_environment_id: str = ""
     execution_environment_id: str = ""
@@ -342,17 +354,6 @@ class PipelineCreate(BaseModel):
 
 class PipelineAction(BaseModel):
     action: Literal["approve", "reject", "cancel"]
-
-
-class WorkflowCloneCreate(BaseModel):
-    id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
-    name: str = Field(min_length=1, max_length=120)
-    description: str = Field(min_length=1, max_length=500)
-    template_workflow_id: str
-    repository: str = ""
-    steps: list[dict] | None = None
-    workflow_yaml: str | None = Field(default=None, max_length=100_000)
-    runner_id: str | None = Field(default=None, max_length=64)
 
 
 class RunnerAssetUpdate(BaseModel):
@@ -423,21 +424,6 @@ def delete_runner(runner_id: str):
 @app.post("/api/runners/{runner_id}/open-vscode")
 def open_runner_in_vscode(runner_id: str):
     return safely(lambda: store.open_runner_in_vscode(runner_id))
-
-
-@app.post("/api/workflows/clone")
-def clone_workflow(values: WorkflowCloneCreate):
-    return safely(lambda: store.clone_workflow(values.model_dump()))
-
-
-@app.put("/api/workflows/{workflow_id}")
-def update_workflow(workflow_id: str, values: WorkflowCloneCreate):
-    return safely(lambda: store.update_workflow(workflow_id, values.model_dump()))
-
-
-@app.delete("/api/workflows/{workflow_id}")
-def delete_workflow(workflow_id: str):
-    return safely(lambda: store.delete_workflow(workflow_id))
 
 
 @app.post("/api/evaluation-builds")
@@ -587,48 +573,6 @@ def act_on_pipeline(pipeline_id: str, values: PipelineAction):
         "cancel": store.cancel,
     }
     return safely(lambda: actions[values.action](pipeline_id))
-
-
-@app.get("/api/v1/workflows", tags=["Workflows"], operation_id="listWorkflows")
-def list_workflows():
-    return store.workflows()
-
-
-@app.get("/api/v1/workflows/{workflow_id}", tags=["Workflows"], operation_id="getWorkflow")
-def get_workflow(workflow_id: str):
-    return safely(lambda: store.workflow(workflow_id))
-
-
-@app.post(
-    "/api/v1/workflows",
-    tags=["Workflows"],
-    operation_id="createWorkflow",
-    status_code=201,
-    summary="Create a workflow from a template",
-)
-def create_workflow(values: WorkflowCloneCreate):
-    return safely(lambda: store.clone_workflow(values.model_dump()))
-
-
-@app.put("/api/v1/workflows/{workflow_id}", tags=["Workflows"], operation_id="updateWorkflow")
-def replace_workflow(workflow_id: str, values: WorkflowCloneCreate):
-    return safely(lambda: store.update_workflow(workflow_id, values.model_dump()))
-
-
-@app.delete("/api/v1/workflows/{workflow_id}", tags=["Workflows"], status_code=204)
-def remove_workflow(workflow_id: str):
-    safely(lambda: store.delete_workflow(workflow_id))
-
-
-@app.post(
-    "/api/v1/workflows/{workflow_id}/pipelines",
-    tags=["Pipelines", "Workflows"],
-    operation_id="createWorkflowPipeline",
-    status_code=201,
-    summary="Start a standalone workflow pipeline",
-)
-def create_workflow_pipeline(workflow_id: str, values: PipelineCreate):
-    return safely(lambda: store.create_run(workflow_id, values.execution_mode))
 
 
 @app.get("/api/v1/runners", tags=["Runners"], operation_id="listRunners")
@@ -1043,11 +987,6 @@ def docker_status_v1():
 )
 def emergency_stop_v1():
     return store.emergency_stop()
-
-
-@app.post("/api/workflows/{workflow_id}/runs")
-def create_run(workflow_id: str):
-    return safely(lambda: store.create_run(workflow_id))
 
 
 @app.post("/api/tasks/{task_id}/runs")

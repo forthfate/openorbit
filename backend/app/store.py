@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -41,7 +42,6 @@ def _application_data_dir() -> Path:
 
 
 APP_DATA = _application_data_dir()
-WORKFLOWS = APP_DATA / "workflows"
 CONFIG = APP_DATA / "config"
 TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
 EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
@@ -336,7 +336,7 @@ class ConsoleStore:
     @staticmethod
     def _initialize_application_data() -> None:
         """Create empty, environment-local state; never seed operational assets from Git."""
-        for destination in (CONFIG, WORKFLOWS, DATA):
+        for destination in (CONFIG, DATA):
             destination.mkdir(parents=True, exist_ok=True)
         stored = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
         document = stored if isinstance(stored, dict) else {}
@@ -352,18 +352,6 @@ class ConsoleStore:
                 "chat_model_profile_name": str(application.get("chat_model_profile_name", "")).strip(),
             }
             SETTINGS.write_text(json.dumps(document, indent=2), encoding="utf-8")
-
-    def workflows(self) -> list[Workflow]:
-        values = []
-        for path in sorted(WORKFLOWS.glob("*.yaml")):
-            values.append(Workflow.model_validate(yaml.safe_load(path.read_text(encoding="utf-8"))))
-        return values
-
-    def _workflow_path(self, workflow_id: str) -> Path:
-        for path in sorted(WORKFLOWS.glob("*.yaml")):
-            if Workflow.model_validate(yaml.safe_load(path.read_text(encoding="utf-8"))).id == workflow_id:
-                return path
-        raise KeyError(workflow_id)
 
     @staticmethod
     def runner_templates() -> list[dict[str, str]]:
@@ -604,10 +592,43 @@ if __name__ == "__main__": runner.main()
 
     def delete_runner(self, runner_id: str) -> None:
         self._runner(runner_id)
-        if any(workflow.runner_id == runner_id for workflow in self.workflows()):
-            raise ValueError("runner is used by a workflow")
+        if any(build.get("runner_id") == runner_id for build in self.evaluation_builds()):
+            raise ValueError("runner is used by an evaluation build")
         (RUNNERS / f"{runner_id}.py").unlink(missing_ok=True)
         (RUNNERS / f"{runner_id}.json").unlink(missing_ok=True)
+
+    def _runner_execution_plan(self, runner_id: str) -> Workflow:
+        """Build the lifecycle declared by a runner without a workflow asset."""
+        runner = self._runner(runner_id)
+        lifecycle_order = ("init", "setup", "run", "eval", "teardown", "finalize")
+        declared = set(re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', runner["source"]))
+        phases = [phase for phase in lifecycle_order if phase in declared]
+        if not phases:
+            raise ValueError("runner must declare at least one Orbit lifecycle phase")
+        steps = [
+            Step(
+                id=phase,
+                phase=phase,
+                name=phase,
+                command=[sys.executable, str(RUNNERS / f"{runner_id}.py"), "--phase", phase],
+                working_directory=str(ROOT),
+                timeout_seconds=86_400 if phase == "run" else 300,
+                approval="not_required",
+                on_failure="continue" if phase == "run" else "stop",
+            )
+            for phase in phases
+        ]
+        return Workflow(
+            id=runner_id,
+            name=runner["name"],
+            description=runner["description"],
+            kind="improvement" if runner.get("template_id") == "native-improvement-cycle" else "simulation",
+            enabled=True,
+            risk="medium",
+            runner_id=runner_id,
+            steps=steps,
+            test_steps=deepcopy(steps),
+        )
 
     def evaluation_builds(self) -> list[dict[str, Any]]:
         path = CONFIG / "evaluation-builds.yaml"
@@ -1084,97 +1105,11 @@ if __name__ == "__main__": runner.main()
             "directories": [{"name": entry.name, "path": str(entry)} for entry in children[:200]],
         }
 
-    def clone_workflow(self, values: dict[str, Any]) -> Workflow:
-        workflow_id = values["id"]
-        if any(workflow.id == workflow_id for workflow in self.workflows()):
-            raise ValueError("같은 ID의 workflow가 이미 있습니다.")
-        template = self.workflow(values["template_workflow_id"])
-        workflow = template.model_copy(deep=True)
-        workflow.id = workflow_id
-        workflow.name = values["name"]
-        workflow.description = values["description"]
-        workflow.runner_id = values.get("runner_id") or None
-        if workflow.runner_id:
-            self._runner(workflow.runner_id)
-        workflow.enabled = True
-        if values.get("workflow_yaml") is not None:
-            workflow.steps = self._workflow_steps_from_yaml(values["workflow_yaml"])
-            workflow.test_steps = deepcopy(workflow.steps)
-        elif values.get("steps") is not None:
-            workflow.steps = [Step.model_validate(step) for step in values["steps"]]
-            workflow.test_steps = deepcopy(workflow.steps)
-        if not workflow.lifecycle_is_complete() or not workflow.lifecycle_is_complete("test"):
-            raise ValueError("template workflow must define the complete lifecycle")
-        temporary = WORKFLOWS / f"{workflow_id}.tmp"
-        destination = WORKFLOWS / f"{workflow_id}.yaml"
-        serialized = yaml.safe_dump(workflow.model_dump(mode="json"), allow_unicode=True, sort_keys=False)
-        temporary.write_text(serialized, encoding="utf-8")
-        temporary.replace(destination)
-        return workflow
-
-    def update_workflow(self, workflow_id: str, values: dict[str, Any]) -> Workflow:
-        workflow = self.workflow(workflow_id)
-        workflow.name = values["name"]
-        workflow.description = values["description"]
-        workflow.runner_id = values.get("runner_id") or None
-        if workflow.runner_id:
-            self._runner(workflow.runner_id)
-        if values.get("workflow_yaml") is not None:
-            workflow.steps = self._workflow_steps_from_yaml(values["workflow_yaml"])
-            workflow.test_steps = deepcopy(workflow.steps)
-        elif values.get("steps") is not None:
-            workflow.steps = [Step.model_validate(step) for step in values["steps"]]
-            workflow.test_steps = deepcopy(workflow.steps)
-        if not workflow.lifecycle_is_complete() or not workflow.lifecycle_is_complete("test"):
-            raise ValueError("workflow must define the complete lifecycle")
-        destination = self._workflow_path(workflow_id)
-        temporary = destination.with_suffix(".tmp")
-        temporary.write_text(
-            yaml.safe_dump(workflow.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
-        temporary.replace(destination)
-        return workflow
-
-    def delete_workflow(self, workflow_id: str) -> None:
-        self.workflow(workflow_id)
-        if any(build.get("workflow_id") == workflow_id for build in self.evaluation_builds()):
-            raise ValueError("workflow is used by an evaluation build")
-        self._workflow_path(workflow_id).unlink(missing_ok=True)
-
-    @staticmethod
-    def _workflow_steps_from_yaml(source: str) -> list[Step]:
-        try:
-            document = yaml.safe_load(source)
-        except yaml.YAMLError as error:
-            raise ValueError(f"pipeline YAML is invalid: {error}") from error
-        if not isinstance(document, dict):
-            raise ValueError("pipeline YAML must be a mapping of lifecycle stages")
-        steps: list[Step] = []
-        phases = ("init", "setup", "run", "eval", "teardown", "finalize")
-        for phase in phases:
-            entries = document.get(phase, [])
-            if not isinstance(entries, list):
-                raise ValueError(f"pipeline YAML stage '{phase}' must be a list")
-            for index, entry in enumerate(entries, start=1):
-                if not isinstance(entry, dict):
-                    raise ValueError(f"pipeline YAML stage '{phase}' entries must be objects")
-                values = dict(entry)
-                values.update(
-                    {
-                        "id": str(values.get("id") or f"{phase}-{index}"),
-                        "phase": phase,
-                        "working_directory": str(APP_DATA),
-                    }
-                )
-                steps.append(Step.model_validate(values))
-        return steps
-
     def create_evaluation_build(self, values: dict[str, Any]) -> dict[str, Any]:
         build_id = values["id"]
         if any(build["id"] == build_id for build in self.evaluation_builds()):
             raise ValueError("같은 ID의 평가 빌드가 이미 있습니다.")
-        workflow = self.workflow(values["workflow_id"])
+        runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
@@ -1204,7 +1139,7 @@ if __name__ == "__main__": runner.main()
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
-            "workflow_id": workflow.id,
+            "runner_id": runner["id"],
             "execution_environment_id": execution_environment.get("id", ""),
             "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
@@ -1241,7 +1176,7 @@ if __name__ == "__main__": runner.main()
             raise KeyError(build_id)
         if values["id"] != build_id:
             raise ValueError("evaluation build ID cannot be changed")
-        workflow = self.workflow(values["workflow_id"])
+        runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
@@ -1272,7 +1207,7 @@ if __name__ == "__main__": runner.main()
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
-            "workflow_id": workflow.id,
+            "runner_id": runner["id"],
             "execution_environment_id": execution_environment.get("id", ""),
             "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
@@ -1767,7 +1702,7 @@ if __name__ == "__main__": runner.main()
 
     def create_run(
         self,
-        workflow_id: str,
+        runner_id: str,
         execution_mode: str = "run",
         evaluation_build_id: str | None = None,
         evaluation_build_name: str | None = None,
@@ -1781,18 +1716,12 @@ if __name__ == "__main__": runner.main()
     ) -> Run:
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
-        workflow = self.workflow(workflow_id)
-        if not workflow.lifecycle_is_complete(execution_mode):
-            raise ValueError("Workflow는 init, setup, run, eval, teardown 단계를 순서대로 정의해야 합니다.")
-        if not workflow.enabled:
-            raise ValueError("이 workflow는 아직 활성화되지 않았습니다.")
-        needs_approval = execution_mode == "run" and any(
-            step.approval == "required" for step in workflow.steps
-        )
+        runner = self._runner_execution_plan(runner_id)
+        needs_approval = False
         run = Run(
             id=uuid.uuid4().hex[:12],
-            workflow_id=workflow.id,
-            workflow_name=workflow.name,
+            workflow_id=runner.id,
+            workflow_name=runner.name,
             evaluation_build_id=evaluation_build_id,
             evaluation_build_name=evaluation_build_name,
             repository=repository,
@@ -1967,7 +1896,7 @@ if __name__ == "__main__": runner.main()
 
     def _execute(self, run_id: str) -> None:
         run = self._load(run_id)
-        workflow = self.workflow(run.workflow_id).model_copy(deep=True)
+        workflow = self._runner_execution_plan(run.workflow_id)
         resources: dict[str, Any] = {
             "workflow": workflow.model_dump(mode="json"),
             "evaluation_build": {},
@@ -2070,16 +1999,22 @@ if __name__ == "__main__": runner.main()
             if not isinstance(result, dict):
                 return False
             cycle = (
-                result.get("persona_cycle") or result.get("user_journey") or result.get("improvement_cycle")
+                result.get("insighta_persona_simulator")
+                or result.get("persona_cycle")
+                or result.get("user_journey")
+                or result.get("improvement_cycle")
+                or result.get("jgent_paired")
             )
             if not isinstance(cycle, dict):
                 return False
             return bool(
-                cycle.get("processed_personas")
+                cycle.get("persona_evidence")
+                or cycle.get("processed_personas")
                 or cycle.get("results")
                 or cycle.get("evidence")
                 or cycle.get("candidate_fingerprint")
                 or cycle.get("prompt_update")
+                or cycle.get("report")
             )
         return False
 
@@ -2129,7 +2064,18 @@ if __name__ == "__main__": runner.main()
         target pipeline into a failed pipeline.
         """
         run = self._load(run_id)
-        iteration = max((int(item.get("loop_index", 0)) for item in run.step_results), default=0)
+        # Finalization is recorded after the last run/eval loop and therefore
+        # has a higher loop index.  Supervision must evaluate the most recent
+        # loop that actually produced runner evidence, not that bookkeeping
+        # phase.
+        iteration = max(
+            (
+                int(item.get("loop_index", 0))
+                for item in run.step_results
+                if item.get("phase") in {"run", "eval"}
+            ),
+            default=0,
+        )
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -2152,12 +2098,30 @@ if __name__ == "__main__": runner.main()
             return
         settings = ModelSettings(**{key: value for key, value in configured.items() if key != "profile_name"})
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+
+        def supervisor_result(result: object) -> object:
+            if not isinstance(result, dict):
+                return result
+            # Embedded runners can materialize a large source bundle.  Its file
+            # manifest is useful for audit but would crowd out the actual
+            # persona evidence the manager must evaluate.
+            for key in (
+                "insighta_persona_simulator",
+                "persona_cycle",
+                "user_journey",
+                "improvement_cycle",
+                "jgent_paired",
+            ):
+                if key in result:
+                    return {key: result[key]}
+            return result
+
         cycle_evidence = [
             {
                 "phase": item.get("phase"),
                 "iteration": item.get("loop_index"),
                 "exit_code": item.get("exit_code"),
-                "result": item.get("result"),
+                "result": supervisor_result(item.get("result")),
                 "output": str(item.get("output", ""))[-4_000:],
             }
             for item in run.step_results
@@ -2456,7 +2420,7 @@ if __name__ == "__main__": runner.main()
         prompt_source, prompt_snapshot = self._assembled_prompt(build)
         if executor.get("type") != "remote-http":
             return self.create_run(
-                build["workflow_id"],
+                build["runner_id"],
                 execution_mode,
                 evaluation_build_id=build["id"],
                 evaluation_build_name=build["name"],
@@ -2472,8 +2436,8 @@ if __name__ == "__main__": runner.main()
             )
         run = Run(
             id=uuid.uuid4().hex[:12],
-            workflow_id=build["workflow_id"],
-            workflow_name=build["name"],
+            workflow_id=build["runner_id"],  # Legacy Run field: stores the direct runner ID.
+            workflow_name=self._runner(build["runner_id"])["name"],
             evaluation_build_id=build["id"],
             evaluation_build_name=build["name"],
             supervisor_profile_name=build.get("model_profile_name"),
