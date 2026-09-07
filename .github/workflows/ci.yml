@@ -45,7 +45,7 @@ jobs:
       - name: Verify bundled release version
         run: |
           expected="v$(node -p 'require("./frontend/package.json").version')"
-          rg --fixed-strings --quiet "$expected" frontend/dist/assets
+          grep --recursive --fixed-strings --quiet "$expected" frontend/dist/assets
       - uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
