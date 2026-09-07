@@ -31,7 +31,7 @@ export default function App(){
   const [confirmingEmergencyStop,setConfirmingEmergencyStop]=useState(false)
   const room=useControlRoom()
   useEffect(()=>{const sync=()=>setPageState(pageFromHash());if(!window.location.hash)window.history.replaceState(null,'','#dashboard');window.addEventListener('hashchange',sync);return()=>window.removeEventListener('hashchange',sync)},[])
-  const setPage=(next:Page)=>{if(window.location.hash===`#${next}`)setPageState(next);else window.location.hash=next}
+  const setPage=(next:Page)=>{window.scrollTo({top:0,left:0,behavior:'auto'});if(window.location.hash===`#${next}`)setPageState(next);else window.location.hash=next}
   const setLocale=(value:Locale)=>{localStorage.setItem(localeStorageKey,value);setLocaleState(value)}
   const setTheme=(value:string)=>{localStorage.setItem(themeStorageKey,value);setThemeState(value)}
   const test=()=>api<{response:string}>('/api/settings/hello','POST',room.settings).then(r=>{room.setSettingsTested(true);room.setNotice(`Test succeeded: ${r.response}`,'success')}).catch(e=>room.setNotice(e.message))
