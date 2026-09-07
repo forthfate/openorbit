@@ -5,6 +5,25 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-09-08
+
+### Added
+
+- Supervisor results now include a concise summary of observed evaluated-AI behavior, with display-only translation support.
+- Manager prompt templates retain version history, preserve unsaved drafts, and create a new version on every save.
+- The dashboard now surfaces four Quick Starts, opens the selected Quick Start directly, and links to the repository, release notes, and local OpenAPI documentation.
+
+### Changed
+
+- Supervisors can adopt evidence-backed, low-risk, reversible prompt-only improvements without waiting for repeated candidate fingerprints; code, infrastructure, policy, and insufficiently evidenced changes remain proposed.
+- Improvement analytics and dashboard charts use localized labels and themed tooltips. Active-evaluation charts now retain short runs that overlap a chart interval.
+- Proposal history, workflow logs, evaluation results, and Cycle Improvement AI headers have clearer, more compact presentation.
+
+### Fixed
+
+- Restored AI model profiles in Assets and aligned Settings with the shared profile component.
+- Workflow log output preserves separate log lines.
+
 ## [0.4.1] - 2026-09-07
 
 ### Changed
