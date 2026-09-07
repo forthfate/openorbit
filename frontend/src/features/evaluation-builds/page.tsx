@@ -30,7 +30,12 @@ import type {
   TargetEnvironment,
   TargetTestCaseSet,
 } from "../../domain/models";
-import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
+import {
+  intlLocales,
+  localeMessages,
+  locales,
+  type Locale,
+} from "../../locales";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
@@ -55,7 +60,7 @@ type Draft = {
 type QuickStartTranslation = {
   name: string;
   description: string;
-  parameters: {
+  parameters?: {
     label: string;
     description?: string;
     placeholder?: string;
@@ -86,18 +91,23 @@ type BuildWizardCopy = {
   next: string;
 };
 
-const withQuickStartTranslation = (item: QuickStart, translation: QuickStartTranslation | null): QuickStart =>
-  translation
+const withQuickStartTranslation = (
+  item: QuickStart,
+  translation: QuickStartTranslation | null,
+  labels?: { name: string; description: string },
+): QuickStart =>
+  translation || labels
     ? {
         ...item,
-        name: translation.name,
-        description: translation.description,
+        name: translation?.name ?? labels?.name ?? item.name,
+        description:
+          translation?.description ?? labels?.description ?? item.description,
         parameters: item.parameters.map((parameter, index) => ({
           ...parameter,
-          ...translation.parameters[index],
+          ...translation?.parameters?.[index],
           options: parameter.options?.map((option, optionIndex) => ({
             ...option,
-            ...translation.parameters[index]?.options?.[optionIndex],
+            ...translation?.parameters?.[index]?.options?.[optionIndex],
           })),
         })),
       }
@@ -125,7 +135,8 @@ const empty: Draft = {
   approval_score: 8,
   enabled: true,
 };
-const testIsActive = (status: string) => ["queued", "awaiting_approval", "running"].includes(status);
+const testIsActive = (status: string) =>
+  ["queued", "awaiting_approval", "running"].includes(status);
 const draftOf = (b: Build, copy = false): Draft => ({
   ...empty,
   id: copy ? "" : b.id,
@@ -143,9 +154,23 @@ const draftOf = (b: Build, copy = false): Draft => ({
   approval_score: b.approval_score,
   enabled: b.enabled,
 });
-const Field = ({ label, description, children }: { label: string; description?: string; children: ReactNode }) => (
+const Field = ({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}) => (
   <label className="modal-setting-row">
-    <span>{description ? <SectionInfo title={label} description={description} /> : label}</span>
+    <span>
+      {description ? (
+        <SectionInfo title={label} description={description} />
+      ) : (
+        label
+      )}
+    </span>
     {children}
   </label>
 );
@@ -195,6 +220,50 @@ export function ProfileForm({
           onChange={(e) => setSettings({ ...settings, model: e.target.value })}
         />
       </Field>
+      {settings.provider === "azure-openai" ? (
+        <>
+          <Field label={t.azureEndpoint}>
+            <input
+              type="url"
+              placeholder="https://your-resource.openai.azure.com"
+              value={settings.endpoint}
+              onChange={(e) =>
+                setSettings({ ...settings, endpoint: e.target.value })
+              }
+            />
+          </Field>
+          <Field label={t.secretEnv}>
+            <input
+              placeholder="AZURE_OPENAI_API_KEY"
+              value={settings.secret_env}
+              onChange={(e) =>
+                setSettings({ ...settings, secret_env: e.target.value })
+              }
+            />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={t.region}>
+            <input
+              placeholder="us-east-1"
+              value={settings.region}
+              onChange={(e) =>
+                setSettings({ ...settings, region: e.target.value })
+              }
+            />
+          </Field>
+          <Field label={t.awsProfile}>
+            <input
+              placeholder="default"
+              value={settings.aws_profile ?? ""}
+              onChange={(e) =>
+                setSettings({ ...settings, aws_profile: e.target.value })
+              }
+            />
+          </Field>
+        </>
+      )}
       <div className="modal-actions">
         <button className="ghost" onClick={onClose}>
           {t.cancel}
@@ -236,7 +305,8 @@ function Direct({
   onClose: () => void;
   locale: Locale;
 }) {
-  const t = locales[locale], copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const t = locales[locale],
+    copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
   const [step, setStep] = useState(1);
   return (
     <div className="build-wizard">
@@ -278,7 +348,10 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={copy.targetEnvironment.label} description={copy.targetEnvironment.hint}>
+          <Field
+            label={copy.targetEnvironment.label}
+            description={copy.targetEnvironment.hint}
+          >
             <select
               value={d.target_environment_id}
               onChange={(e) =>
@@ -293,7 +366,10 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={copy.executionEnvironment.label} description={copy.executionEnvironment.hint}>
+          <Field
+            label={copy.executionEnvironment.label}
+            description={copy.executionEnvironment.hint}
+          >
             <select
               value={d.execution_environment_id}
               onChange={(e) =>
@@ -318,7 +394,10 @@ function Direct({
       )}
       {step === 2 && (
         <div className="modal-form">
-          <Field label={copy.managerTemplate.label} description={copy.managerTemplate.hint}>
+          <Field
+            label={copy.managerTemplate.label}
+            description={copy.managerTemplate.hint}
+          >
             <select
               value={d.manager_template_id}
               onChange={(e) =>
@@ -332,7 +411,10 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={copy.testCaseSet.label} description={copy.testCaseSet.hint}>
+          <Field
+            label={copy.testCaseSet.label}
+            description={copy.testCaseSet.hint}
+          >
             <select
               value={d.test_case_set_id}
               onChange={(e) => setD({ ...d, test_case_set_id: e.target.value })}
@@ -364,7 +446,10 @@ function Direct({
               onChange={(e) => setD({ ...d, timezone: e.target.value })}
             />
           </Field>
-          <Field label={copy.repeatInterval.label} description={copy.repeatInterval.hint}>
+          <Field
+            label={copy.repeatInterval.label}
+            description={copy.repeatInterval.hint}
+          >
             <input
               type="number"
               value={d.repeat_interval_minutes}
@@ -382,7 +467,10 @@ function Direct({
               }
             />
           </Field>
-          <Field label={copy.approvalScore.label} description={copy.approvalScore.hint}>
+          <Field
+            label={copy.approvalScore.label}
+            description={copy.approvalScore.hint}
+          >
             <input
               type="number"
               value={d.approval_score}
@@ -559,9 +647,33 @@ function Quick({
   );
 }
 
-function QuickStartCard({item,translation,pick}:{item:QuickStart;translation:QuickStartTranslation|null;pick:(item:QuickStart)=>void}){
-  const display=withQuickStartTranslation(item,translation)
-  return <article className="quick-start-card"><button className="quick-start-card__select" onClick={()=>pick(item)}><Sparkles size={18}/><span><strong>{display.name}</strong><small>{display.description}</small><em>{item.publisher?.name??'Community'} · v{item.version}</em></span><ChevronRight size={16}/></button></article>
+function QuickStartCard({
+  item,
+  translation,
+  labels,
+  pick,
+}: {
+  item: QuickStart;
+  translation: QuickStartTranslation | null;
+  labels?: { name: string; description: string };
+  pick: (item: QuickStart) => void;
+}) {
+  const display = withQuickStartTranslation(item, translation, labels);
+  return (
+    <article className="quick-start-card">
+      <button className="quick-start-card__select" onClick={() => pick(item)}>
+        <Sparkles size={18} />
+        <span>
+          <strong>{display.name}</strong>
+          <small>{display.description}</small>
+          <em>
+            {item.publisher?.name ?? "Community"} · v{item.version}
+          </em>
+        </span>
+        <ChevronRight size={16} />
+      </button>
+    </article>
+  );
 }
 
 export function EvaluationBuildsPage(props: {
@@ -583,6 +695,7 @@ export function EvaluationBuildsPage(props: {
     v: Record<string, string>,
   ) => Promise<unknown>;
   quickStartRequest?: number;
+  quickStartSelection?: string;
   onQuickStartRequestHandled?: () => void;
 }) {
   const {
@@ -601,6 +714,7 @@ export function EvaluationBuildsPage(props: {
     onDelete,
     onQuickStartCreate,
     quickStartRequest,
+    quickStartSelection,
     onQuickStartRequestHandled,
   } = props;
   const t = locales[locale],
@@ -617,8 +731,15 @@ export function EvaluationBuildsPage(props: {
     [selected, setSelected] = useState(""),
     [testRun, setTestRun] = useState<Run | null>(null),
     file = useRef<HTMLInputElement>(null);
-  const translations = useTemplateTranslations<QuickStartTranslation>("quick-start", items.map((item) => item.id), locale);
+  const translations = useTemplateTranslations<QuickStartTranslation>(
+    "quick-start",
+    items.map((item) => item.id),
+    locale,
+  );
   const translationCopy = locales[locale].templateTranslation;
+  const quickStartLabels = localeMessages<
+    Record<string, { name: string; description: string }>
+  >(locale, "quickStartLabels");
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -629,32 +750,49 @@ export function EvaluationBuildsPage(props: {
     return () => window.clearInterval(timer);
   }, [testRun]);
   const startTest = (id: string) => {
-    onTest(id).then(setTestRun).catch((error) =>
-      setError(error instanceof Error ? error.message : "Test failed to start"),
-    );
+    onTest(id)
+      .then(setTestRun)
+      .catch((error) =>
+        setError(
+          error instanceof Error ? error.message : "Test failed to start",
+        ),
+      );
   };
   const closeTest = () => {
     if (testRun && !testIsActive(testRun.status))
-      api(`/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`, "DELETE").catch(() => undefined);
+      api(
+        `/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`,
+        "DELETE",
+      ).catch(() => undefined);
     setTestRun(null);
   };
-  const start = (initialMode: "chooser" | "quick" = "chooser") => {
+  const start = (
+    initialMode: "chooser" | "quick" = "chooser",
+    initialQuickStartId?: string,
+  ) => {
     setEdit(null);
     setD(empty);
     setMode(initialMode);
     setPicked(null);
     setOpen(true);
     api<QuickStart[]>("/api/quick-starts")
-      .then(setItems)
+      .then((next) => {
+        setItems(next);
+        setPicked(
+          initialQuickStartId
+            ? (next.find((item) => item.id === initialQuickStartId) ?? null)
+            : null,
+        );
+      })
       .catch((e) => setError(e.message));
   };
   useEffect(() => {
     if (!quickStartRequest) return;
     queueMicrotask(() => {
-      start("quick");
+      start("quick", quickStartSelection);
       onQuickStartRequestHandled?.();
     });
-  }, [quickStartRequest, onQuickStartRequestHandled]);
+  }, [quickStartRequest, quickStartSelection, onQuickStartRequestHandled]);
   const importItem = async (f: File | undefined) => {
     if (!f) return;
     try {
@@ -690,7 +828,11 @@ export function EvaluationBuildsPage(props: {
         header: ui.repository,
         render: (b) => b.repository_name ?? b.repository,
       },
-      { id: "created", header: ui.created, render: (b) => formatDate(locale, b.created_at) },
+      {
+        id: "created",
+        header: ui.created,
+        render: (b) => formatDate(locale, b.created_at),
+      },
       {
         id: "last-started",
         header: ui.lastStarted,
@@ -783,9 +925,28 @@ export function EvaluationBuildsPage(props: {
           className="evaluation-build-table"
           gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
         />
-        <Pagination locale={locale} page={page} totalPages={pages} totalItems={builds.length} pageSize={size} onPageChange={setPage}/>
+        <Pagination
+          locale={locale}
+          page={page}
+          totalPages={pages}
+          totalItems={builds.length}
+          pageSize={size}
+          onPageChange={setPage}
+        />
       </section>
-      {testRun && <EvaluationsPage runs={[testRun]} locale={locale} initialSelectedRun={testRun} onSelectedRunClose={closeTest} onStop={() => undefined} onApprove={() => undefined} onReject={() => undefined} onEmergencyStop={() => undefined} onDeleteRuns={() => Promise.resolve()} />}
+      {testRun && (
+        <EvaluationsPage
+          runs={[testRun]}
+          locale={locale}
+          initialSelectedRun={testRun}
+          onSelectedRunClose={closeTest}
+          onStop={() => undefined}
+          onApprove={() => undefined}
+          onReject={() => undefined}
+          onEmergencyStop={() => undefined}
+          onDeleteRuns={() => Promise.resolve()}
+        />
+      )}
       <Modal
         open={open}
         title={
@@ -836,9 +997,22 @@ export function EvaluationBuildsPage(props: {
                 onChange={(e) => importItem(e.target.files?.[0])}
               />
               <div className="template-picker-actions">
-                <button className="ghost" type="button" disabled={translations.loading} onClick={translations.content(items[0]?.id ?? "") ? translations.showOriginal : translations.translate}>
+                <button
+                  className="ghost"
+                  type="button"
+                  disabled={translations.loading}
+                  onClick={
+                    translations.content(items[0]?.id ?? "")
+                      ? translations.showOriginal
+                      : translations.translate
+                  }
+                >
                   <Languages size={15} />
-                  {translations.loading ? translationCopy.translating : translations.content(items[0]?.id ?? "") ? translationCopy.showOriginal : translationCopy.translate}
+                  {translations.loading
+                    ? translationCopy.translating
+                    : translations.content(items[0]?.id ?? "")
+                      ? translationCopy.showOriginal
+                      : translationCopy.translate}
                 </button>
                 <button className="ghost" onClick={() => file.current?.click()}>
                   <FileUp size={15} />
@@ -847,14 +1021,28 @@ export function EvaluationBuildsPage(props: {
               </div>
             </div>
             <div className="quick-start-list">
-              {items.map((item) => <QuickStartCard key={item.id} item={item} translation={translations.content(item.id)} pick={setPicked} />)}
+              {items.map((item) => (
+                <QuickStartCard
+                  key={item.id}
+                  item={item}
+                  translation={translations.content(item.id)}
+                  labels={quickStartLabels[item.id]}
+                  pick={setPicked}
+                />
+              ))}
             </div>
-            {(error || translations.error) && <small className="hint">{error || translationCopy.failed}</small>}
+            {(error || translations.error) && (
+              <small className="hint">{error || translationCopy.failed}</small>
+            )}
           </div>
         )}
         {mode === "quick" && picked && (
           <Quick
-            item={withQuickStartTranslation(picked, translations.content(picked.id))}
+            item={withQuickStartTranslation(
+              picked,
+              translations.content(picked.id),
+              quickStartLabels[picked.id],
+            )}
             profiles={profiles}
             create={onQuickStartCreate}
             back={() => setPicked(null)}

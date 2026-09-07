@@ -9,20 +9,44 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Sparkles } from "lucide-react";
 import type {
   Dashboard,
   ImprovementAnalytics,
   OrbitLog,
+  QuickStart,
 } from "../../domain/models";
 import { MetricCard } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
-import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
+import {
+  intlLocales,
+  localeMessages,
+  locales,
+  type Locale,
+} from "../../locales";
 import { api } from "../../services/api";
 
-type HeroCopy = { title: string; description: string; quickStart: string };
-type OperationsCopy = { title:string; description:string; feedback:string; accepted:string; issues:string; score:string; trend:string; none:string; previous:string };
-type DashboardHelp = { trend:string; logs:string };
+type HeroCopy = {
+  title: string;
+  description: string;
+  quickStart: string;
+  quickStartHint: string;
+  quickStarts: string;
+  quickStartsHint: string;
+};
+type OperationsCopy = {
+  title: string;
+  description: string;
+  feedback: string;
+  accepted: string;
+  issues: string;
+  score: string;
+  trend: string;
+  none: string;
+  previous: string;
+};
+type DashboardHelp = { trend: string; logs: string };
 
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
@@ -34,10 +58,9 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
       : minutes < 1440
         ? ([Math.floor(minutes / 60), "hour"] as const)
         : ([Math.floor(minutes / 1440), "day"] as const);
-  return new Intl.RelativeTimeFormat(
-    intlLocales[locale],
-    { numeric: "auto" },
-  ).format(-amount, unit);
+  return new Intl.RelativeTimeFormat(intlLocales[locale], {
+    numeric: "auto",
+  }).format(-amount, unit);
 }
 
 function OperationalHealth({ locale }: { locale: Locale }) {
@@ -155,7 +178,7 @@ export function DashboardPage({
   data: Dashboard | null;
   logs: OrbitLog[];
   onOpenBuild: (id?: string) => void;
-  onOpenQuickStart: () => void;
+  onOpenQuickStart: (id?: string) => void;
   onOpenRun: () => void;
   locale: Locale;
 }) {
@@ -163,8 +186,17 @@ export function DashboardPage({
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
     dashboard = locales[locale].dashboardUi,
     help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
+    quickStartLabels = localeMessages<
+      Record<string, { name: string; description: string }>
+    >(locale, "quickStartLabels"),
     recent = data?.recent_runs ?? [],
-    errors = recent.filter((run) => run.status === "failed").length;
+    errors = recent.filter((run) => run.status === "failed").length,
+    [quickStarts, setQuickStarts] = useState<QuickStart[]>([]);
+  useEffect(() => {
+    api<QuickStart[]>("/api/quick-starts")
+      .then((items) => setQuickStarts(items.slice(0, 4)))
+      .catch(() => setQuickStarts([]));
+  }, []);
   const openBuild = (id?: string) => {
     if (id) sessionStorage.setItem("orbit.selectedBuild", id);
     onOpenBuild(id);
@@ -175,12 +207,42 @@ export function DashboardPage({
         <p>ORBIT CONTROL PLANE</p>
         <strong>{h.title}</strong>
         <span>{h.description}</span>
+        <small>{h.quickStartHint}</small>
         <div className="dashboard-hero-actions">
-          <button className="approve" onClick={onOpenQuickStart}>
+          <button className="approve" onClick={() => onOpenQuickStart()}>
             {h.quickStart}
           </button>
         </div>
       </section>
+      {quickStarts.length > 0 && (
+        <section className="dashboard-quick-starts">
+          <div className="panel-head">
+            <div>
+              <h2>{h.quickStarts}</h2>
+              <p className="hint">{h.quickStartsHint}</p>
+            </div>
+          </div>
+          <div className="dashboard-quick-starts__grid">
+            {quickStarts.map((item) => (
+              <button
+                key={item.id}
+                className="dashboard-quick-start"
+                onClick={() => onOpenQuickStart(item.id)}
+              >
+                <Sparkles size={16} />
+                <span>
+                  <strong>
+                    {quickStartLabels[item.id]?.name ?? item.name}
+                  </strong>
+                  <small>
+                    {quickStartLabels[item.id]?.description ?? item.description}
+                  </small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
       <div className="metrics">
         <MetricCard
           label={t.totalEval}
