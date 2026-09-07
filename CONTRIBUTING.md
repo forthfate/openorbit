@@ -9,8 +9,9 @@ python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest
 .venv/bin/ruff check orbit/ backend/ tests/
-pnpm --prefix frontend install
-pnpm --prefix frontend run build
+corepack enable
+pnpm install
+pnpm --filter agent-improvement-console-ui run build
 ```
 
 For the packaged local-app path, run `orbit run`.
@@ -28,7 +29,7 @@ React application with a Vite production build before each commit.
 .venv/bin/pre-commit run --all-files
 ```
 
-The React hook needs `pnpm --prefix frontend install` to have been run once.
+The React hook needs `pnpm install` to have been run once.
 
 ## Releases
 
