@@ -195,6 +195,42 @@ export function ProfileForm({
           onChange={(e) => setSettings({ ...settings, model: e.target.value })}
         />
       </Field>
+      {settings.provider === "azure-openai" ? (
+        <>
+          <Field label={t.azureEndpoint}>
+            <input
+              type="url"
+              placeholder="https://your-resource.openai.azure.com"
+              value={settings.endpoint}
+              onChange={(e) => setSettings({ ...settings, endpoint: e.target.value })}
+            />
+          </Field>
+          <Field label={t.secretEnv}>
+            <input
+              placeholder="AZURE_OPENAI_API_KEY"
+              value={settings.secret_env}
+              onChange={(e) => setSettings({ ...settings, secret_env: e.target.value })}
+            />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={t.region}>
+            <input
+              placeholder="us-east-1"
+              value={settings.region}
+              onChange={(e) => setSettings({ ...settings, region: e.target.value })}
+            />
+          </Field>
+          <Field label={t.awsProfile}>
+            <input
+              placeholder="default"
+              value={settings.aws_profile ?? ""}
+              onChange={(e) => setSettings({ ...settings, aws_profile: e.target.value })}
+            />
+          </Field>
+        </>
+      )}
       <div className="modal-actions">
         <button className="ghost" onClick={onClose}>
           {t.cancel}

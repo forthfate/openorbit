@@ -242,6 +242,12 @@ export default function App() {
         testCaseSets={room.testCaseSets}
         executionEnvironments={room.executionEnvironments}
         targetEnvironments={room.targetEnvironments}
+        profiles={room.profiles}
+        settings={room.settings}
+        setSettings={room.setSettings}
+        test={test}
+        save={save}
+        tested={room.settingsTested}
         onRefresh={room.refresh}
         onCreateWorkflow={createWorkflow}
         onUpdateWorkflow={updateWorkflow}

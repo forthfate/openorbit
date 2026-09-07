@@ -183,6 +183,7 @@
       "modelDeployment": "Model / deployment",
       "azureEndpoint": "Azure endpoint",
       "region": "Region",
+      "awsProfile": "AWS CLI profile (optional)",
       "secretEnv": "Secret env variable",
       "test": "Test",
       "testPassed": "Test passed — this profile can now be saved.",

@@ -182,6 +182,7 @@
       "modelDeployment": "モデル / デプロイ",
       "azureEndpoint": "Azureエンドポイント",
       "region": "リージョン",
+      "awsProfile": "AWS CLIプロファイル（任意）",
       "secretEnv": "シークレット環境変数",
       "test": "テスト",
       "testPassed": "テスト成功 — このプロファイルを保存できます。",
