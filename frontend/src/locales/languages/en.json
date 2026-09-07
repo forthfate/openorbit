@@ -35,6 +35,17 @@
       "emptyRunners": "Create reusable runners that execute your project-specific automation.",
       "emptyFlows": "Define reusable lifecycle pipelines and connect runners to evaluation builds."
     },
+    "chatAssistant": {
+      "open": "Open Orbit assistant",
+      "title": "Orbit assistant",
+      "collapse": "Collapse chat",
+      "empty": "Ask about your evaluation work, runners, or the control room.",
+      "requestFailed": "Chat request failed.",
+      "thinking": "Thinking…",
+      "message": "Message",
+      "placeholder": "Message Orbit…",
+      "send": "Send message"
+    },
     "shell": {
       "dashboard": "Monitor evaluation health, recent activity, and operational events at a glance.",
       "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by evaluations.",
