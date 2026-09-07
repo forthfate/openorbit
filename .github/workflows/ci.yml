@@ -44,7 +44,7 @@ jobs:
       - run: pnpm --filter agent-improvement-console-ui run build
       - name: Verify bundled release version
         run: |
-          expected="v$(node -p \"require('./frontend/package.json').version\")"
+          expected="v$(node -p 'require("./frontend/package.json").version')"
           rg --fixed-strings --quiet "$expected" frontend/dist/assets
       - uses: actions/upload-artifact@v4
         with:
