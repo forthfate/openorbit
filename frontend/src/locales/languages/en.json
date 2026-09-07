@@ -377,6 +377,9 @@
       "baseUrl": "Browser base URL (optional)",
       "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)"
     },
+    "improvementPage": {
+      "improvement": "Improvement", "trends": "Evaluation feedback trends", "range": "Range", "evaluation": "Evaluation", "feedbackVolume": "Feedback by evaluation", "iterationTrend": "Accepted feedback & score by iteration", "activeTrend": "Active evaluations over time", "feedbackStatus": "Feedback status distribution", "issueSeverity": "Reported issue severity", "runHealth": "Evaluation run health", "accepted": "Accepted", "score": "Score", "history": "Proposal decision history", "historyHint": "Review the auditable history of proposed, accepted, rejected, and applied improvements.", "allBuilds": "All evaluations", "allStates": "All states", "rejected": "Rejected", "proposed": "Proposed", "decisionReason": "Decision reason", "timeline": "Timeline", "noProposals": "No proposal history.", "iteration": "Iteration", "run": "Run", "feedbackCount": "Feedback count", "activeCount": "Active evaluations", "noIterationFeedback": "No iteration feedback in this period.", "adopted": "Adopted", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+    },
     "evaluations": {
       "title": "Evaluation runs",
       "evaluation": "Evaluation",

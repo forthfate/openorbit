@@ -376,6 +376,9 @@
       "baseUrl": "ブラウザー基本 URL（任意）",
       "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）"
     },
+    "improvementPage": {
+      "improvement": "改善", "trends": "評価フィードバックの推移", "range": "期間", "evaluation": "評価", "feedbackVolume": "評価別フィードバック", "iterationTrend": "反復別の受容フィードバックとスコア", "activeTrend": "アクティブ評価", "feedbackStatus": "フィードバック状態分布", "issueSeverity": "報告された問題の重大度", "runHealth": "評価実行の健全性", "accepted": "受容", "score": "スコア", "history": "提案決定の履歴", "historyHint": "提案・受容・却下・適用された改善の監査履歴を確認します。", "allBuilds": "すべての評価", "allStates": "すべての状態", "rejected": "却下", "proposed": "提案", "decisionReason": "決定理由", "timeline": "タイムライン", "noProposals": "提案履歴はありません。", "iteration": "反復", "run": "実行", "feedbackCount": "フィードバック数", "activeCount": "アクティブ評価", "noIterationFeedback": "この期間に反復フィードバックはありません。", "adopted": "適用済み", "low": "低", "medium": "中", "high": "高", "critical": "重大", "succeeded": "成功", "failed": "失敗", "cancelled": "キャンセル", "running": "実行中"
+    },
     "evaluations": {
       "title": "評価実行履歴",
       "evaluation": "評価",

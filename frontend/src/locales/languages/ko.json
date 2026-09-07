@@ -376,6 +376,9 @@
       "baseUrl": "브라우저 기본 URL (선택)",
       "promptPath": "개선 대상 프롬프트 파일 경로 (Native Improvement Cycle 전용)"
     },
+    "improvementPage": {
+      "improvement": "개선", "trends": "평가 피드백 추이", "range": "기간", "evaluation": "평가", "feedbackVolume": "평가별 피드백", "iterationTrend": "반복별 수용 피드백 및 점수", "activeTrend": "실행 중 평가", "feedbackStatus": "피드백 상태 분포", "issueSeverity": "보고된 문제 심각도", "runHealth": "평가 실행 건강도", "accepted": "수용됨", "score": "점수", "history": "제안 결정 히스토리", "historyHint": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.", "allBuilds": "전체 평가", "allStates": "전체 상태", "rejected": "기각됨", "proposed": "제안됨", "decisionReason": "결정 사유", "timeline": "타임라인", "noProposals": "제안 이력이 없습니다.", "iteration": "반복", "run": "실행", "feedbackCount": "피드백 수", "activeCount": "실행 중 평가", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다.", "adopted": "적용됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
+    },
     "evaluations": {
       "title": "평가 실행 이력",
       "evaluation": "평가",
