@@ -388,6 +388,7 @@
       "score": "점수",
       "decision": "평가 결정",
       "proposals": "개선 제안",
+      "observedBehavior": "평가 대상 AI 행동",
       "issues": "보고된 문제",
       "status": "실행 상태",
       "phase": "현재 단계",

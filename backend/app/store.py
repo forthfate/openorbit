@@ -57,11 +57,11 @@ __ORBIT_MANAGER_AI_PROMPT__
 
 Your final response must be exactly one JSON object:
 {
-  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\"},
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
   \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
-Always include both keys, using empty arrays when there are no items."""
+Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
@@ -880,7 +880,7 @@ if __name__ == "__main__": runner.main()
                     else {}
                 ),
                 "response": {
-                    "evaluation": display_fields(evaluation, ("summary",))
+                    "evaluation": display_fields(evaluation, ("behavior_summary", "summary"))
                     if isinstance(evaluation, dict)
                     else {},
                     "improvements": [
@@ -3380,8 +3380,13 @@ if __name__ == "__main__":
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
         if evaluation is not None:
-            if not isinstance(evaluation, dict) or set(evaluation) != {"score", "approval", "summary"}:
-                raise ValueError("supervisor evaluation must contain score, approval, and summary")
+            if not isinstance(evaluation, dict) or set(evaluation) not in (
+                {"score", "approval", "summary"},
+                {"score", "approval", "behavior_summary", "summary"},
+            ):
+                raise ValueError(
+                    "supervisor evaluation must contain score, approval, summary, and behavior_summary"
+                )
             score = evaluation["score"]
             if isinstance(score, str):
                 try:
@@ -3396,6 +3401,8 @@ if __name__ == "__main__":
                 evaluation["summary"], str
             ):
                 raise ValueError("supervisor evaluation approval or summary is invalid")
+            if "behavior_summary" in evaluation and not isinstance(evaluation["behavior_summary"], str):
+                raise ValueError("supervisor evaluation behavior_summary is invalid")
         return result
 
     def _complete_supervision(self, run_id: str) -> None:

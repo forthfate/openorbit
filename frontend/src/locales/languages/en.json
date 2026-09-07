@@ -389,6 +389,7 @@
       "score": "Score",
       "decision": "Evaluation decision",
       "proposals": "Proposed improvements",
+      "observedBehavior": "Evaluated AI behavior",
       "issues": "Reported issues",
       "status": "Run status",
       "phase": "Current phase",

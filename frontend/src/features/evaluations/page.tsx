@@ -61,7 +61,7 @@ const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { summary?: string };
+    evaluation: { behavior_summary?: string; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };
@@ -914,6 +914,16 @@ export function EvaluationsPage({
         __iteration: record.iteration,
       })),
     );
+  const resultBehaviorSummaries = resultRecords
+    .map((record) => ({
+      iteration: record.iteration,
+      recordedAt: record.recorded_at,
+      summary: translateSupervisorResponse(record)?.evaluation?.behavior_summary,
+    }))
+    .filter(
+      (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
+        Boolean(item.summary),
+    );
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
@@ -1413,6 +1423,27 @@ export function EvaluationsPage({
               {supervisorTranslations.error && <small className="hint">{translationCopy.failed}</small>}
               {resultRecords.length ? (
                 <>
+                  {resultBehaviorSummaries.length > 0 && (
+                    <section className="result-behavior-summaries">
+                      <h3>{l.observedBehavior}</h3>
+                      <div className="result-items">
+                        {resultBehaviorSummaries.map((item) => (
+                          <article className="result-row" key={item.iteration}>
+                            <time className="result-row__time">{time(locale, item.recordedAt)}</time>
+                            <div className="result-row__body">
+                              <p>{item.summary}</p>
+                            </div>
+                            <div className="result-row__metrics">
+                              <span>
+                                <small>Iteration</small>
+                                <b>#{item.iteration}</b>
+                              </span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   <section>
                     <h3>{l.proposals}</h3>
                     <ResultList

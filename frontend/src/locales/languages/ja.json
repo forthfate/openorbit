@@ -388,6 +388,7 @@
       "score": "スコア",
       "decision": "評価判断",
       "proposals": "改善提案",
+      "observedBehavior": "評価対象AIの行動",
       "issues": "報告された問題",
       "status": "実行状態",
       "phase": "現在のフェーズ",
