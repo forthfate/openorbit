@@ -10,12 +10,18 @@ Provide one local web control room for configuring, running, observing and revie
 
 | View | Required list-managed content | Required actions |
 | --- | --- | --- |
-| Dashboard | active rules/builds, active evaluations, approval queue, warnings, daily counts | drill into a build or run; emergency stop |
-| Evaluation builds | prompt revision, model configuration, repository, purpose, criteria, run limit, timezone, interval, approval score | quick start, create, clone, edit, validate, enable, disable, run |
-| Active evaluations | moving tasks, lifecycle phase, console events, run count, PR count, proposed/approved improvements, PID, trace ID | inspect, stop one run, emergency stop all |
-| Improvement results | proposal, policy decision, baseline/current evidence, PDCA state, commit/revert state | approve, reject, inspect diff, commit, revert |
+| Dashboard | build/run counts, recent evaluations, supervisor-health summary and local operational events | open a build or run; open quick-start flow |
+| Assets | reusable runners, prompts, test-case sets, execution environments and target environments | create, edit and delete assets |
+| Evaluation builds | repository, runner, prompt, model profile, test-case set, schedule and approval score | quick start, create, clone, edit, test, run and delete |
+| Evaluation runs | lifecycle phase, console output, supervisor findings, PID and trace ID | inspect, stop one run, emergency stop all |
+| Improvement results | retained supervisor feedback, scores, proposals and cycle analytics | inspect and filter evidence |
+| Settings | locale, theme, model profiles and application prompts | configure and test a model profile |
 
-All three management views are list-first. Detail is opened from a row and must preserve a link back to the list state.
+The list-managed views are list-first. Detail is opened from a row and preserves a link back to the list state.
+
+## Planned work
+
+Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvement results.
 
 ## Quick-start entry
 
@@ -25,6 +31,6 @@ Quick starts are specified by the [quick-start product contract](quick-starts.md
 
 ## Localization and theme
 
-- Korean and English are supplied by default; all operator-facing text uses locale resources.
-- Dark mode is the default. Colors, typography and layout tokens are defined in forkable theme resources.
+- English, Korean and Japanese are supplied by default. Shared text uses locale resources; remaining legacy text is being migrated.
+- Dark mode is the default. Shared colors, typography and layout use theme resources; remaining legacy color literals are being migrated.
 - A fork must be able to replace locale, theme, workflow and prompt resources without modifying runner core.

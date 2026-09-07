@@ -4,7 +4,11 @@ Status: accepted
 
 ## Decision
 
-Versioned policy prompts determine improvement judgment. Code enforces non-negotiable safety boundaries: command allowlists, secret redaction, approval, ownership and Git conflict refusal.
+Versioned policy prompts determine supervisor judgment. Code currently enforces approved workspace boundaries, argument-array process launch by the control room and environment-variable secret references.
+
+## Planned work
+
+Add command allowlists, output redaction, high-impact approval gates and dirty-worktree/conflict refusal before enabling automated source changes.
 
 ## Consequences
 

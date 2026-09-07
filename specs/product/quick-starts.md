@@ -16,7 +16,7 @@ configuration.
 2. Select a quick-start card.
 3. Supply the manifest-defined parameters. Each field may provide a type,
    default value, description, options and placeholder.
-4. Review the input values and the assets that will be created.
+4. Review the input values before creation.
 5. Create the configuration. The operator can inspect or run the evaluation
    afterward; creation does not start a run.
 
@@ -56,6 +56,11 @@ restores the prior state and leaves no partial quick-start instance.
 Importing a quick start only stores and validates its declaration. It does not
 execute runner source or start a process. Imported runner code is visible as a
 created asset before any evaluation is run.
+
+## Planned work
+
+Show a full generated-asset preview before creation and validate parameter types
+and option values server-side.
 
 ## Built-in quick starts
 

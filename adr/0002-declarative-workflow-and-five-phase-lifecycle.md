@@ -1,10 +1,18 @@
-# ADR 0002: Declarative workflow and five-phase lifecycle
+# ADR 0002: Runner-declared lifecycle phases
 
 Status: accepted
 
 ## Decision
 
-Use versioned YAML workflow definitions and require `init → setup → run → eval → teardown`.
+Run evaluation builds through runner-declared lifecycle phases. The standard order is `init → setup → run → eval → teardown`; runners may additionally declare `finalize` for process-level work after the loop.
+
+## Current implementation
+
+Evaluation builds execute runner assets directly. Legacy workflow assets remain editable, but they are not the execution source for evaluation builds. A runner may declare only the phases it needs.
+
+## Planned work
+
+Enforce a complete lifecycle for production runners and guarantee teardown after failure, timeout, cancellation and emergency stop.
 
 ## Consequences
 

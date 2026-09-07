@@ -4,7 +4,15 @@ Status: accepted
 
 ## Decision
 
-Store operator text in locale resources and visual choices in theme tokens, with dark mode as default.
+Store shared operator text in locale resources and shared visual choices in theme tokens, with dark mode as default.
+
+## Current implementation
+
+English, Korean and Japanese locale resources and two dark themes are supplied. Some legacy UI text and colors remain embedded in feature components and CSS.
+
+## Planned work
+
+Move remaining operator-facing text and visual literals into locale and theme resources.
 
 ## Consequences
 

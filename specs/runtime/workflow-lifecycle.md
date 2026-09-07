@@ -4,27 +4,31 @@ Status: accepted
 
 ## Required order
 
-Every executable workflow declares exactly one of each phase, in this order:
+Runner assets declare the lifecycle phases they use. When all standard phases are present, their order is:
 
 1. `init`: acquire run ownership; validate input, repository, policy and approved paths.
 2. `setup`: prepare catalog, fixture, environment and recovery state.
 3. `run`: invoke bounded tools, models and target subprocesses.
 4. `eval`: collect evidence, score it and request a policy decision.
-5. `teardown`: persist final evidence, release ownership and clean temporary resources.
+5. `teardown`: persist per-iteration evidence and clean temporary resources.
+6. `finalize` (optional): perform process-level work after all iterations.
 
-`teardown` is attempted after success, failure, timeout, cancellation and emergency stop. It may not turn a failed run into success.
+`teardown` currently runs in the normal loop. It is not yet guaranteed after failure, timeout, cancellation or emergency stop.
 
 ## Process ownership
 
 - The Python runner starts commands as argument arrays without a shell.
 - A run records PID, process group/tree identity, phase, start/finish timestamps and trace ID durably.
-- Stop requests first attempt graceful termination, wait for a configured grace period, then terminate remaining descendants.
-- Windows and Unix process-tree behavior is implemented through platform adapters, not workflow shell scripts.
+- Unix stop requests signal the process group; Windows terminates the root process.
 
 ## Scheduling
 
-Each tool step declares timeout, retry policy, maximum invocation count and optional minimum interval. Evaluation builds declare timezone, activity window, repeat interval and total run limit. The dashboard edits and displays every value.
+Each generated runner step has a timeout and optional minimum interval. Evaluation builds declare timezone, repeat interval and total run limit. Retry policy, activity windows and their dashboard controls are planned.
 
 ## Server-hosted agents
 
-An evaluation build may use the `remote-http` executor to invoke an uploaded/server-hosted agent. It declares an absolute HTTP(S) endpoint, allowed method, timeout, non-secret payload and an optional authentication environment-variable reference. Embedded URL credentials and secret persistence are prohibited. The request, response status, redacted bounded response evidence and trace ID belong to the same lifecycle record.
+An evaluation build may use the `remote-http` executor to invoke a server-hosted agent. It declares an absolute HTTP(S) endpoint, allowed method, timeout and non-secret payload. Embedded URL credentials are prohibited. The request, response status and trace ID are retained with the run; authentication environment-variable references, response redaction and complete lifecycle staging are planned.
+
+## Planned work
+
+Guarantee cleanup, graceful stop with descendant termination on every platform, retry/activity-window scheduling, and full remote-agent lifecycle handling.

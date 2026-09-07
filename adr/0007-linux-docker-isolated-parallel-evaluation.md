@@ -4,7 +4,15 @@ Status: accepted
 
 ## Decision
 
-Support opt-in Docker parallel evaluation on Linux only. Each run builds from an isolated repository snapshot and uses constrained, non-privileged containers.
+Reserve Docker parallel evaluation for Linux only, with isolated repository snapshots and constrained, non-privileged containers.
+
+## Current implementation
+
+Orbit only preflights Linux Docker CLI and daemon availability. Docker is not yet an evaluation executor.
+
+## Planned work
+
+Add opt-in Docker build configuration, snapshot/image creation, constrained parallel containers, cleanup and OTEL lifecycle events.
 
 ## Context
 
