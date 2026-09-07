@@ -12,7 +12,7 @@ const windowPositionKey='orbit.chat.window.position'
 
 const initialPosition=():Position=>{
   const saved=localStorage.getItem(positionKey)
-  if(saved){try{const position=JSON.parse(saved) as Position;if(Number.isFinite(position.x)&&Number.isFinite(position.y))return position}catch{/* use default */}}
+  if(saved){try{const position=JSON.parse(saved) as Position;if(Number.isFinite(position.x)&&Number.isFinite(position.y))return {x:Math.min(Math.max(12,position.x),Math.max(12,window.innerWidth-60)),y:Math.min(Math.max(12,position.y),Math.max(12,window.innerHeight-60))}}catch{/* use default */}}
   return {x:Math.max(16,window.innerWidth-72),y:Math.max(16,window.innerHeight-72)}
 }
 

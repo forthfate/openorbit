@@ -44,12 +44,16 @@ APP_DATA = _application_data_dir()
 WORKFLOWS = APP_DATA / "workflows"
 CONFIG = APP_DATA / "config"
 TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
+EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
+TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
-Use only the supplied repository context and task instruction. Preserve the
-task safety boundary, collect observable evidence, and never claim success
-without the stated acceptance evidence. Escalate required approvals and
-stop immediately when an emergency stop is requested.
+Preserve the task safety boundary, collect observable evidence, and never
+claim success without stated acceptance evidence. Escalate required approvals
+and stop immediately when an emergency stop is requested.
+
+__ORBIT_MANAGER_AI_PROMPT__
+
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\"},
@@ -57,10 +61,12 @@ Your final response must be exactly one JSON object:
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 Always include both keys, using empty arrays when there are no items."""
+MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
 # - The evaluation build selects fixed browser test cases, a browser base URL,
-#   and a readable prompt_bundle file inside the target repository.
+#   and, when this native runner is selected, a readable managed_prompt_path
+#   configured on its Target Environment.
 # - Only supervisor feedback explicitly marked adopted is applied to the prompt.
 # This runner never commits target changes; ctx.update_file keeps rollback versions.
 
@@ -147,9 +153,9 @@ def accepted_proposals(ctx):
 
 
 def update_prompt_from_accepted_proposals(ctx, proposals):
-    prompt_path = str(ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
     if not prompt_path:
-        raise ValueError("native improvement cycle requires evaluation_build.prompt_bundle")
+        raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     target = ctx.project_path(prompt_path)
     current = target.read_text(encoding="utf-8")
     lines = ["## Accepted improvement proposals", "", f"Iteration: {ctx.loop_index}", ""]
@@ -294,6 +300,7 @@ class ConsoleStore:
         RUNS.mkdir(parents=True, exist_ok=True)
         RUNNERS.mkdir(parents=True, exist_ok=True)
         RUNNER_TEMPLATES.mkdir(parents=True, exist_ok=True)
+        self._migrate_evaluation_environments()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._lock = threading.Lock()
         self._recover_interrupted_runs()
@@ -605,14 +612,35 @@ if __name__ == "__main__": runner.main()
     def evaluation_builds(self) -> list[dict[str, Any]]:
         path = CONFIG / "evaluation-builds.yaml"
         builds = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
+        builds = builds if isinstance(builds, list) else []
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
         runs = self.runs()
         for build in builds:
+            self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
             dates = [run.created_at for run in runs if run.evaluation_build_id == build["id"]]
             build["last_run_at"] = max(dates).isoformat() if dates else None
         return builds
+
+    def _hydrate_build_environment(self, build: dict[str, Any]) -> None:
+        """Project reusable environment assets onto legacy runtime build fields."""
+        execution_id = str(build.get("execution_environment_id", ""))
+        target_id = str(build.get("target_environment_id", ""))
+        execution = next(
+            (item for item in self.execution_environments() if item.get("id") == execution_id), None
+        )
+        target = next((item for item in self.target_environments() if item.get("id") == target_id), None)
+        if execution:
+            build["executor"] = execution.get("executor", {"type": "local"})
+            build["browser_executable_path"] = execution.get("browser_executable_path", "")
+            build["browser_library_path"] = execution.get("browser_library_path", "")
+        if target:
+            build["repository"] = target.get("repository", "")
+            build["browser_base_url"] = target.get("browser_base_url", "")
+            # This is runner-specific target configuration, not supervisor prompt input.
+            build["managed_prompt_path"] = target.get("managed_prompt_path", build.get("prompt_bundle", ""))
+            build["prompt_bundle"] = build["managed_prompt_path"]  # Legacy runner compatibility.
 
     @staticmethod
     def _repository_metadata(value: str) -> dict[str, str | bool]:
@@ -672,6 +700,174 @@ if __name__ == "__main__": runner.main()
             "timeout_seconds": invocation.timeout_seconds,
             "headers": normalized_headers,
         }
+
+    @staticmethod
+    def _asset_list(path: Path) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        values = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return values if isinstance(values, list) else []
+
+    @staticmethod
+    def _save_asset_list(path: Path, values: list[dict[str, Any]]) -> None:
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(values, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(path)
+
+    def execution_environments(self) -> list[dict[str, Any]]:
+        return self._asset_list(EXECUTION_ENVIRONMENTS)
+
+    def target_environments(self) -> list[dict[str, Any]]:
+        return self._asset_list(TARGET_ENVIRONMENTS)
+
+    def _execution_environment(self, environment_id: str) -> dict[str, Any]:
+        return next(item for item in self.execution_environments() if item.get("id") == environment_id)
+
+    def _target_environment(self, environment_id: str) -> dict[str, Any]:
+        return next(item for item in self.target_environments() if item.get("id") == environment_id)
+
+    def _build_environment_values(self, values: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        execution_id, target_id = (
+            str(values.get("execution_environment_id", "")).strip(),
+            str(values.get("target_environment_id", "")).strip(),
+        )
+        if execution_id and target_id:
+            try:
+                return self._execution_environment(execution_id), self._target_environment(target_id)
+            except StopIteration as error:
+                raise ValueError("selected execution or target environment does not exist") from error
+        return (
+            {
+                "id": "",
+                "executor": self._executor_from_values(values),
+                "browser_executable_path": values.get("browser_executable_path", ""),
+                "browser_library_path": values.get("browser_library_path", ""),
+            },
+            {
+                "id": "",
+                "repository": values.get("repository", ""),
+                "browser_base_url": values.get("browser_base_url", ""),
+            },
+        )
+
+    def create_execution_environment(self, values: dict[str, Any]) -> dict[str, Any]:
+        items = self.execution_environments()
+        if any(item.get("id") == values["id"] for item in items):
+            raise ValueError("execution environment ID already exists")
+        item = {
+            "id": values["id"],
+            "name": values["name"],
+            "executor": self._executor_from_values(values),
+            "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
+            "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+        }
+        items.append(item)
+        self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
+        return item
+
+    def create_target_environment(self, values: dict[str, Any]) -> dict[str, Any]:
+        items = self.target_environments()
+        if any(item.get("id") == values["id"] for item in items):
+            raise ValueError("target environment ID already exists")
+        item = {
+            "id": values["id"],
+            "name": values["name"],
+            "repository": str(values["repository"]).strip(),
+            "browser_base_url": str(values.get("browser_base_url", "")).strip(),
+            "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+        }
+        items.append(item)
+        self._save_asset_list(TARGET_ENVIRONMENTS, items)
+        return item
+
+    def update_execution_environment(self, environment_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        items = self.execution_environments()
+        index = next((i for i, item in enumerate(items) if item.get("id") == environment_id), None)
+        if index is None:
+            raise KeyError(environment_id)
+        item = {
+            "id": environment_id,
+            "name": values["name"],
+            "executor": self._executor_from_values(values),
+            "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
+            "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+        }
+        items[index] = item
+        self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
+        return item
+
+    def update_target_environment(self, environment_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        items = self.target_environments()
+        index = next((i for i, item in enumerate(items) if item.get("id") == environment_id), None)
+        if index is None:
+            raise KeyError(environment_id)
+        item = {
+            "id": environment_id,
+            "name": values["name"],
+            "repository": str(values["repository"]).strip(),
+            "browser_base_url": str(values.get("browser_base_url", "")).strip(),
+            "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+        }
+        items[index] = item
+        self._save_asset_list(TARGET_ENVIRONMENTS, items)
+        return item
+
+    def _delete_environment(self, environment_id: str, path: Path, reference_key: str, label: str) -> None:
+        if any(build.get(reference_key) == environment_id for build in self.evaluation_builds()):
+            raise ValueError(f"{label} is used by an evaluation build")
+        items = self._asset_list(path)
+        remaining = [item for item in items if item.get("id") != environment_id]
+        if len(remaining) == len(items):
+            raise KeyError(environment_id)
+        self._save_asset_list(path, remaining)
+
+    def delete_execution_environment(self, environment_id: str) -> None:
+        self._delete_environment(
+            environment_id, EXECUTION_ENVIRONMENTS, "execution_environment_id", "execution environment"
+        )
+
+    def delete_target_environment(self, environment_id: str) -> None:
+        self._delete_environment(
+            environment_id, TARGET_ENVIRONMENTS, "target_environment_id", "target environment"
+        )
+
+    def _migrate_evaluation_environments(self) -> None:
+        path = CONFIG / "evaluation-builds.yaml"
+        builds = self._asset_list(path)
+        if not builds:
+            return
+        executions, targets, changed = self.execution_environments(), self.target_environments(), False
+        for build in builds:
+            build_id = str(build.get("id", "legacy"))
+            execution_id, target_id = f"{build_id}-execution", f"{build_id}-target"
+            if not build.get("execution_environment_id"):
+                if not any(item.get("id") == execution_id for item in executions):
+                    executions.append(
+                        {
+                            "id": execution_id,
+                            "name": f"{build.get('name', build_id)} execution",
+                            "executor": build.get("executor", {"type": "local"}),
+                            "browser_executable_path": build.get("browser_executable_path", ""),
+                            "browser_library_path": build.get("browser_library_path", ""),
+                        }
+                    )
+                build["execution_environment_id"], changed = execution_id, True
+            if not build.get("target_environment_id"):
+                if not any(item.get("id") == target_id for item in targets):
+                    targets.append(
+                        {
+                            "id": target_id,
+                            "name": f"{build.get('name', build_id)} target",
+                            "repository": build.get("repository", ""),
+                            "browser_base_url": build.get("browser_base_url", ""),
+                            "managed_prompt_path": build.get("prompt_bundle", ""),
+                        }
+                    )
+                build["target_environment_id"], changed = target_id, True
+        if changed:
+            self._save_asset_list(EXECUTION_ENVIRONMENTS, executions)
+            self._save_asset_list(TARGET_ENVIRONMENTS, targets)
+            self._save_asset_list(path, builds)
 
     def prompt_templates(self) -> list[dict[str, Any]]:
         path = CONFIG / "prompt-templates.yaml"
@@ -811,31 +1007,14 @@ if __name__ == "__main__": runner.main()
         return template
 
     def _assembled_prompt(self, build: dict[str, Any]) -> tuple[str, str]:
-        """Create the immutable three-part prompt captured by every evaluation.
-
-        The manager template is shared and versioned, while the task instruction
-        and fixed test cases belong to an individual evaluation build.  Keeping
-        the resolved result on the Run makes an operator able to audit exactly
-        what the supervisor/target saw even after a build is edited later.
-        """
+        """Resolve the global manager contract and the build's evaluation policy."""
         template_id = build.get("manager_template_id", "manager-default-v1")
         template = next((item for item in self.prompt_templates() if item.get("id") == template_id), None)
         if template is None:
             raise ValueError(f"manager prompt template does not exist: {template_id}")
-        repository_value = str(build["repository"])
-        remote = build.get("executor", {}).get("type") == "remote-http"
-        repository = Path(repository_value).resolve()
-        source = (repository / build["prompt_bundle"]).resolve()
-        if remote:
-            source_label = build.get("prompt_bundle") or "remote contract"
-            source_content = (
-                "This deployed target receives the fixed test cases below through its HTTP contract."
-            )
-        elif not source.is_file() or repository not in source.parents:
-            raise ValueError("prompt must be a readable file inside the evaluation repository")
-        else:
-            source_label = str(source.relative_to(repository))
-            source_content = source.read_text(encoding="utf-8")[:50_000]
+        operational = self.application_settings()["manager_prompt_template"]
+        if MANAGER_PROMPT_SLOT not in operational:
+            raise ValueError(f"operational manager prompt must include {MANAGER_PROMPT_SLOT}")
         selected_set = next(
             (
                 item
@@ -856,16 +1035,31 @@ if __name__ == "__main__": runner.main()
             )
             or "## Fixed target-AI test cases\nNo fixed test cases were configured."
         )
+        manager_policy = (
+            f"# Manager evaluation policy: {template['name']} (v{template.get('version', 1)})\n"
+            f"{template['content']}"
+        )
+        legacy_context = "\n".join(
+            part
+            for part in (
+                f"Purpose: {build.get('purpose', '')}" if build.get("purpose") else "",
+                f"Legacy evaluation criteria: {build.get('criteria', '')}" if build.get("criteria") else "",
+                f"Legacy task instruction: {build.get('task_instruction', '')}"
+                if build.get("task_instruction")
+                else "",
+            )
+            if part
+        )
         assembled = "\n\n".join(
-            (
-                f"# Manager template: {template['name']} (v{template.get('version', 1)})\n{template['content']}",
-                f"# Repository context\nRepository: {repository_value}\nPurpose: {build.get('purpose', '')}\nEvaluation criteria: {build.get('criteria', '')}",
-                f"# Task instruction\n{self.workflow(str(build['workflow_id'])).description}",
-                f"# Prompt source: {source_label}\n{source_content}",
+            part
+            for part in (
+                operational.replace(MANAGER_PROMPT_SLOT, manager_policy),
+                f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
             )
+            if part
         )
-        return source_label if remote else str(source), assembled[:100_000]
+        return f"application-settings + manager-template:{template_id}", assembled[:100_000]
 
     def evaluation_build(self, build_id: str) -> dict[str, Any]:
         for build in self.evaluation_builds():
@@ -981,8 +1175,9 @@ if __name__ == "__main__": runner.main()
         if any(build["id"] == build_id for build in self.evaluation_builds()):
             raise ValueError("같은 ID의 평가 빌드가 이미 있습니다.")
         workflow = self.workflow(values["workflow_id"])
-        executor = self._executor_from_values(values)
-        repository_value = str(values["repository"])
+        execution_environment, target_environment = self._build_environment_values(values)
+        executor = execution_environment["executor"]
+        repository_value = str(target_environment["repository"])
         repository = Path(repository_value).expanduser().resolve()
         approved = any(repository == root or root in repository.parents for root in ALLOWED_WORKSPACE_ROOTS)
         if executor["type"] != "remote-http" and (not repository.is_dir() or not approved):
@@ -1010,19 +1205,22 @@ if __name__ == "__main__": runner.main()
             "name": values["name"],
             "enabled": values["enabled"],
             "workflow_id": workflow.id,
+            "execution_environment_id": execution_environment.get("id", ""),
+            "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
             if executor["type"] == "remote-http" and repository_value.startswith("remote://")
             else str(repository),
             "purpose": values["purpose"],
-            "criteria": values["criteria"],
-            "prompt_bundle": values["prompt_bundle"],
+            "criteria": values.get("criteria", ""),
+            "prompt_bundle": values.get("prompt_bundle", ""),
+            "managed_prompt_path": str(target_environment.get("managed_prompt_path", "")).strip(),
             "manager_template_id": values.get("manager_template_id", "manager-default-v1"),
             "model_profile_name": values.get("model_profile_name", "Default"),
             "task_instruction": values.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
-            "browser_base_url": str(values.get("browser_base_url", "")).strip(),
-            "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
-            "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
+            "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
+            "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
@@ -1044,8 +1242,9 @@ if __name__ == "__main__": runner.main()
         if values["id"] != build_id:
             raise ValueError("evaluation build ID cannot be changed")
         workflow = self.workflow(values["workflow_id"])
-        executor = self._executor_from_values(values)
-        repository_value = str(values["repository"])
+        execution_environment, target_environment = self._build_environment_values(values)
+        executor = execution_environment["executor"]
+        repository_value = str(target_environment["repository"])
         repository = Path(repository_value).expanduser().resolve()
         approved = any(repository == root or root in repository.parents for root in ALLOWED_WORKSPACE_ROOTS)
         if executor["type"] != "remote-http" and (not repository.is_dir() or not approved):
@@ -1068,24 +1267,28 @@ if __name__ == "__main__": runner.main()
             raise ValueError("AI model profile does not exist")
         if not any(item.get("id") == values.get("test_case_set_id") for item in self.target_test_case_sets()):
             raise ValueError("target-AI test case set does not exist")
+        existing = builds[index]
         build = {
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
             "workflow_id": workflow.id,
+            "execution_environment_id": execution_environment.get("id", ""),
+            "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
             if executor["type"] == "remote-http" and repository_value.startswith("remote://")
             else str(repository),
             "purpose": values["purpose"],
-            "criteria": values["criteria"],
-            "prompt_bundle": values["prompt_bundle"],
+            "criteria": existing.get("criteria", ""),
+            "prompt_bundle": existing.get("prompt_bundle", ""),
+            "managed_prompt_path": str(target_environment.get("managed_prompt_path", "")).strip(),
             "manager_template_id": values.get("manager_template_id", "manager-default-v1"),
             "model_profile_name": values.get("model_profile_name", "Default"),
-            "task_instruction": values.get("task_instruction", ""),
+            "task_instruction": existing.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
-            "browser_base_url": str(values.get("browser_base_url", "")).strip(),
-            "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
-            "browser_library_path": str(values.get("browser_library_path", "")).strip(),
+            "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
+            "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
+            "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
@@ -1666,6 +1869,8 @@ if __name__ == "__main__": runner.main()
                 "chat_model_profile_name": "",
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
+        if MANAGER_PROMPT_SLOT not in prompt:
+            prompt = f"{prompt}\n\n{MANAGER_PROMPT_SLOT}".strip()
         return {
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),

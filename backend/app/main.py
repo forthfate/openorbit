@@ -163,6 +163,16 @@ def target_test_case_sets():
     return store.target_test_case_sets()
 
 
+@app.get("/api/execution-environments")
+def execution_environments():
+    return store.execution_environments()
+
+
+@app.get("/api/target-environments")
+def target_environments():
+    return store.target_environments()
+
+
 class PromptTemplateUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     version: int = Field(ge=1, le=10000)
@@ -183,6 +193,44 @@ class TargetTestCaseSetCreate(TargetTestCaseSetUpdate):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
 
 
+class ExecutionEnvironmentCreate(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
+    name: str = Field(min_length=1, max_length=120)
+    executor_type: Literal["local", "remote-http"] = "local"
+    remote_endpoint: str = ""
+    remote_method: Literal["GET", "POST", "PUT"] = "POST"
+    remote_timeout_seconds: int = Field(default=60, ge=1, le=900)
+    remote_headers: dict[str, str] = Field(default_factory=dict)
+    browser_executable_path: str = ""
+    browser_library_path: str = ""
+
+
+class TargetEnvironmentCreate(BaseModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
+    name: str = Field(min_length=1, max_length=120)
+    repository: str = Field(min_length=1)
+    browser_base_url: str = ""
+    managed_prompt_path: str = ""
+
+
+class ExecutionEnvironmentUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    executor_type: Literal["local", "remote-http"] = "local"
+    remote_endpoint: str = ""
+    remote_method: Literal["GET", "POST", "PUT"] = "POST"
+    remote_timeout_seconds: int = Field(default=60, ge=1, le=900)
+    remote_headers: dict[str, str] = Field(default_factory=dict)
+    browser_executable_path: str = ""
+    browser_library_path: str = ""
+
+
+class TargetEnvironmentUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    repository: str = Field(min_length=1)
+    browser_base_url: str = ""
+    managed_prompt_path: str = ""
+
+
 @app.put("/api/prompt-templates/{template_id}")
 def update_prompt_template(template_id: str, values: PromptTemplateUpdate):
     return safely(lambda: store.update_prompt_template(template_id, values.model_dump()))
@@ -196,6 +244,36 @@ def create_prompt_template(values: PromptTemplateCreate):
 @app.post("/api/target-test-case-sets")
 def create_target_test_case_set(values: TargetTestCaseSetCreate):
     return safely(lambda: store.create_target_test_case_set(values.model_dump()))
+
+
+@app.post("/api/execution-environments")
+def create_execution_environment(values: ExecutionEnvironmentCreate):
+    return safely(lambda: store.create_execution_environment(values.model_dump()))
+
+
+@app.post("/api/target-environments")
+def create_target_environment(values: TargetEnvironmentCreate):
+    return safely(lambda: store.create_target_environment(values.model_dump()))
+
+
+@app.put("/api/execution-environments/{environment_id}")
+def update_execution_environment(environment_id: str, values: ExecutionEnvironmentUpdate):
+    return safely(lambda: store.update_execution_environment(environment_id, values.model_dump()))
+
+
+@app.put("/api/target-environments/{environment_id}")
+def update_target_environment(environment_id: str, values: TargetEnvironmentUpdate):
+    return safely(lambda: store.update_target_environment(environment_id, values.model_dump()))
+
+
+@app.delete("/api/execution-environments/{environment_id}")
+def delete_execution_environment(environment_id: str):
+    return safely(lambda: store.delete_execution_environment(environment_id))
+
+
+@app.delete("/api/target-environments/{environment_id}")
+def delete_target_environment(environment_id: str):
+    return safely(lambda: store.delete_target_environment(environment_id))
 
 
 @app.delete("/api/prompt-templates/{template_id}")
@@ -232,13 +310,12 @@ class EvaluationBuildCreate(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
     workflow_id: str
-    repository: str = Field(min_length=1)
+    repository: str = ""  # Legacy target-environment input.
+    target_environment_id: str = ""
+    execution_environment_id: str = ""
     purpose: str = Field(min_length=1, max_length=500)
-    criteria: str = Field(min_length=1, max_length=1_000)
-    prompt_bundle: str = Field(min_length=1)
     manager_template_id: str = "manager-default-v1"
     model_profile_name: str = "Default"
-    task_instruction: str = ""
     test_case_set_id: str = Field(min_length=1, max_length=64)
     browser_base_url: str = Field(default="", max_length=2_000)
     browser_executable_path: str = Field(default="", max_length=4_000)
@@ -247,7 +324,9 @@ class EvaluationBuildCreate(BaseModel):
     repeat_interval_minutes: int = Field(ge=1, le=10080)
     run_limit: int = Field(ge=1, le=10000)
     approval_score: int = Field(ge=0, le=10)
-    executor_type: str = Field(pattern=r"^(local|remote-http)$")
+    executor_type: str = Field(
+        default="local", pattern=r"^(local|remote-http)$"
+    )  # Legacy fallback; selected execution environment is authoritative.
     remote_endpoint: str = ""
     remote_method: str = Field(default="POST", pattern=r"^(GET|POST|PUT)$")
     remote_timeout_seconds: int = Field(default=60, ge=1, le=900)
