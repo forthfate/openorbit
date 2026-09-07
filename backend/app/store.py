@@ -832,7 +832,63 @@ if __name__ == "__main__": runner.main()
                     for parameter in quick_start["parameters"]
                 ],
             }
-        raise ValueError("template translation kind must be runner-template or quick-start")
+        if kind == "supervisor-result":
+            run_id, separator, iteration_value = template_id.partition(":")
+            if not separator or not iteration_value.isdigit():
+                raise ValueError("supervisor result translation ID must be run_id:iteration")
+            record = next(
+                (
+                    item
+                    for item in self._load(run_id).supervisor_results
+                    if isinstance(item, dict) and int(item.get("iteration", 0)) == int(iteration_value)
+                ),
+                None,
+            )
+            response = record.get("response") if isinstance(record, dict) else None
+            if not isinstance(response, dict):
+                raise KeyError(template_id)
+
+            def display_fields(item: Any, fields: tuple[str, ...]) -> dict[str, str]:
+                return {
+                    field: value
+                    for field in fields
+                    if isinstance((value := item.get(field)), str) and value.strip()
+                }
+
+            evaluation = response.get("evaluation")
+            return {
+                **(
+                    {"prompt": record["prompt"]}
+                    if isinstance(record.get("prompt"), str) and record["prompt"].strip()
+                    else {}
+                ),
+                "response": {
+                    "evaluation": display_fields(evaluation, ("summary",))
+                    if isinstance(evaluation, dict)
+                    else {},
+                    "improvements": [
+                        display_fields(
+                            item,
+                            (
+                                "title",
+                                "rationale",
+                                "proposed_change",
+                                "acceptanceEvidence",
+                                "validation",
+                                "rollback",
+                            ),
+                        )
+                        for item in response.get("improvements", [])
+                        if isinstance(item, dict)
+                    ],
+                    "reported_issues": [
+                        display_fields(item, ("title", "evidence", "reproduction"))
+                        for item in response.get("reported_issues", [])
+                        if isinstance(item, dict)
+                    ],
+                },
+            }
+        raise ValueError("template translation kind is not supported")
 
     @staticmethod
     def validate_template_translation(source: Any, translated: Any) -> dict[str, Any]:
