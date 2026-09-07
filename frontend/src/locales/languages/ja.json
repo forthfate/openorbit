@@ -463,6 +463,12 @@
       "cancelled": "キャンセル",
       "running": "実行中"
     },
+    "quickStartLabels": {
+      "openorbit.site-exploration-review": {
+        "name": "サイト探索レビュー",
+        "description": "安全なリンクでサイトを探索し、根拠に基づくプロダクトフィードバックを残します。実行中のアプリ、Playwrightブラウザー、LangGraphが必要です。"
+      }
+    },
     "evaluations": {
       "title": "評価実行履歴",
       "evaluation": "評価",

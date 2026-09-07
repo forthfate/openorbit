@@ -463,6 +463,12 @@
       "cancelled": "취소됨",
       "running": "실행 중"
     },
+    "quickStartLabels": {
+      "openorbit.site-exploration-review": {
+        "name": "사이트 탐색 검토",
+        "description": "안전한 링크로 사이트를 탐색하고 근거 기반 제품 피드백을 남깁니다. 실행 중인 앱, Playwright 브라우저, LangGraph가 필요합니다."
+      }
+    },
     "evaluations": {
       "title": "평가 실행 이력",
       "evaluation": "평가",

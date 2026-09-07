@@ -185,6 +185,9 @@ export function DashboardPage({
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
     dashboard = locales[locale].dashboardUi,
     help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
+    quickStartLabels = localeMessages<
+      Record<string, { name: string; description: string }>
+    >(locale, "quickStartLabels"),
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length,
     [quickStarts, setQuickStarts] = useState<QuickStart[]>([]);
@@ -226,8 +229,12 @@ export function DashboardPage({
               >
                 <Sparkles size={16} />
                 <span>
-                  <strong>{item.name}</strong>
-                  <small>{item.description}</small>
+                  <strong>
+                    {quickStartLabels[item.id]?.name ?? item.name}
+                  </strong>
+                  <small>
+                    {quickStartLabels[item.id]?.description ?? item.description}
+                  </small>
                 </span>
               </button>
             ))}

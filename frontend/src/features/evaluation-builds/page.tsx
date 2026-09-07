@@ -60,7 +60,7 @@ type Draft = {
 type QuickStartTranslation = {
   name: string;
   description: string;
-  parameters: {
+  parameters?: {
     label: string;
     description?: string;
     placeholder?: string;
@@ -94,18 +94,20 @@ type BuildWizardCopy = {
 const withQuickStartTranslation = (
   item: QuickStart,
   translation: QuickStartTranslation | null,
+  labels?: { name: string; description: string },
 ): QuickStart =>
-  translation
+  translation || labels
     ? {
         ...item,
-        name: translation.name,
-        description: translation.description,
+        name: translation?.name ?? labels?.name ?? item.name,
+        description:
+          translation?.description ?? labels?.description ?? item.description,
         parameters: item.parameters.map((parameter, index) => ({
           ...parameter,
-          ...translation.parameters[index],
+          ...translation?.parameters?.[index],
           options: parameter.options?.map((option, optionIndex) => ({
             ...option,
-            ...translation.parameters[index]?.options?.[optionIndex],
+            ...translation?.parameters?.[index]?.options?.[optionIndex],
           })),
         })),
       }
@@ -648,13 +650,15 @@ function Quick({
 function QuickStartCard({
   item,
   translation,
+  labels,
   pick,
 }: {
   item: QuickStart;
   translation: QuickStartTranslation | null;
+  labels?: { name: string; description: string };
   pick: (item: QuickStart) => void;
 }) {
-  const display = withQuickStartTranslation(item, translation);
+  const display = withQuickStartTranslation(item, translation, labels);
   return (
     <article className="quick-start-card">
       <button className="quick-start-card__select" onClick={() => pick(item)}>
@@ -733,6 +737,9 @@ export function EvaluationBuildsPage(props: {
     locale,
   );
   const translationCopy = locales[locale].templateTranslation;
+  const quickStartLabels = localeMessages<
+    Record<string, { name: string; description: string }>
+  >(locale, "quickStartLabels");
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -1019,6 +1026,7 @@ export function EvaluationBuildsPage(props: {
                   key={item.id}
                   item={item}
                   translation={translations.content(item.id)}
+                  labels={quickStartLabels[item.id]}
                   pick={setPicked}
                 />
               ))}
@@ -1033,6 +1041,7 @@ export function EvaluationBuildsPage(props: {
             item={withQuickStartTranslation(
               picked,
               translations.content(picked.id),
+              quickStartLabels[picked.id],
             )}
             profiles={profiles}
             create={onQuickStartCreate}
