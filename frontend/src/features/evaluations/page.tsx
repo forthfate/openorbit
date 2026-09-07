@@ -151,30 +151,22 @@ function WorkflowLogOutput({
   locale: Locale;
 }) {
   const l = copy[locale];
+  const visibleSteps = steps.filter(
+    (step) =>
+      Boolean(step.result) ||
+      Boolean(step.log_lines?.length) ||
+      Boolean(step.output) ||
+      Boolean(step.error),
+  );
   return (
     <div className="console-output workflow-log-output">
-      {steps.length ? (
-        steps.map((step, index) => (
+      {visibleSteps.length ? (
+        visibleSteps.map((step, index) => (
           <section key={`${step.step_id}-${index}`}>
-            <div>
-              <strong>{step.name ?? step.step_id}</strong>
-              <small>exit {step.exit_code ?? "—"}</small>
-            </div>
-            <code className="workflow-command">
-              ${" "}
-              {step.command?.join(" ") ??
-                "Command metadata unavailable for this older run."}
-            </code>
-            {step.working_directory && (
-              <small className="workflow-directory">
-                {step.working_directory}
-              </small>
-            )}
             {step.result && <BrowserEvidence result={step.result} />}
-            <TimestampedLogOutput
-              locale={locale}
-              lines={stepLogLines(step)}
-            />
+            {(step.log_lines?.length || step.output || step.error) && (
+              <TimestampedLogOutput locale={locale} lines={stepLogLines(step)} />
+            )}
           </section>
         ))
       ) : (
