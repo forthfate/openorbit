@@ -179,7 +179,7 @@ def test_v1_read_only_control_room_resources_are_available():
         "/api/v1/telemetry",
         "/api/v1/logs",
         "/api/v1/improvements",
-        "/api/v1/improvements/proposal-decisions",
+        "/api/v1/improvements/proposals",
         "/api/v1/reported-issues",
     ):
         assert client.get(path).status_code == 200
