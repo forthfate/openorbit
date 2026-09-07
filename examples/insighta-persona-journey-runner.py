@@ -91,6 +91,7 @@ def status_summary(status: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 @runner.phase("init")
 def init(ctx):
+    # Validate the external simulator once before Orbit starts its iteration loop.
     status = invoke("status")
     ctx.emit_result(
         {"persona_cycle": {"simulator_root": str(SIMULATOR_ROOT), "personas": status_summary(status)}}
@@ -100,11 +101,13 @@ def init(ctx):
 
 @runner.phase("setup")
 def setup(ctx):
+    # Keep the ownership boundary explicit: Orbit schedules; the simulator does not.
     ctx.log("Orbit scheduler is ready; the simulator daemon remains stopped.")
 
 
 @runner.phase("run")
 def run(ctx):
+    # Request one bounded simulator cycle and normalize its evidence for review.
     sessions = invoke("run-once")
     evidence = [event_evidence(item["event"]) for item in sessions]
     ctx.emit_result(
@@ -121,6 +124,7 @@ def run(ctx):
 
 @runner.phase("eval")
 def evaluate(ctx):
+    # Publish the post-cycle persona state without replaying the completed work.
     status = invoke("status")
     summary = status_summary(status)
     ctx.emit_result({"persona_cycle": {"persona_status": summary}})
@@ -129,11 +133,13 @@ def evaluate(ctx):
 
 @runner.phase("teardown")
 def teardown(ctx):
+    # Per-iteration cleanup is limited to reporting because no daemon was started.
     ctx.log("Completed one original Insighta simulator cycle without starting its daemon.")
 
 
 @runner.phase("finalize")
 def finalize(ctx):
+    # Leave the external simulator untouched when the Orbit-managed process exits.
     ctx.log("Finalized the Orbit-managed Insighta persona evaluation.")
 
 

@@ -77,11 +77,14 @@ import re
 from orbit_sdk import runner
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
+# Marker comments make replacement idempotent and preserve the surrounding
+# target prompt content that OpenOrbit does not own.
 PROMPT_BLOCK_START = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_START -->"
 PROMPT_BLOCK_END = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_END -->"
 
 
 def state_path(ctx):
+    '''Return the per-build state file outside the target repository.'''
     build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
     directory = ctx.app_data / "improvement-cycles"
     directory.mkdir(parents=True, exist_ok=True)
@@ -89,6 +92,7 @@ def state_path(ctx):
 
 
 def load_state(ctx):
+    '''Load the previous verdict state, or start a fresh candidate baseline.'''
     path = state_path(ctx)
     if not path.exists():
         return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}
@@ -96,21 +100,25 @@ def load_state(ctx):
 
 
 def save_state(ctx, state):
+    '''Persist only bounded history so recurring evaluations do not grow unbounded.'''
     state["history"] = state.get("history", [])[-24:]
     state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def git(ctx, *args):
+    '''Run Git in the configured project root without invoking a shell.'''
     return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)
 
 
 def candidate(ctx):
+    '''Fingerprint the current working-tree diff and retain its changed paths.'''
     patch = git(ctx, "diff", "--binary", "--")
     changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]
     return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed
 
 
 def proposal_id(proposal):
+    '''Prefer a supplied proposal ID; otherwise derive a stable content ID.'''
     explicit = str(proposal.get("id") or "").strip()
     if explicit:
         return explicit
@@ -119,6 +127,7 @@ def proposal_id(proposal):
 
 
 def record_feedback_decisions(ctx):
+    '''Record only explicit supervisor decisions; undecided feedback remains pending.'''
     feedback = ctx.previous_supervisor_feedback
     decisions = []
     for proposal in feedback.get("improvements", []):
@@ -153,6 +162,7 @@ def accepted_proposals(ctx):
 
 
 def update_prompt_from_accepted_proposals(ctx, proposals):
+    '''Replace only OpenOrbit's managed prompt block and retain a rollback version.'''
     prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
@@ -181,6 +191,7 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
 
 @runner.phase("init")
 def init(ctx):
+    # Process-level validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
     if not ctx.evaluation_build.get("browser_base_url") or not ctx.test_cases:
         raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")
@@ -189,6 +200,7 @@ def init(ctx):
 
 @runner.phase("setup")
 def setup(ctx):
+    # Apply already accepted feedback before validating the next candidate.
     decisions = record_feedback_decisions(ctx)
     active_proposals = accepted_proposals(ctx)
     prompt_update = update_prompt_from_accepted_proposals(ctx, list(active_proposals.values()))
@@ -211,6 +223,7 @@ def setup(ctx):
 
 @runner.phase("run")
 def run(ctx):
+    # Browser evidence is the acceptance input; no target change is made here.
     evidence = ctx.playwright_journey()
     results = evidence["results"]
     passed = all(item["passed"] for item in results)
@@ -232,6 +245,7 @@ def run(ctx):
 
 @runner.phase("eval")
 def evaluate(ctx):
+    # Promote a candidate only after the required number of stable evaluations.
     state = load_state(ctx)
     fingerprint, changed = candidate(ctx)
     if not fingerprint:
@@ -265,11 +279,13 @@ def evaluate(ctx):
 
 @runner.phase("teardown")
 def teardown(ctx):
+    # Per-iteration evidence remains available for supervisor review.
     ctx.log("Retained prompt versions, decisions, and validation evidence")
 
 
 @runner.phase("finalize")
 def finalize(ctx):
+    # Process-level finalization intentionally leaves the target repository uncommitted.
     ctx.log("Finalized the native improvement cycle without committing changes")
 
 
