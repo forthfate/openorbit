@@ -31,6 +31,37 @@ React application with a Vite production build before each commit.
 
 The React hook needs `npm --prefix frontend install` to have been run once.
 
+## Local verification
+
+Run the checks below for the kind of change you made rather than the full
+list; CI runs the backend and frontend checks the same way (see
+`.github/workflows/ci.yml`) but does not run the Playwright specs.
+
+**Documentation-only change** (`*.md`, `docs/`): no command is required.
+Proofread the rendered file and confirm any command or path you referenced
+still matches the repository.
+
+**Backend change** (`backend/`, `orbit/`, `tests/`):
+
+```bash
+uv run ruff check orbit/ backend/ tests/
+PYTHONPATH=backend uv run pytest -q
+```
+
+**Frontend change** (`frontend/`, outside `frontend/e2e/`):
+
+```bash
+pnpm --filter agent-improvement-console-ui run lint
+pnpm --filter agent-improvement-console-ui run build
+```
+
+**UI end-to-end change** (`frontend/e2e/`): the specs under `frontend/e2e/`
+are not run in CI. They expect the app already running locally (see the
+Quick start section in `README.md`) and the specific evaluation builds each
+spec asserts on already created by hand. Prepare that data first, then run
+the affected spec and report what you observed in the pull request — do not
+assume a spec ran cleanly just because it compiles.
+
 ## Releases
 
 Every release follows the same protected sequence so that a version tag always
