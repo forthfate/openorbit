@@ -5,6 +5,27 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.0] - 2026-09-07
+
+### Added
+
+- Evaluation-result views now show every iteration in newest-first order with filters for iteration, decision, score, content, proposal attempt and status, and issue severity and status.
+- Evaluation-run details include reordered tabs, line-numbered supervisor, workflow, and iteration logs, and workflow/log timestamps.
+- Cycle Improvement AI now analyzes a selected evaluation build, shows proposal-decision evidence as a run-and-iteration tree, and can request a Markdown PDCA diagnosis from the configured System AI model.
+- Tooltips and localized labels were added across the evaluation and cycle-analysis views.
+
+### Changed
+
+- Proposal decision history is derived directly from supervisor results recorded by evaluation runs rather than a separate runner-owned decision ledger.
+- The settings label **Chat assistant model** is now **System AI model**; the selected profile is shared by chat and cycle diagnosis.
+- Runner templates were generalized for reuse across projects and runner comments were standardized in English.
+- Page headers now provide descriptions and visual separation, and common select controls use a consistent compact style.
+
+### Fixed
+
+- Multi-line evaluation-build purposes render consistently in the edit modal.
+- Evaluation result filtering, proposal history, and system-AI cycle diagnosis now use localized labels and Markdown output.
+
 ## [0.0.5] - 2026-09-07
 
 ### Added
@@ -30,3 +51,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - Added the direct CodeMirror view dependency required by the Python editor frontend build.
 
 [0.0.5]: https://github.com/forthfate/openorbit/releases/tag/v0.0.5
+[0.1.0]: https://github.com/forthfate/openorbit/releases/tag/v0.1.0

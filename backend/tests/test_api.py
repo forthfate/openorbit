@@ -60,7 +60,7 @@ def test_v1_openapi_contract_documents_project_and_pipeline_resources():
     client = TestClient(app)
     schema = client.get("/api/openapi.json")
     assert schema.status_code == 200
-    assert schema.json()["info"]["version"] == "0.0.4"
+    assert schema.json()["info"]["version"] == "0.1.0"
     assert "/api/v1/projects" in schema.json()["paths"]
     assert "/api/v1/projects/{project_id}/pipelines" in schema.json()["paths"]
     assert "/api/v1/pipelines/{pipeline_id}/actions" in schema.json()["paths"]
@@ -80,7 +80,6 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
         "/api/v1/dashboard",
         "/api/v1/logs",
         "/api/v1/improvements/analytics",
-        "/api/v1/improvements/proposal-decisions",
         "/api/v1/improvements/proposals",
     }
     assert expected <= paths.keys()
@@ -168,7 +167,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "ORBIT_CYCLE_COMMAND" not in improvement
     assert "run_paired_improvement_cycle" not in improvement
     assert "update_prompt_from_accepted_proposals" in improvement
-    assert "ctx.accept_proposal" in improvement
+    assert "ctx.accept_proposal" not in improvement
     assert "ctx.update_file" in improvement
     assert "ORBIT_AGENT_COMMAND" in json_agent
     assert "ORBIT_PROBE_COMMAND" in probe_gate
@@ -230,22 +229,38 @@ def test_target_test_case_sets_are_managed_as_assets(tmp_path, monkeypatch):
     assert updated["name"] == "Updated target tests"
 
 
-def test_sdk_proposal_decisions_are_exposed_to_the_control_room(tmp_path, monkeypatch):
-    monkeypatch.setattr(store_module, "APP_DATA", tmp_path)
-    ledger = tmp_path / "proposal-history" / "project-hash"
-    ledger.mkdir(parents=True)
-    (ledger / "decisions.json").write_text(
-        """{"schema_version":1,"decisions":[
-        {"id":"pd-1","event_type":"decision","proposal_id":"proposal-1","decision":"accepted","proposal":{"title":"Keep evidence","target":"prompt"},"recorded_at":"2026-01-01T00:00:00+00:00","evaluation_build_id":"build-1"},
-        {"id":"pa-2","event_type":"prompt_updated","proposal_id":"proposal-1","prompt_version":{"id":"v000001"},"recorded_at":"2026-01-01T00:01:00+00:00","evaluation_build_id":"build-1"}
-        ]}""",
-        encoding="utf-8",
-    )
+def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
-    assert store.proposal_decisions()[0]["id"] == "pa-2"
+    timestamp = store_module.now()
+    store._save(
+        Run(
+            id="run-1",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            evaluation_build_id="build-1",
+            evaluation_build_name="Build 1",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            supervisor_results=[
+                {
+                    "iteration": 2,
+                    "recorded_at": "2026-01-01T00:00:00+00:00",
+                    "response": {
+                        "improvements": [
+                            {"title": "Keep evidence", "target": "prompt", "status": "adopted"},
+                            {"title": "Remove noise", "target": "runner", "status": "proposed"},
+                        ],
+                        "reported_issues": [],
+                    },
+                }
+            ],
+        )
+    )
     lifecycle = store.proposal_lifecycles("build-1")
-    assert lifecycle[0]["status"] == "applied"
-    assert lifecycle[0]["prompt_version"]["id"] == "v000001"
+    assert [item["status"] for item in lifecycle] == ["accepted", "proposed"]
+    assert {item["title"] for item in lifecycle} == {"Keep evidence", "Remove noise"}
 
 
 def test_hello_accepts_unsaved_profile_settings():
