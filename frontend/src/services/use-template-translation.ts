@@ -4,40 +4,53 @@ import { api } from "./api";
 
 export type TemplateTranslation<T> = { content: T; cached: boolean; profile_name: string };
 
-export function useTemplateTranslation<T>(
+export function useTemplateTranslations<T>(
   kind: "runner-template" | "quick-start",
-  templateId: string,
+  templateIds: string[],
   locale: Locale,
 ) {
-  const requestKey = `${kind}:${templateId}:${locale}`;
-  const [result, setResult] = useState<{ key: string; content: T } | null>(null);
+  const requestKey = (templateId: string) => `${kind}:${templateId}:${locale}`;
+  const [results, setResults] = useState<Record<string, T>>({});
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
-  const content = result?.key === requestKey ? result.content : null;
+  const content = (templateId: string) => visible ? results[requestKey(templateId)] ?? null : null;
 
   const translate = async () => {
-    if (content) {
+    const missingIds = templateIds.filter((templateId) => !results[requestKey(templateId)]);
+    if (!missingIds.length) {
       setVisible(true);
       return;
     }
     setLoading(true);
     setError(false);
-    try {
-      const result = await api<TemplateTranslation<T>>("/api/template-translations", "POST", {
-        kind,
-        template_id: templateId,
-        locale,
-      });
-      setResult({ key: requestKey, content: result.content });
+    const responses = await Promise.allSettled(
+      missingIds.map(async (templateId) => ({
+        templateId,
+        result: await api<TemplateTranslation<T>>("/api/template-translations", "POST", {
+          kind,
+          template_id: templateId,
+          locale,
+        }),
+      })),
+    );
+    const translated = responses.filter(
+      (response): response is PromiseFulfilledResult<{ templateId: string; result: TemplateTranslation<T> }> =>
+        response.status === "fulfilled",
+    );
+    if (translated.length) {
+      setResults((current) => ({
+        ...current,
+        ...Object.fromEntries(translated.map(({ value }) => [requestKey(value.templateId), value.result.content])),
+      }));
       setVisible(true);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
     }
+    if (translated.length !== responses.length) {
+      setError(true);
+    }
+    setLoading(false);
   };
 
-  return { content: visible ? content : null, error, loading, showOriginal: () => setVisible(false), translate };
+  return { content, error, loading, showOriginal: () => setVisible(false), translate };
 }

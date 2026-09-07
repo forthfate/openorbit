@@ -2,7 +2,9 @@ import {
   Bot,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileUp,
+  Languages,
   Play,
   Plus,
   Sparkles,
@@ -29,7 +31,7 @@ import type {
 } from "../../domain/models";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
-import { useTemplateTranslation } from "../../services/use-template-translation";
+import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
 
 type Draft = {
@@ -442,9 +444,7 @@ function Quick({
   locale: Locale;
 }) {
   const t = locales[locale].ui;
-  const translation = useTemplateTranslation<QuickStartTranslation>("quick-start", item.id, locale);
-  const translationCopy = locales[locale].templateTranslation;
-  const display = withQuickStartTranslation(item, translation.content);
+  const display = item;
   const [v, setV] = useState<Record<string, string>>(() =>
       Object.fromEntries(
         item.parameters.map((p) => [
@@ -482,7 +482,6 @@ function Quick({
           <strong>{display.name}</strong>
           <p>{display.description}</p>
         </div>
-        <TemplateTranslationButton translation={translation} copy={translationCopy} />
       </div>
       {review ? (
         <div className="quick-start-review">
@@ -559,13 +558,9 @@ function Quick({
   );
 }
 
-function TemplateTranslationButton({translation,copy}:{translation:ReturnType<typeof useTemplateTranslation>;copy:typeof locales.en.templateTranslation}){
-  return <div className="template-translation-action"><button className="ghost" type="button" disabled={translation.loading} onClick={translation.content?translation.showOriginal:translation.translate}>{translation.loading?copy.translating:translation.content?copy.showOriginal:copy.translate}</button>{translation.error&&<small className="hint">{copy.failed}</small>}</div>
-}
-
-function QuickStartCard({item,locale,pick}:{item:QuickStart;locale:Locale;pick:(item:QuickStart)=>void}){
-  const translation=useTemplateTranslation<QuickStartTranslation>('quick-start',item.id,locale),t=locales[locale].templateTranslation,display=withQuickStartTranslation(item,translation.content)
-  return <article className="quick-start-card"><button className="quick-start-card__select" onClick={()=>pick(item)}><Sparkles size={18}/><span><strong>{display.name}</strong><small>{display.description}</small><em>{item.publisher?.name??'Community'} · v{item.version}</em></span><ChevronRight size={16}/></button><TemplateTranslationButton translation={translation} copy={t}/></article>
+function QuickStartCard({item,translation,pick}:{item:QuickStart;translation:QuickStartTranslation|null;pick:(item:QuickStart)=>void}){
+  const display=withQuickStartTranslation(item,translation)
+  return <article className="quick-start-card"><button className="quick-start-card__select" onClick={()=>pick(item)}><Sparkles size={18}/><span><strong>{display.name}</strong><small>{display.description}</small><em>{item.publisher?.name??'Community'} · v{item.version}</em></span><ChevronRight size={16}/></button></article>
 }
 
 export function EvaluationBuildsPage(props: {
@@ -621,6 +616,8 @@ export function EvaluationBuildsPage(props: {
     [selected, setSelected] = useState(""),
     [testRun, setTestRun] = useState<Run | null>(null),
     file = useRef<HTMLInputElement>(null);
+  const translations = useTemplateTranslations<QuickStartTranslation>("quick-start", items.map((item) => item.id), locale);
+  const translationCopy = locales[locale].templateTranslation;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -753,6 +750,7 @@ export function EvaluationBuildsPage(props: {
                 }
               }}
             >
+              <Copy size={15} />
               {ui.duplicate}
             </button>
             <button className="approve" onClick={() => start()}>
@@ -856,20 +854,26 @@ export function EvaluationBuildsPage(props: {
                 accept="application/json,.json"
                 onChange={(e) => importItem(e.target.files?.[0])}
               />
-              <button className="ghost" onClick={() => file.current?.click()}>
-                <FileUp size={15} />
-                {ui.importQuickStart}
-              </button>
+              <div className="template-picker-actions">
+                <button className="ghost" type="button" disabled={translations.loading} onClick={translations.content(items[0]?.id ?? "") ? translations.showOriginal : translations.translate}>
+                  <Languages size={15} />
+                  {translations.loading ? translationCopy.translating : translations.content(items[0]?.id ?? "") ? translationCopy.showOriginal : translationCopy.translate}
+                </button>
+                <button className="ghost" onClick={() => file.current?.click()}>
+                  <FileUp size={15} />
+                  {ui.importQuickStart}
+                </button>
+              </div>
             </div>
             <div className="quick-start-list">
-              {items.map((item) => <QuickStartCard key={item.id} item={item} locale={locale} pick={setPicked} />)}
+              {items.map((item) => <QuickStartCard key={item.id} item={item} translation={translations.content(item.id)} pick={setPicked} />)}
             </div>
-            {error && <small className="hint">{error}</small>}
+            {(error || translations.error) && <small className="hint">{error || translationCopy.failed}</small>}
           </div>
         )}
         {mode === "quick" && picked && (
           <Quick
-            item={picked}
+            item={withQuickStartTranslation(picked, translations.content(picked.id))}
             profiles={profiles}
             create={onQuickStartCreate}
             back={() => setPicked(null)}
