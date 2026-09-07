@@ -167,8 +167,14 @@
       "title": "AI 시스템을 운영하고, 감독하고, 개선합니다.",
       "description": "AI 동작을 지속적으로 평가하고 관찰 가능한 증거를 남기며, 모든 개선 결정을 통제된 운영 흐름 안에서 관리합니다.",
       "quickStart": "퀵 스타트 시작",
+      "quickStartHint": "아래 퀵 스타터로 10초 만에 OpenOrbit을 시험해 보세요.",
       "quickStarts": "빠른 시작",
       "quickStartsHint": "검증된 예시를 선택해 평가 빌드를 빠르게 시작하세요."
+    },
+    "dashboardLinks": {
+      "repository": "GitHub 저장소",
+      "releases": "릴리스 노트",
+      "openApi": "OpenAPI"
     },
     "dashboardOperations": {
       "title": "평가 운영 상태",

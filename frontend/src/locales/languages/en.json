@@ -168,8 +168,14 @@
       "title": "Operate, supervise, and improve AI systems.",
       "description": "Continuously evaluate AI behavior, retain observable evidence, and keep every improvement decision in a controlled operating flow.",
       "quickStart": "Start with Quick Start",
+      "quickStartHint": "Try OpenOrbit in 10 seconds with a quick start below.",
       "quickStarts": "Quick starts",
       "quickStartsHint": "Choose a validated example to start an evaluation build quickly."
+    },
+    "dashboardLinks": {
+      "repository": "GitHub repository",
+      "releases": "Release notes",
+      "openApi": "OpenAPI"
     },
     "dashboardOperations": {
       "title": "Evaluation health",

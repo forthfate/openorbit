@@ -31,6 +31,7 @@ type HeroCopy = {
   title: string;
   description: string;
   quickStart: string;
+  quickStartHint: string;
   quickStarts: string;
   quickStartsHint: string;
 };
@@ -206,6 +207,7 @@ export function DashboardPage({
         <p>ORBIT CONTROL PLANE</p>
         <strong>{h.title}</strong>
         <span>{h.description}</span>
+        <small>{h.quickStartHint}</small>
         <div className="dashboard-hero-actions">
           <button className="approve" onClick={() => onOpenQuickStart()}>
             {h.quickStart}

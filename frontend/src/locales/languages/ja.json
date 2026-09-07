@@ -167,8 +167,14 @@
       "title": "AIシステムを運用し、監督し、改善します。",
       "description": "AIの振る舞いを継続的に評価し、観測可能な証跡を残しながら、すべての改善判断を統制された運用フローで管理します。",
       "quickStart": "クイックスタートを始める",
+      "quickStartHint": "下のクイックスタートで、10秒でOpenOrbitを始めてみましょう。",
       "quickStarts": "クイックスタート",
       "quickStartsHint": "検証済みの例を選び、評価ビルドをすぐに開始できます。"
+    },
+    "dashboardLinks": {
+      "repository": "GitHubリポジトリ",
+      "releases": "リリースノート",
+      "openApi": "OpenAPI"
     },
     "dashboardOperations": {
       "title": "評価の運用状態",
