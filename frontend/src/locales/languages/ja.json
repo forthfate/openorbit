@@ -2,6 +2,14 @@
   "id": "ja",
   "intlLocale": "ja-JP",
   "messages": {
+    "promptDraft": {
+      "title": "未保存の変更を破棄しますか？",
+      "closeDescription": "プロンプトの下書きに未保存の変更があります。変更を破棄してエディターを閉じますか？",
+      "switchDescription": "プロンプトの下書きに未保存の変更があります。変更を破棄して選択したバージョンに切り替えますか？",
+      "cancel": "編集を続ける",
+      "discard": "変更を破棄",
+      "savedHint": "下書きはローカルに保存されています。保存すると新しいバージョンが作成されます。"
+    },
     "assetsText": {
       "profiles": "AIモデルプロファイル",
       "templates": "管理者プロンプトテンプレート",
