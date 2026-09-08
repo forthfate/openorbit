@@ -57,6 +57,10 @@
       "placeholder": "Message Orbit…",
       "send": "Send message"
     },
+    "appMeta": {
+      "title": "OpenOrbit",
+      "titleSeparator": " - "
+    },
     "shell": {
       "dashboard": "Monitor evaluation health, recent activity, and operational events at a glance.",
       "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by evaluations.",
