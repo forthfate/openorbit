@@ -174,6 +174,66 @@ class RunnerContext:
         self.emit_result({"git_candidate": result})
         return result
 
+    def git_head(self) -> str | None:
+        """Return the checked-out commit, or None when the target is not a Git repository."""
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def record_commit_change(self, before: str | None) -> dict[str, object] | None:
+        """Retain commit-range evidence when a runner phase advances the target HEAD."""
+        after = self.git_head()
+        if not before or not after or before == after:
+            return None
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.splitlines()
+        commits = subprocess.run(
+            ["git", "log", "--format=%H%x1f%s", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.splitlines()
+        patch = subprocess.run(
+            ["git", "diff", "--binary", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        commit_records = [
+            {"sha": value.split("\x1f", 1)[0], "subject": value.split("\x1f", 1)[1]}
+            for value in commits
+            if "\x1f" in value
+        ]
+        result: dict[str, object] = {
+            "before": before,
+            "after": after,
+            "changed_paths": changed,
+            "commits": commit_records,
+        }
+        if patch:
+            result["diff_artifact"] = self.write_artifact(
+                f"commits/{before[:12]}..{after[:12]}.patch",
+                patch,
+                content_type="text/x-diff",
+            )
+        self.emit_result({"commit_change": result})
+        return result
+
     def windows_path(self, value: str | Path) -> str:
         """Convert a WSL-mounted path to a Windows path for a Windows child process."""
         path = Path(value)
@@ -731,14 +791,20 @@ class Runner:
         handler = self._handlers.get(args.phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
-        handler(
-            RunnerContext(
-                args.phase,
-                Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
-                os.environ.get("ORBIT_EXECUTION_MODE", "run"),
-                int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
-            )
+        context = RunnerContext(
+            args.phase,
+            Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
+            os.environ.get("ORBIT_EXECUTION_MODE", "run"),
+            int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
         )
+        before = context.git_head()
+        try:
+            handler(context)
+        finally:
+            try:
+                context.record_commit_change(before)
+            except (OSError, subprocess.CalledProcessError) as error:
+                context.log(f"Could not retain commit-change evidence: {error}")
 
 
 runner = Runner()

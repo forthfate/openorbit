@@ -2,6 +2,7 @@ import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilt
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
+  CommitChange,
   PromptRevision,
   RunStepResult,
   RunTelemetry,
@@ -451,6 +452,75 @@ function PromptChanges({
   );
 }
 
+function CommitChanges({ changes, l }: { changes: CommitChange[]; l: (typeof copy)["en"] }) {
+  const items = [...changes].reverse();
+  const [changeIndex, setChangeIndex] = useState(0);
+  if (!changes.length) return <p className="hint">{l.noCommitChanges}</p>;
+  const index = Math.min(changeIndex, items.length - 1), change = items[index];
+  return (
+    <div className="commit-changes">
+      <div className="prompt-version-navigator">
+        <button className="ghost icon-button" type="button" disabled={index >= items.length - 1} onClick={() => setChangeIndex(index + 1)} aria-label={l.previousCommitChange} title={l.previousCommitChange}><ChevronLeft size={16} /></button>
+        <span>{l.commitVersion.replace("{0}", String(items.length - index)).replace("{1}", String(items.length))}</span>
+        <button className="ghost icon-button" type="button" disabled={index === 0} onClick={() => setChangeIndex(index - 1)} aria-label={l.nextCommitChange} title={l.nextCommitChange}><ChevronRight size={16} /></button>
+      </div>
+      <section>
+        <div className="commit-changes__head">
+          <strong>{change.before.slice(0, 12)} → {change.after.slice(0, 12)}</strong>
+          <small>{l.iteration} #{change.iteration ?? "—"} · {change.phase ?? "—"}</small>
+        </div>
+        {change.commits.length > 0 && (
+          <div className="commit-changes__group">
+            <small>{l.commits}</small>
+            <ul>{change.commits.map((commit) => <li key={commit.sha}><code>{commit.sha.slice(0, 12)}</code><span>{commit.subject}</span></li>)}</ul>
+          </div>
+        )}
+        <div className="commit-changes__group">
+          <small>{l.changedFiles}</small>
+          {change.changed_paths.length > 0 ? <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p className="hint">{l.noChangedFiles}</p>}
+        </div>
+        {change.diff_artifact?.relative_path ? <CommitPatch patch={change.diff} relativePath={change.diff_artifact.relative_path} l={l} /> : null}
+      </section>
+    </div>
+  );
+}
+
+type UnifiedDiffRow = { kind: "added" | "removed" | "unchanged"; before?: number; after?: number; line: string } | { kind: "meta"; line: string };
+
+function unifiedDiffRows(value: string): UnifiedDiffRow[] {
+  let before: number | undefined, after: number | undefined;
+  return value.split("\n").map((line) => {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      before = Number(hunk[1]);
+      after = Number(hunk[2]);
+      return { kind: "meta", line };
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const row = { kind: "added" as const, after, line };
+      after = (after ?? 0) + 1;
+      return row;
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      const row = { kind: "removed" as const, before, line };
+      before = (before ?? 0) + 1;
+      return row;
+    }
+    if (line.startsWith(" ")) {
+      const row = { kind: "unchanged" as const, before, after, line };
+      before = (before ?? 0) + 1;
+      after = (after ?? 0) + 1;
+      return row;
+    }
+    return { kind: "meta", line };
+  });
+}
+
+function CommitPatch({ patch, relativePath, l }: { patch?: string | null; relativePath: string; l: (typeof copy)["en"] }) {
+  if (patch == null) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
+  return <div className="prompt-diff commit-diff" aria-label={l.diffArtifact}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;
+}
+
 function PromptDiff({ before, after }: { before: string; after: string }) {
   const beforeLines = before.split("\n"), afterLines = after.split("\n");
   let prefix = 0;
@@ -529,13 +599,14 @@ export function EvaluationsPage({
     l = copy[locale],
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
-    [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "prompt" | "result">(
+    [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "prompt" | "commits" | "result">(
       "result",
     ),
     [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
     [iterationTab, setIterationTab] = useState(1),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
     [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
+    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -654,6 +725,12 @@ export function EvaluationsPage({
       api<RunTelemetry>(`/api/runs/${selected.id}/telemetry`)
         .then(setTelemetry)
         .catch(() => setTelemetry({ spans: [] }));
+  }, [selected]);
+  useEffect(() => {
+    if (!selected) return;
+    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
+      .then(setCommitChanges)
+      .catch(() => setCommitChanges([]));
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
@@ -1276,6 +1353,12 @@ export function EvaluationsPage({
               {l.promptChanges}
             </button>
             <button
+              className={tab === "commits" ? "active" : ""}
+              onClick={() => setTab("commits")}
+            >
+              {l.commitChanges}
+            </button>
+            <button
               className={tab === "supervisor" ? "active" : ""}
               onClick={() => setTab("supervisor")}
             >
@@ -1362,6 +1445,7 @@ export function EvaluationsPage({
           {tab === "prompt" && (
             <PromptChanges key={selected.id} revisions={promptRevisions} l={l} />
           )}{" "}
+          {tab === "commits" && <CommitChanges changes={commitChanges} l={l} />}{" "}
           {tab === "supervisor" && (
             <>
               {supervisorTranslationId && (

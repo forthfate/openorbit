@@ -2915,6 +2915,68 @@ if __name__ == "__main__":
                 current_by_path[path] = after
         return [*initial_revisions, *ordered]
 
+    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
+        """Return commit ranges automatically retained by SDK runner phases."""
+        run = self._load(run_id)
+        changes: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            event = result.get("commit_change") if isinstance(result, dict) else None
+            if not isinstance(event, dict) and isinstance(result, dict):
+                jgent = result.get("jgent_paired")
+                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
+                event = candidate if isinstance(candidate, dict) else None
+            if not isinstance(event, dict):
+                continue
+            before, after = str(event.get("before") or ""), str(event.get("after") or "")
+            if not before or not after or before == after:
+                continue
+            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
+            diff: str | None = None
+            if artifact:
+                raw_path = artifact.get("path")
+                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
+                artifacts_root = (APP_DATA / "artifacts").resolve()
+                if candidate and artifacts_root in candidate.parents:
+                    try:
+                        if candidate.stat().st_size <= 500_000:
+                            diff = candidate.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        pass
+            changes.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "recorded_at": step.get("ended_at"),
+                    "before": before,
+                    "after": after,
+                    "changed_paths": event.get("changed_paths")
+                    if isinstance(event.get("changed_paths"), list)
+                    else [],
+                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
+                    "diff_artifact": artifact,
+                    "diff": diff,
+                }
+            )
+        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
+
+    def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
+        """Resolve one retained run artifact without permitting path traversal."""
+        if loop_index < 0:
+            raise KeyError(relative_path)
+        relative = Path(relative_path)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise KeyError(relative_path)
+        directory = (APP_DATA / "artifacts" / run_id / f"loop-{loop_index}").resolve()
+        candidate = (directory / relative).resolve()
+        if directory not in candidate.parents or not candidate.is_file():
+            raise KeyError(relative_path)
+        return candidate
+
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
         run = self._load(run_id)

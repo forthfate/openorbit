@@ -176,6 +176,16 @@ def prompt_revisions(run_id: str):
     return safely(lambda: store.prompt_revisions(run_id))
 
 
+@app.get("/api/runs/{run_id}/commit-changes")
+def commit_changes(run_id: str):
+    return safely(lambda: store.commit_changes(run_id))
+
+
+@app.get("/api/runs/{run_id}/artifacts/{loop_index}/{artifact_path:path}")
+def run_artifact(run_id: str, loop_index: int, artifact_path: str):
+    return safely(lambda: FileResponse(store.run_artifact(run_id, loop_index, artifact_path)))
+
+
 @app.get("/api/dashboard")
 def dashboard():
     return store.dashboard()

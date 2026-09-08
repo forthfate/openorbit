@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from base64 import b64encode
 
@@ -165,3 +166,38 @@ def test_exec_env_override(tmp_path, monkeypatch):
     )
 
     assert output.strip() == "set"
+
+
+def test_runner_records_a_commit_range_after_a_phase(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Orbit test"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.email", "orbit@example.test"], cwd=project, check=True)
+    target = project / "agent.txt"
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "agent.txt"], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial agent"], cwd=project, check=True, capture_output=True)
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    monkeypatch.setenv("ORBIT_TARGET_REPOSITORY", str(project))
+    monkeypatch.setenv("ORBIT_RUN_ID", "commit-run")
+    monkeypatch.setattr(sys, "argv", ["runner", "--phase", "run"])
+    phase_runner = sdk.Runner()
+
+    @phase_runner.phase("run")
+    def commit_change(ctx):
+        target.write_text("after\n", encoding="utf-8")
+        subprocess.run(["git", "add", "agent.txt"], cwd=ctx.project_root, check=True)
+        subprocess.run(["git", "commit", "-m", "Improve agent"], cwd=ctx.project_root, check=True)
+
+    phase_runner.main()
+
+    events = [
+        json.loads(line.removeprefix("__ORBIT_RESULT__"))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("__ORBIT_RESULT__")
+    ]
+    recorded_change = next(event["commit_change"] for event in events if "commit_change" in event)
+    assert recorded_change["changed_paths"] == ["agent.txt"]
+    assert [item["subject"] for item in recorded_change["commits"]] == ["Improve agent"]
+    assert recorded_change["diff_artifact"]["content_type"] == "text/x-diff"
