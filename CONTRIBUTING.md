@@ -19,6 +19,20 @@ then `npx orbit-agent-console run --no-open`.
 On Windows, activate the environment with `.venv\\Scripts\\Activate.ps1` and
 use `.venv\\Scripts\\python.exe`.
 
+## UI smoke tests
+
+Start OpenOrbit with the sample data expected by
+`frontend/e2e/orbit-ui.spec.ts`, then run from the repository root:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm --filter agent-improvement-console-ui exec playwright test
+```
+
+Set `PLAYWRIGHT_BASE_URL` to the URL printed by your running app if it uses
+another port. When omitted (or empty), the tests use `http://127.0.0.1:3001`.
+This changes the target URL only; the existing scenarios still require their
+configured repositories and sample evaluation data.
+
 ## Pre-commit
 
 The repository checks Python with Ruff, React with ESLint, and validates the
