@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -769,20 +770,36 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         evidence without starting a persistent child daemon.
         """
         self.log(f"exec: {' '.join(command)}")
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd or self.target_repository,
             env={**self.environment, **(env or {})},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
         )
-        if result.stdout:
-            print(result.stdout, end="", flush=True)
-        if result.returncode:
-            raise SystemExit(result.returncode)
-        return result.stdout
+        lines: list[str] = []
+
+        def forward_output() -> None:
+            assert process.stdout is not None
+            for line in process.stdout:
+                lines.append(line)
+                print(line, end="", flush=True)
+
+        reader = threading.Thread(target=forward_output, daemon=True)
+        reader.start()
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            reader.join()
+        output = "".join(lines)
+        if process.returncode:
+            raise SystemExit(process.returncode)
+        return output
 
 
 class Runner:

@@ -4169,11 +4169,47 @@ if __name__ == "__main__":
                     env=environment,
                 )
                 captured_lines: list[tuple[str, str]] = []
+                live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
+
+                def retained_visible_lines() -> list[tuple[str, str]]:
+                    retained: list[tuple[str, str]] = []
+                    retained_size = 0
+                    for item in reversed(captured_lines):
+                        if item[1].startswith("__ORBIT_RESULT__"):
+                            continue
+                        line_size = len(item[1]) + (1 if retained else 0)
+                        if retained and retained_size + line_size > 12_000:
+                            break
+                        retained.append(item)
+                        retained_size += line_size
+                    retained.reverse()
+                    return retained
+
+                def persist_live_output() -> None:
+                    retained = retained_visible_lines()
+                    # `_load` and `_save` each acquire the store lock for their
+                    # in-memory test-session handling.  Do not hold it here as
+                    # well: `Lock` is deliberately non-reentrant, and doing so
+                    # would deadlock the reader thread on its first live update.
+                    current = self._load(run_id)
+                    for item in reversed(current.step_results):
+                        if item.get("_live_step_key") == live_step_key:
+                            item["output"] = "\n".join(line for _, line in retained)
+                            item["log_lines"] = [
+                                {"timestamp": timestamp, "value": line} for timestamp, line in retained
+                            ]
+                            current.updated_at = now()
+                            self._save(current)
+                            return
 
                 def capture_output() -> None:
                     assert process.stdout is not None
+                    last_persist = 0.0
                     for line in process.stdout:
                         captured_lines.append((now(), line.rstrip("\r\n")))
+                        if time.monotonic() - last_persist >= 0.75:
+                            persist_live_output()
+                            last_persist = time.monotonic()
 
                 output_reader = threading.Thread(target=capture_output, daemon=True)
                 output_reader.start()
@@ -4181,10 +4217,27 @@ if __name__ == "__main__":
                     self._processes[run_id] = process
                 run = self._load(run_id)
                 run.pid, run.last_pid, run.updated_at = process.pid, process.pid, now()
+                run.step_results.append(
+                    {
+                        "step_id": step.id,
+                        "phase": step.phase,
+                        "loop_index": loop_index,
+                        "candidate_id": candidate_id,
+                        "name": step.name,
+                        "command": step.command,
+                        "working_directory": str(directory),
+                        "started_at": started,
+                        "in_progress": True,
+                        "_live_step_key": live_step_key,
+                        "output": "",
+                        "log_lines": [],
+                    }
+                )
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
                 output_reader.join()
+                persist_live_output()
                 structured_result: dict[str, Any] | None = None
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
@@ -4198,15 +4251,7 @@ if __name__ == "__main__":
                             visible_lines.append((timestamp, line))
                     else:
                         visible_lines.append((timestamp, line))
-                retained_lines: list[tuple[str, str]] = []
-                retained_size = 0
-                for item in reversed(visible_lines):
-                    line_size = len(item[1]) + (1 if retained_lines else 0)
-                    if retained_lines and retained_size + line_size > 12_000:
-                        break
-                    retained_lines.append(item)
-                    retained_size += line_size
-                retained_lines.reverse()
+                retained_lines = retained_visible_lines()
                 result: dict[str, Any] = {
                     "step_id": step.id,
                     "phase": step.phase,
@@ -4226,7 +4271,18 @@ if __name__ == "__main__":
                 if structured_result is not None:
                     result["result"] = structured_result
                 run = self._load(run_id)
-                run.step_results.append(result)
+                live_index = next(
+                    (
+                        index
+                        for index, item in enumerate(run.step_results)
+                        if item.get("_live_step_key") == live_step_key
+                    ),
+                    None,
+                )
+                if live_index is None:
+                    run.step_results.append(result)
+                else:
+                    run.step_results[live_index] = result
                 run.pid, run.updated_at = None, now()
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
