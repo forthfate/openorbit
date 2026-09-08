@@ -5,6 +5,23 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-08
+
+### Added
+
+- Agent self-improvement Quick Starts can now evaluate real target-AI responses through the selected model profile and retain response evidence as a run artifact.
+- The runner SDK now provides a credential-safe target-AI completion helper for evaluation assets.
+- The README includes a ten-second Quick Start guide, representative templates, and a response-level prompt-improvement example.
+
+### Changed
+
+- The managed prompt sample is intentionally minimal so the response-evaluation Quick Start can demonstrate evidence-backed improvement from a real behavior gap.
+
+### Fixed
+
+- Evaluation-run history totals now retain proposed and adopted improvements and reported issues from every supervisor iteration, rather than showing only the latest iteration.
+- Evaluation-run translations now apply only to the active Supervisor AI iteration or currently filtered result records, with independent loading state for each view.
+
 ## [0.5.1] - 2026-09-08
 
 ### Fixed
