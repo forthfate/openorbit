@@ -59,7 +59,7 @@
     "shell": {
       "dashboard": "평가 운영 상태, 최근 활동, 운영 이벤트를 한눈에 확인합니다.",
       "assets": "평가에 사용하는 재사용 환경, 러너, 템플릿, 테스트 케이스, 워크플로를 관리합니다.",
-      "builds": "재사용 자산을 평가 구성으로 조합하고 실행하거나 테스트합니다.",
+      "builds": "재사용 자산을 평가 구성으로 조합하고 실행하거나, 설정에 문제가 없는지 테스트합니다.",
       "runs": "진행 중이거나 완료된 평가 실행, 근거, 승인 결정을 확인합니다.",
       "improvements": "평가 피드백, 개선 제안, 시간에 따른 결과를 검토합니다.",
       "settings": "콘솔 기본 설정, AI 연결 프로필, 운영 관리자 지시문을 관리합니다."
@@ -69,7 +69,7 @@
         "title": "운영 관리자 프롬프트",
         "description": "Orbit 전체의 관리자 AI 행동과 필수 응답 계약을 정의합니다. 평가 빌드에서 선택한 관리자 프롬프트 템플릿은 __ORBIT_MANAGER_AI_PROMPT__ 위치에 삽입됩니다.",
         "warning": "이 운영 관리자 프롬프트 전체는 Orbit이 결과를 해석하는 계약입니다. 지시문, __ORBIT_MANAGER_AI_PROMPT__ 삽입 위치, JSON 응답 형식을 모두 유지하세요. 어느 하나라도 삭제하거나 변경하면 평가가 중단되거나 Orbit이 결과를 읽지 못할 수 있습니다.",
-        "edit": "프롬프트 편집",
+        "edit": "편집",
         "content": "프롬프트 본문",
         "save": "저장",
         "cancel": "취소",
@@ -346,6 +346,8 @@
       "evaluationStarted": "평가를 시작했습니다",
       "evaluationTestStarted": "평가 테스트를 시작했습니다",
       "evaluationBuildCreated": "평가 빌드를 생성했습니다",
+      "aiSettingsSaved": "AI 설정을 저장했습니다",
+      "settingsTestRequired": "저장하기 전에 구성을 테스트하세요.",
       "evaluationBuildUpdated": "평가 빌드를 수정했습니다",
       "evaluationBuildDeleted": "평가 빌드를 삭제했습니다",
       "quickStartCreated": "퀵 스타트가 자산과 평가 빌드를 생성했습니다",
@@ -481,9 +483,21 @@
       "running": "실행 중"
     },
     "quickStartLabels": {
+      "openorbit.user-journey-smoke-test": {
+        "name": "사용자 여정 스모크 테스트",
+        "description": "브라우저 기반 스모크 테스트를 만듭니다. 실행 중인 앱과 Playwright 브라우저가 필요합니다."
+      },
       "openorbit.site-exploration-review": {
         "name": "사이트 탐색 검토",
         "description": "안전한 링크로 사이트를 탐색하고 근거 기반 제품 피드백을 남깁니다. 실행 중인 앱, Playwright 브라우저, LangGraph가 필요합니다."
+      },
+      "openorbit.agent-self-improvement": {
+        "name": "에이전트 자체 개선",
+        "description": "실제 대상 AI의 보존된 응답을 바탕으로 관리 프롬프트를 개선합니다. Git 저장소, 프롬프트 파일, 구성된 모델 프로필이 필요합니다."
+      },
+      "openorbit.ai-slo-drift-monitor": {
+        "name": "AI SLO 및 행동 변화 모니터",
+        "description": "고정 기준선에 따라 AI 품질, 안전성, 지연 시간, 비용을 반복 평가합니다. 기존 구조화된 AI 평가기를 연결하면 OpenOrbit이 근거, 감독, 개선 결정을 보존합니다."
       }
     },
     "evaluations": {

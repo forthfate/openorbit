@@ -59,7 +59,7 @@
     "shell": {
       "dashboard": "評価の運用状態、最近のアクティビティ、運用イベントを一目で確認します。",
       "assets": "評価で使う再利用可能な環境、ランナー、テンプレート、テストケース、ワークフローを管理します。",
-      "builds": "再利用可能なアセットを評価構成に組み合わせ、実行またはテストします。",
+      "builds": "再利用可能なアセットを評価構成に組み合わせて実行するか、設定に問題がないかをテストします。",
       "runs": "進行中・完了済みの評価実行、証跡、承認判断を確認します。",
       "improvements": "評価フィードバック、改善提案、時間に応じた成果を確認します。",
       "settings": "コンソール設定、AI 接続プロファイル、運用管理者向け指示を管理します。"
@@ -346,6 +346,8 @@
       "evaluationStarted": "評価を開始しました",
       "evaluationTestStarted": "評価テストを開始しました",
       "evaluationBuildCreated": "評価ビルドを作成しました",
+      "aiSettingsSaved": "AI 設定を保存しました",
+      "settingsTestRequired": "保存する前に設定をテストしてください。",
       "evaluationBuildUpdated": "評価ビルドを更新しました",
       "evaluationBuildDeleted": "評価ビルドを削除しました",
       "quickStartCreated": "クイックスタートがアセットと評価ビルドを作成しました",
@@ -481,9 +483,21 @@
       "running": "実行中"
     },
     "quickStartLabels": {
+      "openorbit.user-journey-smoke-test": {
+        "name": "ユーザージャーニー・スモークテスト",
+        "description": "ブラウザベースのスモークテストを作成します。実行中のアプリと Playwright ブラウザーが必要です。"
+      },
       "openorbit.site-exploration-review": {
         "name": "サイト探索レビュー",
         "description": "安全なリンクでサイトを探索し、根拠に基づくプロダクトフィードバックを残します。実行中のアプリ、Playwrightブラウザー、LangGraphが必要です。"
+      },
+      "openorbit.agent-self-improvement": {
+        "name": "エージェントの自己改善",
+        "description": "実際の対象 AI から保持した応答を基に、管理対象プロンプトを改善します。Git リポジトリ、プロンプトファイル、設定済みモデルプロファイルが必要です。"
+      },
+      "openorbit.ai-slo-drift-monitor": {
+        "name": "AI SLO と挙動ドリフトの監視",
+        "description": "固定ベースラインに対して AI の品質、安全性、レイテンシー、コストを繰り返し評価します。既存の構造化 AI 評価器を接続すると、OpenOrbit が証跡、監督、改善判断を保持します。"
       }
     },
     "evaluations": {
