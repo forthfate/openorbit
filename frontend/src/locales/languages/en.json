@@ -509,7 +509,6 @@
     "evaluations": {
       "title": "Evaluation runs",
       "evaluation": "Evaluation",
-      "evaluationId": "Evaluation ID",
       "iteration": "Iteration",
       "detail": "Evaluation run detail",
       "workflow": "Workflow logs",

@@ -420,7 +420,7 @@ export function EvaluationsPage({
       render: (r) => (
         <span className="run-build">
           <strong>{r.evaluation_build_name ?? r.evaluation_build_id}</strong>
-          <small>{r.workflow_name}</small>
+          <code>{r.id}</code>
         </span>
       ),
     },
@@ -833,15 +833,12 @@ export function EvaluationsPage({
           className="modal--run-detail"
         >
           <div className="run-detail-evaluation">
-            <small>{l.evaluation}</small>
             <strong>
               {selected.evaluation_build_name ??
                 selected.evaluation_build_id ??
                 selected.workflow_name}
             </strong>
-            <code>
-              {l.evaluationId}: {selected.evaluation_build_id ?? "—"}
-            </code>
+            <code>{selected.id}</code>
           </div>
           <div className="run-detail-summary">
             <div>

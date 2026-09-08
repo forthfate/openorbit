@@ -508,7 +508,6 @@
     "evaluations": {
       "title": "평가 실행 이력",
       "evaluation": "평가",
-      "evaluationId": "평가 ID",
       "iteration": "반복",
       "detail": "평가 실행 상세",
       "workflow": "워크플로 로그",

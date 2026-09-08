@@ -508,7 +508,6 @@
     "evaluations": {
       "title": "評価実行履歴",
       "evaluation": "評価",
-      "evaluationId": "評価 ID",
       "iteration": "反復",
       "detail": "評価実行の詳細",
       "workflow": "ワークフローログ",
