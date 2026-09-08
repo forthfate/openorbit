@@ -2931,6 +2931,18 @@ if __name__ == "__main__":
             before, after = str(event.get("before") or ""), str(event.get("after") or "")
             if not before or not after or before == after:
                 continue
+            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
+            diff: str | None = None
+            if artifact:
+                raw_path = artifact.get("path")
+                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
+                artifacts_root = (APP_DATA / "artifacts").resolve()
+                if candidate and artifacts_root in candidate.parents:
+                    try:
+                        if candidate.stat().st_size <= 500_000:
+                            diff = candidate.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        pass
             changes.append(
                 {
                     "iteration": step.get("loop_index"),
@@ -2942,9 +2954,8 @@ if __name__ == "__main__":
                     if isinstance(event.get("changed_paths"), list)
                     else [],
                     "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
-                    "diff_artifact": event.get("diff_artifact")
-                    if isinstance(event.get("diff_artifact"), dict)
-                    else None,
+                    "diff_artifact": artifact,
+                    "diff": diff,
                 }
             )
         return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)

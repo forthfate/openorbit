@@ -452,7 +452,7 @@ function PromptChanges({
   );
 }
 
-function CommitChanges({ runId, changes, l }: { runId: string; changes: CommitChange[]; l: (typeof copy)["en"] }) {
+function CommitChanges({ changes, l }: { changes: CommitChange[]; l: (typeof copy)["en"] }) {
   const items = [...changes].reverse();
   const [changeIndex, setChangeIndex] = useState(0);
   if (!changes.length) return <p className="hint">{l.noCommitChanges}</p>;
@@ -479,7 +479,7 @@ function CommitChanges({ runId, changes, l }: { runId: string; changes: CommitCh
           <small>{l.changedFiles}</small>
           {change.changed_paths.length > 0 ? <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p className="hint">{l.noChangedFiles}</p>}
         </div>
-        {change.diff_artifact?.relative_path ? <CommitPatch key={`${change.iteration}:${change.diff_artifact.relative_path}`} runId={runId} iteration={change.iteration ?? 0} relativePath={change.diff_artifact.relative_path} l={l} /> : null}
+        {change.diff_artifact?.relative_path ? <CommitPatch patch={change.diff} relativePath={change.diff_artifact.relative_path} l={l} /> : null}
       </section>
     </div>
   );
@@ -516,16 +516,8 @@ function unifiedDiffRows(value: string): UnifiedDiffRow[] {
   });
 }
 
-function CommitPatch({ runId, iteration, relativePath, l }: { runId: string; iteration: number; relativePath: string; l: (typeof copy)["en"] }) {
-  const [patch, setPatch] = useState<string>(), [error, setError] = useState(false);
-  useEffect(() => {
-    fetch(`/api/runs/${runId}/artifacts/${iteration}/${relativePath}`)
-      .then((response) => response.ok ? response.text() : Promise.reject())
-      .then(setPatch)
-      .catch(() => setError(true));
-  }, [runId, iteration, relativePath]);
-  if (error) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
-  if (patch === undefined) return <p className="hint">{l.loadingCommitDiff}</p>;
+function CommitPatch({ patch, relativePath, l }: { patch?: string | null; relativePath: string; l: (typeof copy)["en"] }) {
+  if (patch == null) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
   return <div className="prompt-diff commit-diff" aria-label={l.diffArtifact}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;
 }
 
@@ -1453,7 +1445,7 @@ export function EvaluationsPage({
           {tab === "prompt" && (
             <PromptChanges key={selected.id} revisions={promptRevisions} l={l} />
           )}{" "}
-          {tab === "commits" && <CommitChanges runId={selected.id} changes={commitChanges} l={l} />}{" "}
+          {tab === "commits" && <CommitChanges changes={commitChanges} l={l} />}{" "}
           {tab === "supervisor" && (
             <>
               {supervisorTranslationId && (
