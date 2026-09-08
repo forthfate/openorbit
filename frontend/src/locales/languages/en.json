@@ -57,6 +57,13 @@
       "placeholder": "Message Orbit…",
       "send": "Send message"
     },
+    "navigationAccessibility": {
+      "expandNavigation": "Expand navigation",
+      "collapseNavigation": "Collapse navigation",
+      "activeRuns": "{count} active runs",
+      "githubLabel": "OpenOrbit on GitHub",
+      "githubTitle": "OpenOrbit GitHub repository"
+    },
     "shell": {
       "dashboard": "Monitor evaluation health, recent activity, and operational events at a glance.",
       "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by evaluations.",
