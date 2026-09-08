@@ -60,7 +60,7 @@
     "shell": {
       "dashboard": "Monitor evaluation health, recent activity, and operational events at a glance.",
       "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by evaluations.",
-      "builds": "Combine reusable assets into evaluation configurations and start or test their runs.",
+      "builds": "Combine reusable assets into evaluation configurations, run them, or test that their settings are valid.",
       "runs": "Inspect active and completed evaluation runs, their evidence, and approval decisions.",
       "improvements": "Review evaluation feedback, proposed improvements, and their outcomes over time.",
       "settings": "Configure console preferences, AI connection profiles, and operational manager instructions."
