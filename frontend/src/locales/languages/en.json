@@ -158,6 +158,11 @@
         "label": "Approval score",
         "hint": "Minimum supervisor score required for approval."
       },
+      "humanApproval": {
+        "label": "Require human approval before applying improvements",
+        "hint": "Keep supervisor proposals as evidence until a human approves their application."
+      },
+      "humanApprovalEnable": "Enable",
       "name": "Name",
       "next": "Next"
     },

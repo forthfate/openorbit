@@ -364,6 +364,7 @@ class EvaluationBuildCreate(BaseModel):
     repeat_interval_minutes: int = Field(ge=1, le=10080)
     run_limit: int = Field(ge=1, le=10000)
     approval_score: int = Field(ge=0, le=10)
+    require_human_approval_before_apply: bool = False
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
     )  # Legacy fallback; selected execution environment is authoritative.

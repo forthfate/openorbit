@@ -187,7 +187,20 @@ def setup(ctx):
         proposal for proposal in feedback.get("improvements", [])
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
-    prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    requires_human_approval = bool(
+        ctx.evaluation_build.get("require_human_approval_before_apply", False)
+    )
+    if requires_human_approval and accepted:
+        # A supervisor's adoption is a recommendation, not an operator
+        # authorization. Keep it as evidence until an operator approves it.
+        prompt_update = {
+            "changed": False,
+            "reason": "awaiting_human_approval",
+            "proposal_count": len(accepted),
+        }
+        accepted = []
+    else:
+        prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
@@ -198,6 +211,7 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
             }
@@ -1923,6 +1937,9 @@ if __name__ == "__main__":
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
         runs = self.runs()
         for build in builds:
+            # Existing builds predate this optional policy, so leave it off
+            # unless an operator explicitly enabled it.
+            build.setdefault("require_human_approval_before_apply", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
@@ -2495,6 +2512,9 @@ if __name__ == "__main__":
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds = self.evaluation_builds()
@@ -2562,6 +2582,9 @@ if __name__ == "__main__":
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds[index] = build
@@ -3356,19 +3379,27 @@ if __name__ == "__main__":
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
             init = [step for step in steps if step.phase == "init"]
-            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval", "teardown"}]
+            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
+            teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
             for step in init:
                 self._execute_step(run_id, step, 0, resources)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
             for loop_index in range(1, run.loop_limit + 1):
+                terminal_before_iteration = self._load(run_id).status in {"failed", "cancelled"}
+                if not terminal_before_iteration:
+                    for step in loop_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                # Cleanup is part of the lifecycle contract, not merely the
+                # happy path. Run it after an earlier phase fails or a user
+                # cancels the Run; the terminal status remains unchanged.
+                for step in teardown_steps:
+                    self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
-                for step in loop_steps:
-                    self._execute_step(run_id, step, loop_index, resources)
-                    if self._load(run_id).status in {"failed", "cancelled"}:
-                        break
                 if (
                     self._load(run_id).status == "running"
                     and run.execution_mode == "run"
@@ -3703,7 +3734,13 @@ if __name__ == "__main__":
             return
 
     def _execute_step(
-        self, run_id: str, step, loop_index: int = 1, resources: dict[str, Any] | None = None
+        self,
+        run_id: str,
+        step,
+        loop_index: int = 1,
+        resources: dict[str, Any] | None = None,
+        *,
+        allow_terminal: bool = False,
     ) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
             "workflow.step",
@@ -3714,7 +3751,7 @@ if __name__ == "__main__":
             },
         ) as span:
             run = self._load(run_id)
-            if run.status == "cancelled":
+            if run.status in {"failed", "cancelled"} and not allow_terminal:
                 return
             run.current_step, run.current_phase, run.updated_at = step.id, step.phase, now()
             self._save(run)
@@ -3830,11 +3867,18 @@ if __name__ == "__main__":
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    # A stop request intentionally terminates the subprocess.
+                    # Preserve cancellation while still letting the caller run
+                    # the terminal teardown path.
+                    if self._load(run_id).status == "cancelled":
+                        return
                     self._fail(run, step.id, f"exit code {process.returncode}")
                     return
             except subprocess.TimeoutExpired:
                 process.kill()
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
+                if self._load(run_id).status == "cancelled":
+                    return
                 self._fail(self._load(run_id), step.id, f"timed out after {step.timeout_seconds}s")
                 return
             except ValueError as error:

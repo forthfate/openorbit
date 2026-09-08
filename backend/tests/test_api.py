@@ -5,7 +5,7 @@ import pytest
 from app import providers
 from app import store as store_module
 from app.main import app
-from app.models import Run
+from app.models import Run, Step, Workflow
 from fastapi.testclient import TestClient
 from orbit_sdk import RunnerContext
 
@@ -38,6 +38,49 @@ def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch
     assert cancelled.status == "cancelled"
     assert cancelled.current_step is None
     assert cancelled.current_phase is None
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypatch, terminal_status):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id=f"cleanup-{terminal_status}",
+        workflow_id="cleanup-workflow",
+        workflow_name="Cleanup workflow",
+        execution_mode="test",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="cleanup-workflow",
+        name="Cleanup workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[
+            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
+            Step(id="teardown", phase="teardown", name="Teardown", command=[], working_directory="."),
+        ],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    calls = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
+        calls.append((step.phase, loop_index, allow_terminal))
+        if step.phase == "setup":
+            current = store._load(run_id)
+            current.status = terminal_status
+            store._save(current)
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+
+    store._execute(run.id)
+
+    assert calls == [("setup", 1, False), ("teardown", 1, True)]
 
 
 def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
