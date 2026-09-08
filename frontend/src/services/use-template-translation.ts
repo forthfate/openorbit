@@ -11,19 +11,23 @@ export function useTemplateTranslations<T>(
 ) {
   const requestKey = (templateId: string) => `${kind}:${templateId}:${locale}`;
   const [results, setResults] = useState<Record<string, T>>({});
-  const [visible, setVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(() => new Set());
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState(false);
 
-  const content = (templateId: string) => visible ? results[requestKey(templateId)] ?? null : null;
+  const content = (templateId: string) =>
+    visibleIds.has(requestKey(templateId)) ? results[requestKey(templateId)] ?? null : null;
+  const isLoading = (requestedIds: string[]) =>
+    requestedIds.some((templateId) => loadingIds.has(requestKey(templateId)));
 
-  const translate = async () => {
-    const missingIds = templateIds.filter((templateId) => !results[requestKey(templateId)]);
+  const translate = async (requestedIds = templateIds) => {
+    const ids = [...new Set(requestedIds)];
+    const missingIds = ids.filter((templateId) => !results[requestKey(templateId)]);
     if (!missingIds.length) {
-      setVisible(true);
+      setVisibleIds((current) => new Set([...current, ...ids.map(requestKey)]));
       return;
     }
-    setLoading(true);
+    setLoadingIds((current) => new Set([...current, ...missingIds.map(requestKey)]));
     setError(false);
     const responses = await Promise.allSettled(
       missingIds.map(async (templateId) => ({
@@ -44,13 +48,27 @@ export function useTemplateTranslations<T>(
         ...current,
         ...Object.fromEntries(translated.map(({ value }) => [requestKey(value.templateId), value.result.content])),
       }));
-      setVisible(true);
+    }
+    const translatedIds = translated.map(({ value }) => value.templateId);
+    const availableIds = ids.filter((templateId) =>
+      Boolean(results[requestKey(templateId)]) || translatedIds.includes(templateId),
+    );
+    if (availableIds.length) {
+      setVisibleIds((current) => new Set([...current, ...availableIds.map(requestKey)]));
     }
     if (translated.length !== responses.length) {
       setError(true);
     }
-    setLoading(false);
+    setLoadingIds((current) => {
+      const completed = new Set(missingIds.map(requestKey));
+      return new Set([...current].filter((key) => !completed.has(key)));
+    });
   };
 
-  return { content, error, loading, showOriginal: () => setVisible(false), translate };
+  const showOriginal = (requestedIds = templateIds) => {
+    const keys = new Set(requestedIds.map(requestKey));
+    setVisibleIds((current) => new Set([...current].filter((key) => !keys.has(key))));
+  };
+
+  return { content, error, loading: loadingIds.size > 0, isLoading, showOriginal, translate };
 }
