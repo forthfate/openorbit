@@ -2922,6 +2922,10 @@ if __name__ == "__main__":
         for step in run.step_results:
             result = step.get("result")
             event = result.get("commit_change") if isinstance(result, dict) else None
+            if not isinstance(event, dict) and isinstance(result, dict):
+                jgent = result.get("jgent_paired")
+                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
+                event = candidate if isinstance(candidate, dict) else None
             if not isinstance(event, dict):
                 continue
             before, after = str(event.get("before") or ""), str(event.get("after") or "")
