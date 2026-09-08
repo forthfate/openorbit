@@ -456,14 +456,46 @@ function PromptDiff({ before, after }: { before: string; after: string }) {
     suffix < afterLines.length - prefix &&
     beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]
   ) suffix += 1;
-  const unchanged = beforeLines.slice(0, prefix);
-  const removed = beforeLines.slice(prefix, beforeLines.length - suffix);
-  const added = afterLines.slice(prefix, afterLines.length - suffix);
-  const tail = suffix ? beforeLines.slice(beforeLines.length - suffix) : [];
+  const rows: Array<{
+    kind: "unchanged" | "removed" | "added";
+    before?: number;
+    after?: number;
+    line: string;
+  }> = [
+    ...beforeLines.slice(0, prefix).map((line, index) => ({
+      kind: "unchanged" as const,
+      before: index + 1,
+      after: index + 1,
+      line,
+    })),
+    ...beforeLines.slice(prefix, beforeLines.length - suffix).map((line, index) => ({
+      kind: "removed" as const,
+      before: prefix + index + 1,
+      line,
+    })),
+    ...afterLines.slice(prefix, afterLines.length - suffix).map((line, index) => ({
+      kind: "added" as const,
+      after: prefix + index + 1,
+      line,
+    })),
+    ...beforeLines.slice(beforeLines.length - suffix).map((line, index) => ({
+      kind: "unchanged" as const,
+      before: beforeLines.length - suffix + index + 1,
+      after: afterLines.length - suffix + index + 1,
+      line,
+    })),
+  ];
   return (
-    <pre className="prompt-diff">
-      {[...unchanged.map((line) => `  ${line}`), ...removed.map((line) => `- ${line}`), ...added.map((line) => `+ ${line}`), ...tail.map((line) => `  ${line}`)].join("\n")}
-    </pre>
+    <div className="prompt-diff" aria-label="Prompt diff">
+      {rows.map((row, index) => (
+        <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={`${row.kind}-${index}`}>
+          <span className="prompt-diff__line-number" aria-label={row.before ? `Previous line ${row.before}` : "No previous line"}>{row.before ?? ""}</span>
+          <span className="prompt-diff__line-number" aria-label={row.after ? `New line ${row.after}` : "No new line"}>{row.after ?? ""}</span>
+          <span className="prompt-diff__marker" aria-hidden="true">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span>
+          <code>{row.line || " "}</code>
+        </div>
+      ))}
+    </div>
   );
 }
 
