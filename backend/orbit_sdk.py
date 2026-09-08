@@ -657,6 +657,20 @@ class RunnerContext:
         records = values.get("supervisor_results", [])
         if not isinstance(records, list):
             return {}
+        selected_candidates = values.get("iteration_candidates", [])
+        winner_ids = {
+            str(item.get("id"))
+            for item in selected_candidates
+            if isinstance(item, dict) and item.get("selected")
+        }
+        if winner_ids:
+            records = sorted(
+                records,
+                key=lambda record: (
+                    isinstance(record, dict) and str(record.get("candidate_id")) in winner_ids,
+                    record.get("iteration", 0) if isinstance(record, dict) else 0,
+                ),
+            )
         for record in reversed(records):
             response = record.get("response") if isinstance(record, dict) else None
             if isinstance(response, dict):

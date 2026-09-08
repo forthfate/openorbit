@@ -2511,6 +2511,8 @@ if __name__ == "__main__":
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
@@ -2581,6 +2583,8 @@ if __name__ == "__main__":
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
@@ -3396,6 +3400,8 @@ if __name__ == "__main__":
         loop_limit: int = 1,
         repeat_interval_minutes: int = 0,
         approval_score: int | None = None,
+        iteration_strategy: str = "linear",
+        candidates_per_iteration: int = 1,
         repository: str | None = None,
         transient: bool = False,
     ) -> Run:
@@ -3418,6 +3424,8 @@ if __name__ == "__main__":
             loop_limit=max(1, loop_limit),
             repeat_interval_minutes=max(0, repeat_interval_minutes),
             approval_score=approval_score,
+            iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
+            candidates_per_iteration=max(1, candidates_per_iteration),
             status="awaiting_approval" if needs_approval else "queued",
             created_at=now(),
             updated_at=now(),
@@ -3653,6 +3661,80 @@ if __name__ == "__main__":
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
             for loop_index in range(1, run.loop_limit + 1):
+                run = self._load(run_id)
+                candidate_ids = (
+                    (
+                        [str(loop_index)]
+                        if loop_index == 1
+                        else [f"{loop_index}-{index}" for index in range(1, run.candidates_per_iteration + 1)]
+                    )
+                    if run.iteration_strategy == "score_select"
+                    else []
+                )
+                base_candidate_id = next(
+                    (
+                        str(item["id"])
+                        for item in reversed(run.iteration_candidates)
+                        if item.get("iteration") == loop_index - 1 and item.get("selected")
+                    ),
+                    None,
+                )
+                candidate_results: list[dict[str, Any]] = []
+                for candidate_id in candidate_ids:
+                    if self._load(run_id).status in {"failed", "cancelled"}:
+                        break
+                    for step in loop_steps:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                    for step in teardown_steps:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            allow_terminal=True,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                    if self._load(run_id).status == "running" and run.execution_mode == "run":
+                        self._complete_supervision(run_id)
+                        record = (self._load(run_id).supervisor_results or [])[-1:]
+                        response = record[0].get("response", {}) if record else {}
+                        evaluation = response.get("evaluation", {}) if isinstance(response, dict) else {}
+                        candidate_results.append(
+                            {
+                                "id": candidate_id,
+                                "iteration": loop_index,
+                                "score": evaluation.get("score"),
+                                "status": record[0].get("status") if record else "failed",
+                            }
+                        )
+                if candidate_results:
+                    ranked = sorted(
+                        candidate_results,
+                        key=lambda item: (
+                            item.get("score") is not None,
+                            item.get("score") or float("-inf"),
+                            item["id"],
+                        ),
+                        reverse=True,
+                    )
+                    winner = ranked[0]
+                    current = self._load(run_id)
+                    for candidate in candidate_results:
+                        candidate["selected"] = candidate["id"] == winner["id"]
+                    current.iteration_candidates.extend(candidate_results)
+                    self._save(current)
+                if run.iteration_strategy == "score_select":
+                    continue
                 terminal_before_iteration = self._load(run_id).status in {"failed", "cancelled"}
                 if not terminal_before_iteration:
                     for step in loop_steps:
@@ -3803,6 +3885,14 @@ if __name__ == "__main__":
             ),
             default=0,
         )
+        candidate_id = next(
+            (
+                str(item.get("candidate_id"))
+                for item in reversed(run.step_results)
+                if item.get("loop_index") == iteration and item.get("candidate_id")
+            ),
+            None,
+        )
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -3912,6 +4002,7 @@ if __name__ == "__main__":
                 run.supervisor_results.append(
                     {
                         "iteration": iteration,
+                        "candidate_id": candidate_id,
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
@@ -4007,6 +4098,8 @@ if __name__ == "__main__":
         resources: dict[str, Any] | None = None,
         *,
         allow_terminal: bool = False,
+        candidate_id: str | None = None,
+        base_candidate_id: str | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
             "workflow.step",
@@ -4053,6 +4146,10 @@ if __name__ == "__main__":
                 environment["ORBIT_APP_DATA"] = str(APP_DATA)
                 environment["ORBIT_EXECUTION_MODE"] = run.execution_mode
                 environment["ORBIT_LOOP_INDEX"] = str(loop_index)
+                if candidate_id:
+                    environment["ORBIT_CANDIDATE_ID"] = candidate_id
+                if base_candidate_id:
+                    environment["ORBIT_BASE_CANDIDATE_ID"] = base_candidate_id
                 environment["ORBIT_RUN_ID"] = run_id
                 environment["ORBIT_RUNNER_RESOURCES"] = base64.b64encode(
                     json.dumps(resources or {}, ensure_ascii=False).encode("utf-8")
@@ -4114,6 +4211,7 @@ if __name__ == "__main__":
                     "step_id": step.id,
                     "phase": step.phase,
                     "loop_index": loop_index,
+                    "candidate_id": candidate_id,
                     "name": step.name,
                     "command": step.command,
                     "working_directory": str(directory),
@@ -4209,6 +4307,8 @@ if __name__ == "__main__":
                 if execution_mode == "test"
                 else int(build.get("repeat_interval_minutes", 0)),
                 approval_score=int(build.get("approval_score", 0)),
+                iteration_strategy=str(build.get("iteration_strategy", "linear")),
+                candidates_per_iteration=int(build.get("candidates_per_iteration", 2)),
                 repository=build.get("repository"),
                 transient=execution_mode == "test",
             )

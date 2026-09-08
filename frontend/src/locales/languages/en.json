@@ -154,6 +154,16 @@
         "label": "Run limit",
         "hint": "Maximum number of runs to retain or schedule for this build."
       },
+      "iterationStrategy": {
+        "label": "Iteration strategy",
+        "hint": "Run iterations linearly or compare parallel candidates by supervisor score."
+      },
+      "iterationStrategyLinear": "Linear",
+      "iterationStrategyScoreSelect": "Score-based selection",
+      "candidatesPerIteration": {
+        "label": "Candidates per iteration",
+        "hint": "Number of candidates to compare before selecting the winner."
+      },
       "approvalScore": {
         "label": "Approval score",
         "hint": "Minimum supervisor score required for approval."

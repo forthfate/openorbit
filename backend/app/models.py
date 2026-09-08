@@ -57,6 +57,9 @@ class Run(BaseModel):
     execution_mode: Literal["run", "test"] = "run"
     execution_type: Literal["pipeline", "invoke"] = "pipeline"
     loop_limit: int = 1
+    iteration_strategy: Literal["linear", "score_select"] = "linear"
+    candidates_per_iteration: int = 1
+    iteration_candidates: list[dict[str, Any]] = Field(default_factory=list)
     repeat_interval_minutes: int = 0
     approval_score: int | None = None
     status: Literal["queued", "awaiting_approval", "running", "succeeded", "failed", "cancelled"]

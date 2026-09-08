@@ -378,6 +378,8 @@ class EvaluationBuildCreate(BaseModel):
     timezone: str = Field(min_length=1, max_length=64)
     repeat_interval_minutes: int = Field(ge=1, le=10080)
     run_limit: int = Field(ge=1, le=10000)
+    iteration_strategy: Literal["linear", "score_select"] = "linear"
+    candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
     require_human_approval_before_apply: bool = False
     executor_type: str = Field(
