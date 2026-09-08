@@ -244,6 +244,10 @@ class RunnerContext:
             _atomic_write(directory / snapshot_name, previous)
             previous_state["snapshot"] = snapshot_name
         written_state = self._file_state(written)
+        if written is not None:
+            snapshot_name = f"versions/{sequence:06d}-{written_state['sha256'][:16]}-written.bin"
+            _atomic_write(directory / snapshot_name, written)
+            written_state["snapshot"] = snapshot_name
         version_id = f"v{sequence:06d}-{str(previous_state['sha256'] or 'absent')[:12]}"
         record = {
             "id": version_id,

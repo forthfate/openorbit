@@ -2711,6 +2711,175 @@ if __name__ == "__main__":
         lines = TELEMETRY.read_text(encoding="utf-8").splitlines()[-100:]
         return [json.loads(line) for line in reversed(lines)]
 
+    @staticmethod
+    def _prompt_snapshot_content(directory: Path, state: object) -> str | None:
+        if not isinstance(state, dict) or not state.get("exists"):
+            return ""
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, str):
+            return None
+        candidate = (directory / snapshot).resolve()
+        if directory.resolve() not in candidate.parents:
+            return None
+        try:
+            payload = candidate.read_bytes()
+        except OSError:
+            return None
+        if len(payload) > 100_000:
+            return None
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def prompt_revisions(self, run_id: str) -> list[dict[str, Any]]:
+        """Return immutable managed-prompt changes and blocked writes for one Run."""
+        run = self._load(run_id)
+        repository = Path(run.repository or "").expanduser()
+        if not repository.is_dir():
+            return []
+        revisions: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            if not isinstance(result, dict):
+                continue
+            update = result.get("file_update") or result.get("file_rollback")
+            blocked = result.get("file_update_blocked")
+            cycle = result.get("improvement_cycle")
+            prompt_update = cycle.get("prompt_update") if isinstance(cycle, dict) else None
+            if (
+                not isinstance(update, dict)
+                and not isinstance(blocked, dict)
+                and not isinstance(prompt_update, dict)
+            ):
+                continue
+            event = (
+                update
+                if isinstance(update, dict)
+                else blocked
+                if isinstance(blocked, dict)
+                else prompt_update
+            )
+            path = str(event.get("path") or "")
+            version = event.get("version") if isinstance(event.get("version"), dict) else None
+            if not path and isinstance(prompt_update, dict):
+                path = str(prompt_update.get("path") or "")
+                version = (
+                    prompt_update.get("version")
+                    if isinstance(prompt_update.get("version"), dict)
+                    else version
+                )
+            if not path:
+                continue
+            project_key = hashlib.sha256(str(repository.resolve()).encode("utf-8")).hexdigest()
+            path_key = hashlib.sha256(path.encode("utf-8")).hexdigest()
+            directory = APP_DATA / "file-history" / project_key / path_key
+            previous = version.get("previous") if version else None
+            written = version.get("written") if version else None
+            operation = str(version.get("operation") if version else "")
+            reason = str(event.get("reason") or (prompt_update or {}).get("reason") or "")
+            if not version and reason != "awaiting_human_approval":
+                continue
+            revisions.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "path": path,
+                    "status": "blocked"
+                    if reason == "awaiting_human_approval"
+                    else "rolled_back"
+                    if operation == "rollback"
+                    else "applied"
+                    if version
+                    else "unchanged",
+                    "reason": reason or None,
+                    "recorded_at": (version or {}).get("recorded_at") or step.get("ended_at"),
+                    "version_id": (version or {}).get("id"),
+                    "run_id": (version or {}).get("run_id") or run.id,
+                    "before": self._prompt_snapshot_content(directory, previous),
+                    "after": self._prompt_snapshot_content(directory, written),
+                    "before_sha256": (previous or {}).get("sha256"),
+                    "after_sha256": (written or {}).get("sha256"),
+                }
+            )
+        # A Run record is convenient for current executions, but prompt files
+        # have a longer life than a single Run. Merge the durable file history
+        # so older updates remain visible even when their old runner did not
+        # emit a structured result in the current schema.
+        expected_path = ""
+        if run.evaluation_build_id:
+            try:
+                expected_path = str(
+                    self.evaluation_build(run.evaluation_build_id).get("managed_prompt_path", "")
+                )
+            except KeyError:
+                pass
+        history_root = APP_DATA / "file-history"
+        for manifest_path in history_root.glob("*/*/manifest.json"):
+            try:
+                document = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if document.get("project_root") != str(repository.resolve()):
+                continue
+            path = str(document.get("relative_path") or "")
+            if not path or (expected_path and path != expected_path):
+                continue
+            history = document.get("history")
+            if not isinstance(history, list):
+                continue
+            directory = manifest_path.parent
+            current_path = repository / path
+            current = current_path.read_bytes() if current_path.is_file() else None
+            for index, version in enumerate(history):
+                if not isinstance(version, dict):
+                    continue
+                previous = version.get("previous")
+                written = version.get("written")
+                after = self._prompt_snapshot_content(directory, written)
+                if after is None and isinstance(written, dict):
+                    next_previous = (
+                        history[index + 1].get("previous")
+                        if index + 1 < len(history) and isinstance(history[index + 1], dict)
+                        else None
+                    )
+                    if isinstance(next_previous, dict) and next_previous.get("sha256") == written.get(
+                        "sha256"
+                    ):
+                        after = self._prompt_snapshot_content(directory, next_previous)
+                    elif current is not None and hashlib.sha256(current).hexdigest() == written.get("sha256"):
+                        try:
+                            after = current.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
+                existing = next(
+                    (item for item in revisions if item.get("version_id") == version.get("id")), None
+                )
+                if existing is not None:
+                    if existing.get("before") is None:
+                        existing["before"] = self._prompt_snapshot_content(directory, previous)
+                    if existing.get("after") is None:
+                        existing["after"] = after
+                    existing["run_id"] = existing.get("run_id") or version.get("run_id")
+                    continue
+                operation = str(version.get("operation") or "")
+                revisions.append(
+                    {
+                        "iteration": version.get("iteration"),
+                        "phase": version.get("phase"),
+                        "path": path,
+                        "status": "rolled_back" if operation == "rollback" else "applied",
+                        "recorded_at": version.get("recorded_at"),
+                        "version_id": version.get("id"),
+                        "run_id": version.get("run_id"),
+                        "before": self._prompt_snapshot_content(directory, previous),
+                        "after": after,
+                        "before_sha256": previous.get("sha256") if isinstance(previous, dict) else None,
+                        "after_sha256": written.get("sha256") if isinstance(written, dict) else None,
+                    }
+                )
+        return sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
         run = self._load(run_id)

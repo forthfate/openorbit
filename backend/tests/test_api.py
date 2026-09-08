@@ -1,6 +1,7 @@
 import base64
 import json
 
+import orbit_sdk as sdk
 import pytest
 from app import providers
 from app import store as store_module
@@ -38,6 +39,54 @@ def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch
     assert cancelled.status == "cancelled"
     assert cancelled.current_step is None
     assert cancelled.current_phase is None
+
+
+def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
+    app_data = tmp_path / "orbit-data"
+    project = tmp_path / "project"
+    project.mkdir()
+    prompt = project / "prompt.md"
+    prompt.write_text("before\n", encoding="utf-8")
+    monkeypatch.setattr(store_module, "APP_DATA", app_data)
+    monkeypatch.setattr(store_module, "RUNS", app_data / "data" / "runs")
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", app_data)
+    resources = base64.b64encode(
+        json.dumps({"evaluation_build": {"managed_prompt_path": "prompt.md"}}).encode()
+    ).decode()
+    update = RunnerContext(
+        phase="setup",
+        target_repository=project,
+        mode="run",
+        loop_index=1,
+        environment={"ORBIT_RUN_ID": "prompt-run", "ORBIT_RUNNER_RESOURCES": resources},
+    ).update_file("prompt.md", "after\n")
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="prompt-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            step_results=[
+                {
+                    "phase": "setup",
+                    "loop_index": 1,
+                    "ended_at": timestamp.isoformat(),
+                    "result": {"file_update": update},
+                }
+            ],
+        )
+    )
+
+    revisions = store.prompt_revisions("prompt-run")
+
+    assert revisions[0]["status"] == "applied"
+    assert revisions[0]["before"] == "before\n"
+    assert revisions[0]["after"] == "after\n"
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
