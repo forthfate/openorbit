@@ -121,6 +121,7 @@ export function EvaluationsPage({
     [tab, setTab] = useState<RunDetailTab>("result"),
     [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
     [iterationTab, setIterationTab] = useState(1),
+    [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
     [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
     [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
@@ -532,15 +533,16 @@ export function EvaluationsPage({
     // visible without inventing a separate, misleading iteration.
     selectedSteps = steps.filter(
       (step) =>
-        step.loop_index === iterationTab ||
-        ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
-        ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1)),
+        (!candidateTab || step.candidate_id === candidateTab) &&
+        (step.loop_index === iterationTab ||
+          ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
+          ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1))),
     ),
     availablePhases = phases.filter((phase) =>
       selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
     ),
     supervision = selected?.supervisor_results?.find(
-      (item) => item.iteration === iterationTab,
+      (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
     ),
     result = supervision?.response,
     evaluation = result?.evaluation;
@@ -609,6 +611,7 @@ export function EvaluationsPage({
         resultIssueStatus === "all" ||
         issues.some((issue) => String(issue.status ?? "—") === resultIssueStatus);
       return (
+        (!candidateTab || record.candidate_id === candidateTab) &&
         resultDecisions.has(decision) &&
         scoreMatches &&
         contentMatches &&
@@ -622,6 +625,7 @@ export function EvaluationsPage({
     });
   }, [
     selected,
+    candidateTab,
     resultContent,
     resultDecisions,
     resultAttemptFilter,
@@ -815,6 +819,7 @@ export function EvaluationsPage({
           setTab("result");
           setPhaseTab("init");
           setIterationTab(latest);
+          setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
         className="active-evaluation-table"
         gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
@@ -885,6 +890,7 @@ export function EvaluationsPage({
             ]}
           />
           {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
+            <>
             <div className="iteration-navigator" aria-label={l.iteration}>
               <button
                 className="ghost icon-button"
@@ -893,7 +899,10 @@ export function EvaluationsPage({
                 title={ui.previousIteration}
                 disabled={previousIteration === undefined}
                 onClick={() => {
-                  if (previousIteration !== undefined) setIterationTab(previousIteration);
+                  if (previousIteration !== undefined) {
+                    setIterationTab(previousIteration);
+                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
+                  }
                 }}
               >
                 <ChevronLeft size={16} />
@@ -901,7 +910,11 @@ export function EvaluationsPage({
               <select
                 aria-label={l.iteration}
                 value={iterationTab}
-                onChange={(event) => setIterationTab(Number(event.target.value))}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setIterationTab(next);
+                  setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
+                }}
               >
                 {[...iterations].reverse().map((iteration) => (
                   <option key={iteration} value={iteration}>#{iteration}</option>
@@ -914,12 +927,25 @@ export function EvaluationsPage({
                 title={ui.nextIteration}
                 disabled={nextIteration === undefined}
                 onClick={() => {
-                  if (nextIteration !== undefined) setIterationTab(nextIteration);
+                  if (nextIteration !== undefined) {
+                    setIterationTab(nextIteration);
+                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
+                  }
                 }}
               >
                 <ChevronRight size={16} />
               </button>
             </div>
+            {selected.iteration_strategy === "score_select" && (
+              <div className="iteration-candidates">
+                {(selected.iteration_candidates ?? []).filter((candidate) => candidate.iteration === iterationTab).map((candidate) => (
+                  <button type="button" key={candidate.id} onClick={() => setCandidateTab(candidate.id)} className={candidateTab === candidate.id ? "selected" : ""}>
+                    <b>{candidate.id}</b><small>{candidate.score ?? "—"}/10</small>{candidate.selected && <em>Winner</em>}
+                  </button>
+                ))}
+              </div>
+            )}
+            </>
           )}
           {tab === "workflow" && (
             <RunDetailTabPanel description={l.workflowDescription}>

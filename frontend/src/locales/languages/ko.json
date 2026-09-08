@@ -153,6 +153,16 @@
         "label": "실행 제한",
         "hint": "이 빌드에 예약하거나 유지할 최대 실행 수입니다."
       },
+      "iterationStrategy": {
+        "label": "반복 전략",
+        "hint": "선형 반복 또는 감독자 점수로 병렬 후보를 비교하는 방식을 선택합니다."
+      },
+      "iterationStrategyLinear": "선형",
+      "iterationStrategyScoreSelect": "점수 기반 선택",
+      "candidatesPerIteration": {
+        "label": "반복당 후보 수",
+        "hint": "다음 반복으로 진행할 승자를 고르기 전에 비교할 후보 수입니다."
+      },
       "approvalScore": {
         "label": "승인 점수",
         "hint": "승인에 필요한 최소 감독자 점수입니다."

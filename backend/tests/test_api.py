@@ -225,6 +225,81 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
     assert calls == [("setup", 1, False), ("teardown", 1, True)]
 
 
+def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="score-select",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        execution_mode="run",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+        loop_limit=2,
+        iteration_strategy="score_select",
+        candidates_per_iteration=2,
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="workflow",
+        name="Workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[Step(id="run", phase="run", name="Run", command=[], working_directory=".")],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    calls = []
+
+    def execute_step(
+        run_id,
+        step,
+        loop_index=1,
+        resources=None,
+        *,
+        allow_terminal=False,
+        candidate_id=None,
+        base_candidate_id=None,
+    ):
+        calls.append((step.id, loop_index, candidate_id, base_candidate_id, allow_terminal))
+        current = store._load(run_id)
+        current.step_results.append(
+            {"phase": step.phase, "loop_index": loop_index, "candidate_id": candidate_id}
+        )
+        store._save(current)
+
+    def supervise(run_id):
+        current = store._load(run_id)
+        candidate_id = current.step_results[-1]["candidate_id"]
+        score = 9 if candidate_id == "2-2" else 7
+        current.supervisor_results.append(
+            {
+                "iteration": int(candidate_id.split("-")[0]),
+                "candidate_id": candidate_id,
+                "status": "completed",
+                "response": {"evaluation": {"score": score}, "improvements": [], "reported_issues": []},
+            }
+        )
+        store._save(current)
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+    monkeypatch.setattr(store, "_complete_supervision", supervise)
+    store._execute(run.id)
+    completed = store._load(run.id)
+    assert [(item["id"], item["selected"]) for item in completed.iteration_candidates] == [
+        ("1", True),
+        ("2-1", False),
+        ("2-2", True),
+    ]
+    assert calls == [
+        ("run", 1, "1", None, False),
+        ("run", 2, "2-1", "1", False),
+        ("run", 2, "2-2", "1", False),
+    ]
+
+
 def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()

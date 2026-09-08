@@ -61,6 +61,19 @@ test('opens the build and profile editors with editable lifecycle fields', async
   await profileDialog.getByRole('button', { name: 'Close dialog' }).click()
 })
 
+test('shows the score-based iteration strategy in the Jgent build editor', async ({ page }) => {
+  await page.goto('/#builds')
+  const jgent = page.locator('.tr:not(.th)').filter({ hasText: 'Jgent paired evaluation quality' })
+  await jgent.click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Next' }).click()
+  const strategy = dialog.getByRole('combobox', { name: /Iteration strategy/ })
+  await expect(strategy).toHaveValue('score_select')
+  await expect(strategy).toContainText('Linear')
+  await expect(strategy).toContainText('Score-based selection')
+  await expect(dialog.getByRole('spinbutton', { name: /Candidates per iteration/ })).toBeVisible()
+})
+
 test('creates a safe task in the UI, then completes Test and Run', async ({ page }) => {
   const suffix = Date.now().toString().slice(-8)
   const buildId = `ui-smoke-${suffix}`

@@ -153,6 +153,16 @@
         "label": "実行上限",
         "hint": "このビルドでスケジュールまたは保持する最大実行数です。"
       },
+      "iterationStrategy": {
+        "label": "反復戦略",
+        "hint": "線形反復または監督者スコアで並列候補を比較する方式を選択します。"
+      },
+      "iterationStrategyLinear": "線形",
+      "iterationStrategyScoreSelect": "スコアベース選択",
+      "candidatesPerIteration": {
+        "label": "反復ごとの候補数",
+        "hint": "次の反復へ進む勝者を選ぶ前に比較する候補数です。"
+      },
       "approvalScore": {
         "label": "承認スコア",
         "hint": "承認に必要な監督者の最低スコアです。"
