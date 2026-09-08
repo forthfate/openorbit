@@ -422,7 +422,7 @@ function PromptChanges({
     <div className="prompt-changes">
       <div className="prompt-version-navigator">
         <button className="ghost icon-button" type="button" disabled={index >= items.length - 1} onClick={() => setRevisionIndex(index + 1)} aria-label={l.previousPromptChange} title={l.previousPromptChange}><ChevronLeft size={16} /></button>
-        <span>{l.promptVersion.replace("{0}", String(index + 1)).replace("{1}", String(items.length))}</span>
+        <span>{l.promptVersion.replace("{0}", String(items.length - index)).replace("{1}", String(items.length))}</span>
         <button className="ghost icon-button" type="button" disabled={index === 0} onClick={() => setRevisionIndex(index - 1)} aria-label={l.nextPromptChange} title={l.nextPromptChange}><ChevronRight size={16} /></button>
       </div>
       <section>
