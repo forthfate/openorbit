@@ -388,6 +388,8 @@
       "awaitingApproval": "승인 대기",
       "running": "실행 중",
       "filter": "필터",
+      "keyword": "키워드",
+      "keywordHint": "대소문자를 구분해 일치",
       "reset": "초기화",
       "status": "상태",
       "evaluationBuild": "평가 빌드",

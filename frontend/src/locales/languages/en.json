@@ -389,6 +389,8 @@
       "awaitingApproval": "Awaiting approval",
       "running": "Running",
       "filter": "Filter",
+      "keyword": "Keyword",
+      "keywordHint": "Case-sensitive match",
       "reset": "Reset",
       "status": "Status",
       "evaluationBuild": "Evaluation build",

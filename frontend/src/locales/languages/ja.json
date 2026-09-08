@@ -388,6 +388,8 @@
       "awaitingApproval": "承認待ち",
       "running": "実行中",
       "filter": "フィルター",
+      "keyword": "キーワード",
+      "keywordHint": "大文字・小文字を区別して一致",
       "reset": "リセット",
       "status": "ステータス",
       "evaluationBuild": "評価ビルド",

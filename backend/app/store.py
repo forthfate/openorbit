@@ -16,6 +16,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import yaml
@@ -2617,7 +2618,15 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
             "iteration_strategy": values.get("iteration_strategy", "linear"),
             "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
@@ -2689,7 +2698,15 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
             "iteration_strategy": values.get("iteration_strategy", "linear"),
             "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
@@ -3505,10 +3522,17 @@ if __name__ == "__main__":
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
         loop_limit: int = 1,
+        timezone: str = "UTC",
+        schedule_enabled: bool = False,
+        schedule_weekdays: list[int] | None = None,
+        schedule_start_time: str = "09:00",
+        schedule_end_time: str = "18:00",
         start_iteration: int = 1,
         retry_of_run_id: str | None = None,
         retry_mode: str | None = None,
         repeat_interval_minutes: int = 0,
+        cadence_mode: str = "after_completion",
+        overrun_policy: str = "wait",
         approval_score: int | None = None,
         iteration_strategy: str = "linear",
         candidates_per_iteration: int = 1,
@@ -3532,10 +3556,17 @@ if __name__ == "__main__":
             execution_mode=execution_mode,
             execution_type="pipeline",
             loop_limit=max(1, loop_limit),
+            timezone=timezone,
+            schedule_enabled=schedule_enabled,
+            schedule_weekdays=schedule_weekdays or [],
+            schedule_start_time=schedule_start_time,
+            schedule_end_time=schedule_end_time,
             start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
             retry_of_run_id=retry_of_run_id,
             retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
             repeat_interval_minutes=max(0, repeat_interval_minutes),
+            cadence_mode="fixed" if cadence_mode == "fixed" else "after_completion",
+            overrun_policy="interrupt_eval" if overrun_policy == "interrupt_eval" else "wait",
             approval_score=approval_score,
             iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
             candidates_per_iteration=max(1, candidates_per_iteration),
@@ -3786,13 +3817,22 @@ if __name__ == "__main__":
             loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
             teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
+            if not self._wait_for_schedule(run_id):
+                return
             if run.start_iteration == 1 and run.retry_mode != "resume":
                 for step in init:
                     self._execute_step(run_id, step, 0, resources)
                     if self._load(run_id).status in {"failed", "cancelled"}:
                         break
             for loop_index in range(run.start_iteration, run.loop_limit + 1):
+                if not self._wait_for_schedule(run_id):
+                    break
                 run = self._load(run_id)
+                if run.cadence_mode == "fixed" and run.repeat_interval_minutes:
+                    run.iteration_deadline_at = run.created_at + timedelta(
+                        minutes=run.repeat_interval_minutes * loop_index
+                    )
+                    self._save(run)
                 candidate_ids = (
                     (
                         [str(loop_index)]
@@ -3894,7 +3934,13 @@ if __name__ == "__main__":
                     run = self._load(run_id)
                     run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
                     self._save(run)
-                    for _ in range(run.repeat_interval_minutes * 60):
+                    wait_seconds = run.repeat_interval_minutes * 60
+                    if run.cadence_mode == "fixed":
+                        next_start = run.created_at + timedelta(
+                            minutes=run.repeat_interval_minutes * loop_index
+                        )
+                        wait_seconds = max(0, int((next_start - now()).total_seconds()))
+                    for _ in range(wait_seconds):
                         if self._load(run_id).status != "running":
                             break
                         time.sleep(1)
@@ -4313,6 +4359,30 @@ if __name__ == "__main__":
                     creationflags=creation_flags,
                     env=environment,
                 )
+                interruption_timer: threading.Timer | None = None
+                if (
+                    step.phase == "eval"
+                    and run.overrun_policy == "interrupt_eval"
+                    and run.iteration_deadline_at
+                ):
+                    delay = (run.iteration_deadline_at - now()).total_seconds()
+                    if delay <= 0:
+                        delay = 0.01
+
+                    def interrupt_overdue_evaluation() -> None:
+                        current = self._load(run_id)
+                        if current.current_phase != "eval" or process.poll() is not None:
+                            return
+                        current.advance_requested, current.updated_at = True, now()
+                        self._save(current)
+                        if os.name == "nt":
+                            process.terminate()
+                        else:
+                            os.killpg(process.pid, signal.SIGTERM)
+
+                    interruption_timer = threading.Timer(delay, interrupt_overdue_evaluation)
+                    interruption_timer.daemon = True
+                    interruption_timer.start()
                 captured_lines: list[tuple[str, str]] = []
                 live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
 
@@ -4381,6 +4451,8 @@ if __name__ == "__main__":
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
+                if interruption_timer:
+                    interruption_timer.cancel()
                 output_reader.join()
                 persist_live_output()
                 structured_result: dict[str, Any] | None = None
@@ -4432,6 +4504,10 @@ if __name__ == "__main__":
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    if step.phase == "eval" and run.advance_requested:
+                        run.advance_requested = False
+                        self._save(run)
+                        return
                     # A stop request intentionally terminates the subprocess.
                     # Preserve cancellation while still letting the caller run
                     # the terminal teardown path.
@@ -4479,6 +4555,28 @@ if __name__ == "__main__":
         self._save(run)
         return run
 
+    def _wait_for_schedule(self, run_id: str) -> bool:
+        while True:
+            run = self._load(run_id)
+            if run.status in {"failed", "cancelled"}:
+                return False
+            if not run.schedule_enabled or run.execution_mode != "run":
+                return True
+            try:
+                current = datetime.now(ZoneInfo(run.timezone))
+            except ZoneInfoNotFoundError:
+                current = datetime.now(UTC)
+            now_time = current.strftime("%H:%M")
+            weekdays = set(run.schedule_weekdays)
+            start, end = run.schedule_start_time, run.schedule_end_time
+            in_day = not weekdays or current.weekday() in weekdays
+            in_time = start <= now_time <= end if start <= end else now_time >= start or now_time <= end
+            if in_day and in_time:
+                return True
+            run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
+            self._save(run)
+            time.sleep(30)
+
     def retry(self, run_id: str, restart_from_first: bool) -> Run:
         run = self._load(run_id)
         if run.execution_type != "pipeline" or run.status not in {"failed", "cancelled"}:
@@ -4500,8 +4598,15 @@ if __name__ == "__main__":
             prompt_source=run.prompt_source,
             prompt_snapshot=run.prompt_snapshot,
             loop_limit=run.loop_limit,
+            timezone=run.timezone,
+            schedule_enabled=run.schedule_enabled,
+            schedule_weekdays=run.schedule_weekdays,
+            schedule_start_time=run.schedule_start_time,
+            schedule_end_time=run.schedule_end_time,
             start_iteration=1 if restart_from_first else min(latest_iteration, run.loop_limit),
             repeat_interval_minutes=run.repeat_interval_minutes,
+            cadence_mode=run.cadence_mode,
+            overrun_policy=run.overrun_policy,
             approval_score=run.approval_score,
             iteration_strategy=run.iteration_strategy,
             candidates_per_iteration=run.candidates_per_iteration,
@@ -4535,9 +4640,16 @@ if __name__ == "__main__":
                 prompt_source=prompt_source,
                 prompt_snapshot=prompt_snapshot,
                 loop_limit=1 if execution_mode == "test" else int(build.get("run_limit", 1)),
+                timezone=str(build.get("timezone", "UTC")),
+                schedule_enabled=execution_mode == "run" and bool(build.get("schedule_enabled", False)),
+                schedule_weekdays=list(build.get("schedule_weekdays", [])),
+                schedule_start_time=str(build.get("schedule_start_time", "09:00")),
+                schedule_end_time=str(build.get("schedule_end_time", "18:00")),
                 repeat_interval_minutes=0
                 if execution_mode == "test"
                 else int(build.get("repeat_interval_minutes", 0)),
+                cadence_mode=str(build.get("cadence_mode", "after_completion")),
+                overrun_policy=str(build.get("overrun_policy", "wait")),
                 approval_score=int(build.get("approval_score", 0)),
                 iteration_strategy=str(build.get("iteration_strategy", "linear")),
                 candidates_per_iteration=int(build.get("candidates_per_iteration", 2)),

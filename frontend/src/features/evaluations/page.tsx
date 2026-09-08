@@ -131,6 +131,7 @@ export function EvaluationsPage({
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
     [phaseFilter, setPhaseFilter] = useState(""),
+    [keywordFilter, setKeywordFilter] = useState(""),
     [activeOnly, setActiveOnly] = useState(false),
     [filtersOpen, setFiltersOpen] = useState(false),
     [draftStatuses, setDraftStatuses] = useState<Set<string>>(
@@ -141,6 +142,7 @@ export function EvaluationsPage({
       "all",
     ),
     [draftPhaseFilter, setDraftPhaseFilter] = useState(""),
+    [draftKeywordFilter, setDraftKeywordFilter] = useState(""),
     [draftActiveOnly, setDraftActiveOnly] = useState(false),
     [resultFiltersOpen, setResultFiltersOpen] = useState(false),
     [resultIterationFilter, setResultIterationFilter] = useState<"all" | "latest" | "range">("all"),
@@ -299,6 +301,7 @@ export function EvaluationsPage({
         (run.evaluation_build_id ?? run.workflow_id) === buildFilter) &&
       (modeFilter === "all" || run.execution_mode === modeFilter) &&
       (!phaseFilter || run.current_phase === phaseFilter) &&
+      (!keywordFilter || [run.id, run.evaluation_build_name, run.evaluation_build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
       (!activeOnly || activeStatuses.has(run.status)),
   );
   const toggleStatus = (status: string) =>
@@ -313,6 +316,7 @@ export function EvaluationsPage({
     setDraftBuildFilter("");
     setDraftModeFilter("all");
     setDraftPhaseFilter("");
+    setDraftKeywordFilter("");
     setDraftActiveOnly(false);
   };
   const closeFilters = () => setFiltersOpen(false);
@@ -321,6 +325,7 @@ export function EvaluationsPage({
     setDraftBuildFilter(buildFilter);
     setDraftModeFilter(modeFilter);
     setDraftPhaseFilter(phaseFilter);
+    setDraftKeywordFilter(keywordFilter);
     setDraftActiveOnly(activeOnly);
     setFiltersOpen(true);
   };
@@ -329,6 +334,7 @@ export function EvaluationsPage({
     setBuildFilter(draftBuildFilter);
     setModeFilter(draftModeFilter);
     setPhaseFilter(draftPhaseFilter);
+    setKeywordFilter(draftKeywordFilter);
     setActiveOnly(draftActiveOnly);
     setPage(1);
     closeFilters();
@@ -383,6 +389,7 @@ export function EvaluationsPage({
     Number(Boolean(buildFilter)) +
     Number(modeFilter !== "all") +
     Number(Boolean(phaseFilter)) +
+    Number(Boolean(keywordFilter)) +
     Number(activeOnly);
   const resultAppliedFilterCount =
     Number(resultIterationFilter !== "all") +
@@ -751,6 +758,10 @@ export function EvaluationsPage({
                 ))}
               </div>
             </fieldset>
+            <label>
+              {ui.keyword}
+              <input value={draftKeywordFilter} onChange={(event) => setDraftKeywordFilter(event.target.value)} placeholder={ui.keywordHint} />
+            </label>
             <label>
               {ui.evaluationBuild}
               <select
