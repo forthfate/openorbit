@@ -69,9 +69,8 @@ Use `proposed` when the change needs code, infrastructure, product, security, or
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
-# - The evaluation build selects fixed browser test cases, a browser base URL,
-#   and, when this native runner is selected, a readable managed_prompt_path
-#   configured on its Target Environment.
+# - The evaluation build selects fixed target-AI prompts and a configured model
+#   profile, plus a readable managed_prompt_path on its Target Environment.
 # - Only supervisor feedback explicitly marked adopted is applied to the prompt.
 # This runner never commits target changes; ctx.update_file keeps rollback versions.
 
@@ -156,7 +155,7 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
 
 
 def managed_prompt_evidence(ctx):
-    '''Expose the current managed prompt beside the browser validation evidence.'''
+    '''Expose the current managed prompt beside the target-AI response evidence.'''
     prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
@@ -172,9 +171,11 @@ def managed_prompt_evidence(ctx):
 def init(ctx):
     # Process-level validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
-    if not ctx.evaluation_build.get("browser_base_url") or not ctx.test_cases:
-        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")
-    ctx.log("Validated an OpenOrbit-native prompt improvement cycle")
+    if not ctx.test_cases:
+        raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
+    if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get("model"):
+        raise ValueError("Select a configured model profile for a native improvement cycle")
+    ctx.log("Validated an OpenOrbit-native target-AI prompt improvement cycle")
 
 
 @runner.phase("setup")
@@ -206,10 +207,33 @@ def setup(ctx):
 
 @runner.phase("run")
 def run(ctx):
-    # Browser evidence is the acceptance input; no target change is made here.
-    evidence = ctx.playwright_journey()
-    results = evidence["results"]
-    passed = all(item["passed"] for item in results)
+    # Exercise the evaluated AI with the current managed prompt. The raw reply
+    # is retained as supervisor evidence instead of treating a browser page as
+    # proof that a prompt instruction was followed.
+    managed_prompt = managed_prompt_evidence(ctx)
+    responses = []
+    for case in ctx.test_cases:
+        request = str(case.get("prompt") or "").strip()
+        if not request:
+            raise ValueError("each target-AI test case requires a prompt")
+        turn = ctx.complete_model(
+            "# Managed agent instructions\\n"
+            + managed_prompt["content"]
+            + "\\n\\n# User request\\n"
+            + request
+            + "\\n\\nRespond as the managed agent."
+        )
+        responses.append(
+            {
+                "id": case.get("id"),
+                "name": case.get("name"),
+                "request": request,
+                "acceptance": str(case.get("acceptance") or ""),
+                "response": turn["response"],
+                "model": turn["model"],
+            }
+        )
+    artifact = ctx.write_artifact("target-ai-responses.json", json.dumps(responses, ensure_ascii=False, indent=2), content_type="application/json")
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -217,13 +241,10 @@ def run(ctx):
                 "iteration": ctx.loop_index,
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
-                "passed": passed,
-                "evidence": evidence,
+                "evidence": {"target_ai_responses": responses, "artifact": artifact},
             }
         }
     )
-    if not passed:
-        raise SystemExit("A fixed validation journey failed")
 
 
 @runner.phase("eval")
@@ -1297,9 +1318,9 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.agent-self-improvement",
-                "version": "1.0.2",
+                "version": "1.1.0",
                 "name": "Agent self-improvement",
-                "description": "Improve an agent prompt with browser validation. Requires a Git repository, running app, prompt file, and Playwright browser.",
+                "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
                 "publisher": {"name": "OpenOrbit"},
                 "parameters": [
                     {
@@ -1318,10 +1339,10 @@ if __name__ == "__main__":
                     },
                     {
                         "key": "base_url",
-                        "label": "Browser base URL",
+                        "label": "Browser base URL (optional)",
                         "type": "url",
-                        "required": True,
-                        "placeholder": "http://localhost:3000",
+                        "required": False,
+                        "placeholder": "Not used for target-AI response evaluation",
                     },
                     {
                         "key": "managed_prompt_path",
@@ -1333,26 +1354,18 @@ if __name__ == "__main__":
                     },
                     {
                         "key": "journey_name",
-                        "label": "Validation journey name",
+                        "label": "Test case name",
                         "type": "string",
                         "required": True,
-                        "default": "Agent quality journey",
-                        "placeholder": "e.g. Resolve a customer support request",
-                    },
-                    {
-                        "key": "journey_path",
-                        "label": "Journey start path",
-                        "type": "string",
-                        "required": True,
-                        "default": "/",
-                        "placeholder": "e.g. /chat",
+                        "default": "Missing refund context",
+                        "placeholder": "e.g. Missing order details",
                     },
                     {
                         "key": "journey_prompt",
-                        "label": "User actions",
+                        "label": "User request",
                         "type": "string",
                         "required": True,
-                        "placeholder": "e.g. Ask the agent to find and explain a policy.",
+                        "placeholder": "e.g. I need a refund, but I do not have my order number.",
                     },
                     {
                         "key": "acceptance",
@@ -1360,13 +1373,6 @@ if __name__ == "__main__":
                         "type": "string",
                         "required": True,
                         "placeholder": "e.g. The response is complete, grounded, and has no error.",
-                    },
-                    {
-                        "key": "expected_text",
-                        "label": "Expected visible text (optional)",
-                        "type": "string",
-                        "required": False,
-                        "placeholder": "e.g. Return policy",
                     },
                     {
                         "key": "profile_name",
@@ -1428,7 +1434,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted whenever it is directly supported by the evidence and has measurable acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
+                        "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -1437,10 +1443,8 @@ if __name__ == "__main__":
                             {
                                 "id": "agent-journey",
                                 "name": "${journey_name}",
-                                "path": "${journey_path}",
                                 "prompt": "${journey_prompt}",
                                 "acceptance": "${acceptance}",
-                                "expected_text": "${expected_text}",
                             }
                         ],
                     },
@@ -1462,7 +1466,7 @@ if __name__ == "__main__":
                 },
                 "build": {
                     "name": "${build_name}",
-                    "purpose": "Validate and improve an agent or managed prompt with fixed browser evidence.",
+                    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
                     "model_profile_name": "${profile_name}",
                     "timezone": "Asia/Tokyo",
                     "repeat_interval_minutes": 30,
@@ -2998,13 +3002,33 @@ if __name__ == "__main__":
                 continue
             seen_builds.add(run.evaluation_build_id)
             item = run.model_dump(mode="json")
-            response = run.supervisor_response or {"improvements": [], "reported_issues": []}
-            improvements = response["improvements"]
+            # The run-level response is the newest iteration only. The table
+            # represents the whole retained run, so a successful later
+            # iteration must not hide feedback recorded by an earlier one.
+            responses = [
+                record.get("response")
+                for record in run.supervisor_results
+                if isinstance(record, dict) and isinstance(record.get("response"), dict)
+            ]
+            if not responses and isinstance(run.supervisor_response, dict):
+                responses = [run.supervisor_response]
+            improvements = [
+                improvement
+                for response in responses
+                for improvement in response.get("improvements", [])
+                if isinstance(improvement, dict)
+            ]
+            issues = [
+                issue
+                for response in responses
+                for issue in response.get("reported_issues", [])
+                if isinstance(issue, dict)
+            ]
             item["proposed_improvements"] = len(improvements)
             item["approved_improvements"] = len(
                 [item for item in improvements if item.get("status") == "adopted"]
             )
-            item["reported_issues"] = len(response["reported_issues"])
+            item["reported_issues"] = len(issues)
             item["approval_score"] = builds_by_id[run.evaluation_build_id].get("approval_score")
             active.append(item)
         return active
@@ -3293,6 +3317,11 @@ if __name__ == "__main__":
                 None,
             )
             resources["test_cases"] = selected.get("cases", []) if selected else build.get("test_cases", [])
+            profile_name = str(build.get("model_profile_name", ""))
+            resources["model_profile"] = next(
+                (profile for profile in self.profiles() if profile.get("profile_name") == profile_name),
+                self.settings(),
+            )
         # A build repository is the product under evaluation, while a workflow
         # step may execute through a separate adapter project (for example the
         # Insighta user simulator).  Keep each step's runner directory intact;

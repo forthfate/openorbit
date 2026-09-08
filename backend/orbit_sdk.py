@@ -531,6 +531,32 @@ class RunnerContext:
         """Read an Orbit resource snapshot supplied for this execution."""
         return self.resources.get(name, default)
 
+    def complete_model(self, prompt: str) -> dict[str, str]:
+        """Run one target-AI turn using the build's configured model profile.
+
+        The profile contains provider settings only; its credential remains in
+        the configured environment variable and is never emitted as evidence.
+        """
+        profile = self.resource("model_profile", {})
+        if not isinstance(profile, dict) or not str(profile.get("model", "")).strip():
+            raise ValueError("a configured model profile is required for a target-AI turn")
+        from app.providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
+
+        settings = ModelSettings(
+            provider=str(profile.get("provider", "azure-openai")),
+            model=str(profile["model"]),
+            endpoint=str(profile.get("endpoint", "")),
+            region=str(profile.get("region", "us-east-1")),
+            secret_env=str(profile.get("secret_env", "AZURE_OPENAI_API_KEY")),
+            aws_profile=str(profile.get("aws_profile", "")),
+        )
+        provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+        return {
+            "profile_name": str(profile.get("profile_name", "")),
+            "model": settings.model,
+            "response": provider.complete(settings, prompt),
+        }
+
     @property
     def previous_supervisor_feedback(self) -> dict[str, object]:
         """Return the latest completed supervisor response for this run.
