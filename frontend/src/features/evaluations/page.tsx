@@ -76,7 +76,7 @@ const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { behavior_summary?: string; summary?: string };
+    evaluation: { behavior_summary?: string; behavior_trace?: { purpose: string; rationale: string; observation: string; decision: string; next_action: string }; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };
@@ -665,16 +665,15 @@ export function EvaluationsPage({
         __iteration: record.iteration,
       })),
     );
-  const resultBehaviorSummaries = resultRecords
-    .map((record) => ({
+  const resultBehaviorTraces = resultRecords.flatMap((record) => {
+      const item = {
       iteration: record.iteration,
       recordedAt: record.recorded_at,
+      trace: translateResultResponse(record)?.evaluation?.behavior_trace,
       summary: translateResultResponse(record)?.evaluation?.behavior_summary,
-    }))
-    .filter(
-      (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
-        Boolean(item.summary),
-    );
+      };
+      return item.trace || item.summary ? [item] : [];
+    });
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
@@ -1211,7 +1210,7 @@ export function EvaluationsPage({
               <EvaluationResultPanel
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
-                summaries={resultBehaviorSummaries}
+                summaries={resultBehaviorTraces}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}

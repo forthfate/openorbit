@@ -503,6 +503,28 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
     assert result["evaluation"]["score"] == 8.0
 
 
+def test_supervisor_result_accepts_a_structured_ai_behavior_trace():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
+        '{"purpose":"Verify recovery","rationale":"The prior attempt timed out","observation":"A retry completed",'
+        '"decision":"The AI retried safely","next_action":"Check the resulting output"}},'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["evaluation"]["behavior_trace"]["purpose"] == "Verify recovery"
+
+
+def test_supervisor_result_rejects_an_incomplete_behavior_trace():
+    try:
+        store_module.ConsoleStore._validated_supervisor_result(
+            '{"evaluation":{"score":8,"approval":"pending","summary":"ok",'
+            '"behavior_trace":{"purpose":"Only one field"}},"improvements":[],"reported_issues":[]}'
+        )
+    except ValueError as error:
+        assert "behavior_trace" in str(error)
+    else:
+        raise AssertionError("incomplete behavior trace was accepted")
+
+
 def test_native_improvement_cycle_evidence_triggers_supervision():
     class RunRecord:
         step_results = [
@@ -839,9 +861,13 @@ def test_settings_save_and_select_multiple_profiles(tmp_path, monkeypatch):
 def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
     store = store_module.ConsoleStore()
-    expected_prompt = f"Operate with audit context.\n\n{store_module.MANAGER_PROMPT_SLOT}"
+    expected_prompt = (
+        f"Operate with audit context.\n\n{store_module.MANAGER_PROMPT_SLOT}\n\n"
+        f"{store_module.MANAGER_OUTPUT_LANGUAGE_SLOT}"
+    )
     assert store.save_application_settings({"manager_prompt_template": "Operate with audit context."}) == {
         "manager_prompt_template": expected_prompt,
+        "manager_output_locale": "en",
         "chat_model_profile_name": "",
         "assistant_tools": {
             "workspace_root": str(store_module.ROOT),
@@ -889,3 +915,47 @@ def test_application_manager_prompt_has_a_safe_default(tmp_path, monkeypatch):
         "approval-first operations manager"
         in store_module.ConsoleStore().application_settings()["manager_prompt_template"]
     )
+
+
+def test_exact_legacy_manager_prompt_is_migrated_but_custom_prompt_is_preserved(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {
+                "application_settings": {
+                    "manager_prompt_template": store_module.LEGACY_OPERATIONAL_MANAGER_PROMPT
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        store_module.ConsoleStore().application_settings()["manager_prompt_template"]
+        == store_module.DEFAULT_OPERATIONAL_MANAGER_PROMPT
+    )
+    (tmp_path / "settings.json").write_text(
+        json.dumps(
+            {"application_settings": {"manager_prompt_template": "Custom\n__ORBIT_MANAGER_AI_PROMPT__"}}
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        store_module.ConsoleStore()
+        .application_settings()["manager_prompt_template"]
+        .startswith("Custom\n__ORBIT_MANAGER_AI_PROMPT__")
+    )
+
+
+def test_manager_output_language_is_injected_into_the_assembled_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    store = store_module.ConsoleStore()
+    store.save_application_settings({"manager_output_locale": "ja"})
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "prompt-templates.yaml").write_text(
+        "- id: manager-default-v1\n  name: Default\n  version: 1\n  content: Assess evidence.\n",
+        encoding="utf-8",
+    )
+    _, prompt = store._assembled_prompt({"manager_template_id": "manager-default-v1", "repository": "test"})
+    assert "configured application language (ja)" in prompt
+    assert store_module.MANAGER_OUTPUT_LANGUAGE_SLOT not in prompt

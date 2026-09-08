@@ -851,6 +851,7 @@ def application_settings():
 
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
+    manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
     assistant_tools: dict | None = None
 

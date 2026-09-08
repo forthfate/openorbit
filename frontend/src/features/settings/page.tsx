@@ -11,6 +11,7 @@ import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
+  manager_output_locale: string;
   chat_model_profile_name: string;
 };
 
@@ -68,9 +69,14 @@ export function SettingsPage({
       .then((values) => {
         setPrompt(values.manager_prompt_template);
         setChatProfile(values.chat_model_profile_name);
+        if (values.manager_output_locale !== locale) {
+          return api<ApplicationSettings>("/api/application-settings", "PUT", {
+            manager_output_locale: locale,
+          });
+        }
       })
       .catch(() => pushToast("Unable to load operational prompt."));
-  }, [pushToast]);
+  }, [locale, pushToast]);
   const saveApplication = () =>
     api<ApplicationSettings>("/api/application-settings", "PUT", {
       manager_prompt_template: prompt,
@@ -94,6 +100,12 @@ export function SettingsPage({
       })
       .catch((error) => pushToast(error.message));
   const saveProfile = () => save().then(() => setProfileOpen(false));
+  const setLanguage = (nextLocale: Locale) => {
+    setLocale(nextLocale);
+    api<ApplicationSettings>("/api/application-settings", "PUT", {
+      manager_output_locale: nextLocale,
+    }).catch((error) => pushToast(error.message));
+  };
   return (
     <>
       <section className="panel app-settings">
@@ -105,7 +117,7 @@ export function SettingsPage({
           </span>
           <select
             value={locale}
-            onChange={(event) => setLocale(event.target.value as Locale)}
+            onChange={(event) => setLanguage(event.target.value as Locale)}
           >
               {localeOptions.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
           </select>
