@@ -94,6 +94,16 @@
         "saveChatProfile": "Save",
         "chatProfileSaved": "System AI model saved."
       },
+      "storage": {
+        "title": "Application data",
+        "description": "Choose the local directory used for Orbit state and evidence. Existing data is not moved automatically.",
+        "location": "Storage location",
+        "locationHint": "Use an absolute local path. Stop active evaluations before changing it.",
+        "size": "Storage used",
+        "calculating": "Calculating storage size...",
+        "save": "Apply location",
+        "saved": "Application data location updated."
+      },
       "profileForm": {
         "profileName": {
           "label": "Profile name",

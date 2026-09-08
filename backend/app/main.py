@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from . import store as store_module
 from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
@@ -854,6 +855,40 @@ class ApplicationSettingsUpdate(BaseModel):
     manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
     assistant_tools: dict | None = None
+
+
+class ApplicationDataLocationUpdate(BaseModel):
+    path: str = Field(min_length=1, max_length=4_096)
+
+
+def application_data_summary() -> dict[str, object]:
+    root = store_module.APP_DATA
+    total = 0
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return {"path": str(root), "size_bytes": total}
+
+
+@app.get("/api/application-data")
+def application_data():
+    return application_data_summary()
+
+
+@app.put("/api/application-data")
+def update_application_data(values: ApplicationDataLocationUpdate):
+    global store
+    if any(run.status in {"queued", "running", "awaiting_approval"} for run in store.runs()):
+        raise ValueError("Stop active evaluation runs before changing the app data location")
+    store_module.configure_application_data(values.path)
+    store = ConsoleStore()
+    return application_data_summary()
 
 
 @app.put("/api/application-settings")

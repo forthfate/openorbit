@@ -380,6 +380,15 @@ export function EvaluationsPage({
     Number(modeFilter !== "all") +
     Number(Boolean(phaseFilter)) +
     Number(activeOnly);
+  const resultAppliedFilterCount =
+    Number(resultIterationFilter !== "all") +
+    Number(resultDecisions.size !== 4) +
+    Number(resultScoreBucket !== "all") +
+    Number(resultContent !== "all") +
+    Number(resultAttemptFilter !== "all") +
+    Number(resultImprovementStatus !== "all") +
+    Number(resultIssueSeverity !== "all") +
+    Number(resultIssueStatus !== "all");
   const totalPages = Math.max(1, Math.ceil(filteredRuns.length / pageSize)),
     currentPage = Math.min(page, totalPages),
     pagedRuns = filteredRuns.slice((currentPage - 1) * pageSize, currentPage * pageSize),
@@ -509,11 +518,13 @@ export function EvaluationsPage({
   columns.splice(4, 0, {
     id: "iteration",
     header: l.iteration,
-    render: (r) =>
-      Math.max(
+    render: (r) => {
+      const current = Math.max(
         0,
         ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
-      ) || "—",
+      );
+      return current ? `${current}/${r.loop_limit ?? current}` : "—";
+    },
   });
   const steps = selected?.step_results ?? [],
     // `finalize` is bookkeeping after the last evaluation loop.  It must not
@@ -703,7 +714,7 @@ export function EvaluationsPage({
         >
           <ListFilter size={15} />
           {ui.filter}
-          {appliedFilterCount > 0 && <span>{appliedFilterCount}</span>}
+          {appliedFilterCount > 0 && <span className="nav-run-count">{appliedFilterCount}</span>}
         </button>
         <PageSizeSelect locale={locale} value={pageSize} onChange={value=>{setPageSize(value);setPage(1)}}/>
         {filtersOpen && (
@@ -1038,6 +1049,7 @@ export function EvaluationsPage({
                 >
                   <ListFilter size={15} />
                   {l.filter}
+                  {resultAppliedFilterCount > 0 && <span className="nav-run-count">{resultAppliedFilterCount}</span>}
                 </button>
                 {resultTranslationIds.length > 0 && (
                   <button

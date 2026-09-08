@@ -31,11 +31,29 @@ from .remote import RemoteInvocation
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _application_data_pointer() -> Path:
+    """Keep an operator-selected data location outside the data it points to."""
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Preferences" / "Orbit"
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "orbit"
+    return root / "app-data-path"
+
+
 def _application_data_dir() -> Path:
     """Return Orbit's writable per-user state directory on every platform."""
     override = os.environ.get("ORBIT_APP_DATA")
     if override:
         return Path(override).expanduser()
+    pointer = _application_data_pointer()
+    try:
+        selected = pointer.read_text(encoding="utf-8").strip()
+    except OSError:
+        selected = ""
+    if selected:
+        return Path(selected).expanduser()
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
     if sys.platform == "darwin":
@@ -626,6 +644,42 @@ RUNNER_TEMPLATES = APP_DATA / "runner-templates"
 QUICK_STARTS = APP_DATA / "quick-starts"
 QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
 TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
+
+
+def configure_application_data(path: str) -> Path:
+    """Switch the local state root and retain it for later application starts."""
+    requested = Path(path.strip()).expanduser()
+    if not requested.is_absolute():
+        raise ValueError("app data location must be an absolute path")
+    target = requested.resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    pointer = _application_data_pointer()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    temporary = pointer.with_suffix(".tmp")
+    temporary.write_text(str(target), encoding="utf-8")
+    temporary.replace(pointer)
+    os.environ["ORBIT_APP_DATA"] = str(target)
+
+    global APP_DATA, CONFIG, TARGET_TEST_CASE_SETS, EXECUTION_ENVIRONMENTS, TARGET_ENVIRONMENTS
+    global CYCLE_INTERVENTIONS, DATA, RUNS, TELEMETRY, SETTINGS, TOOL_TIMES, RUNNERS
+    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS
+    APP_DATA = target
+    CONFIG = APP_DATA / "config"
+    TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
+    EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
+    TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+    CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
+    DATA = APP_DATA / "data"
+    RUNS = DATA / "runs"
+    TELEMETRY = DATA / "telemetry.jsonl"
+    SETTINGS = DATA / "settings.json"
+    TOOL_TIMES = DATA / "tool-times.json"
+    RUNNERS = APP_DATA / "runners"
+    RUNNER_TEMPLATES = APP_DATA / "runner-templates"
+    QUICK_STARTS = APP_DATA / "quick-starts"
+    QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
+    TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
+    return APP_DATA
 
 
 def now() -> datetime:
@@ -1900,6 +1954,7 @@ if __name__ == "__main__":
             "name": str(values["name"]).strip(),
             "description": str(values["description"]).strip(),
             "template_id": str(values.get("template_id", "custom")),
+            "created_at": str(values.get("created_at") or now().isoformat()),
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
@@ -2138,6 +2193,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2153,6 +2209,7 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
@@ -2170,6 +2227,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2186,6 +2244,7 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
@@ -2309,6 +2368,7 @@ if __name__ == "__main__":
             raise ValueError("target-AI test case set ID is required and must be unique")
         sets = self.target_test_case_sets()
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = now().isoformat()
         sets.append(test_set)
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2321,6 +2381,7 @@ if __name__ == "__main__":
         if index is None:
             raise KeyError(set_id)
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = sets[index].get("created_at", now().isoformat())
         sets[index] = test_set
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2363,12 +2424,15 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": versions,
+            "created_at": current.get("created_at", now().isoformat()),
         }
         templates[index] = template
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
         temporary.replace(CONFIG / "prompt-templates.yaml")
-        return template
+        # Preserve the established update response shape; the persisted value
+        # is exposed by the subsequent catalog refresh.
+        return {key: value for key, value in template.items() if key != "created_at"}
 
     def create_prompt_template(self, values: dict[str, Any]) -> dict[str, Any]:
         template_id = str(values["id"])
@@ -2407,6 +2471,7 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": [{"version": version, "content": content}],
+            "created_at": now().isoformat(),
         }
         templates.append(template)
         temporary = CONFIG / "prompt-templates.tmp"
@@ -3509,6 +3574,8 @@ if __name__ == "__main__":
             if isinstance(item, dict) and item.get("profile_name", "").strip():
                 profile = dict(default)
                 profile.update({key: str(value) for key, value in item.items() if key in default})
+                if item.get("created_at"):
+                    profile["created_at"] = str(item["created_at"])
                 profiles.append(profile)
         return profiles or [default]
 
@@ -3588,8 +3655,12 @@ if __name__ == "__main__":
         stored["profile_name"] = stored.get("profile_name", "").strip()
         if not stored["profile_name"]:
             raise ValueError("프로필 이름을 입력해야 합니다.")
+        existing_profile = next(
+            (item for item in self.profiles() if item["profile_name"] == stored["profile_name"]), None
+        )
         profile = dict(self._default_settings())
         profile.update(stored)
+        profile["created_at"] = (existing_profile or {}).get("created_at", now().isoformat())
         profiles = self.profiles() if SETTINGS.exists() else []
         profiles = [item for item in profiles if item["profile_name"] != profile["profile_name"]]
         profiles.append(profile)

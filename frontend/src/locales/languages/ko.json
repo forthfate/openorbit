@@ -93,6 +93,16 @@
         "saveChatProfile": "저장",
         "chatProfileSaved": "시스템 AI 모델을 저장했습니다."
       },
+      "storage": {
+        "title": "앱 데이터",
+        "description": "Orbit 상태와 증거를 저장할 로컬 디렉터리를 선택합니다. 기존 데이터는 자동으로 이동하지 않습니다.",
+        "location": "저장소 위치",
+        "locationHint": "절대 로컬 경로를 입력하세요. 변경 전에는 실행 중인 평가를 중지해야 합니다.",
+        "size": "사용 중인 저장소",
+        "calculating": "저장소 용량 계산중...",
+        "save": "위치 적용",
+        "saved": "앱 데이터 저장소 위치를 변경했습니다."
+      },
       "profileForm": {
         "profileName": {
           "label": "프로필 이름",

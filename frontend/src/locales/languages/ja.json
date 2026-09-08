@@ -93,6 +93,16 @@
         "saveChatProfile": "保存",
         "chatProfileSaved": "システムAIモデルを保存しました。"
       },
+      "storage": {
+        "title": "アプリデータ",
+        "description": "Orbit の状態と証跡を保存するローカルディレクトリを選択します。既存データは自動移動されません。",
+        "location": "保存先",
+        "locationHint": "絶対ローカルパスを入力してください。変更前に実行中の評価を停止してください。",
+        "size": "使用中の保存領域",
+        "calculating": "保存領域を計算中...",
+        "save": "場所を適用",
+        "saved": "アプリデータの保存先を更新しました。"
+      },
       "profileForm": {
         "profileName": {
           "label": "プロファイル名",
