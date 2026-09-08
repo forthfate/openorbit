@@ -93,9 +93,11 @@ work with the same local operating data through OpenOrbit's versioned API.
 ## Build with us
 
 We are looking for thoughtful collaborators who share our belief that AI
-systems should be observable, controllable, and continuously improved. Start a
-fork, open a small issue, improve the docs, or help shape a larger idea—every
-contribution is welcome.
+systems should be observable, controllable, and continuously improved.
+Contributions are especially welcome from people working on agent harnesses,
+browser evaluation (including Playwright), local automation, and evidence-backed
+operational loops. Start a fork, open a small issue, improve the docs, or help
+shape a larger idea—every contribution is welcome.
 
 New to the project? Browse [good first issues](https://github.com/forthfate/openorbit/labels/good%20first%20issue),
 ask a question or share an idea in [Issues](https://github.com/forthfate/openorbit/issues),
