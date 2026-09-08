@@ -176,6 +176,11 @@ def prompt_revisions(run_id: str):
     return safely(lambda: store.prompt_revisions(run_id))
 
 
+@app.get("/api/runs/{run_id}/commit-changes")
+def commit_changes(run_id: str):
+    return safely(lambda: store.commit_changes(run_id))
+
+
 @app.get("/api/dashboard")
 def dashboard():
     return store.dashboard()

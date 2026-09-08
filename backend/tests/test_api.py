@@ -105,6 +105,44 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
     assert revisions[2]["after"] == "after\n"
 
 
+def test_commit_changes_returns_sdk_commit_range(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    store._save(
+        Run(
+            id="commit-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            step_results=[
+                {
+                    "phase": "run",
+                    "loop_index": 2,
+                    "ended_at": timestamp.isoformat(),
+                    "result": {
+                        "commit_change": {
+                            "before": "a" * 40,
+                            "after": "b" * 40,
+                            "changed_paths": ["src/agent.py"],
+                            "commits": [{"sha": "b" * 40, "subject": "Improve agent"}],
+                            "diff_artifact": {"relative_path": "commits/a..b.patch"},
+                        }
+                    },
+                }
+            ],
+        )
+    )
+
+    changes = store.commit_changes("commit-run")
+
+    assert changes[0]["before"] == "a" * 40
+    assert changes[0]["commits"][0]["subject"] == "Improve agent"
+    assert changes[0]["changed_paths"] == ["src/agent.py"]
+
+
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
 def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypatch, terminal_status):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")

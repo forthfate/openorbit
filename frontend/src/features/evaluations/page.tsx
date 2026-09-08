@@ -2,6 +2,7 @@ import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilt
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
+  CommitChange,
   PromptRevision,
   RunStepResult,
   RunTelemetry,
@@ -451,6 +452,37 @@ function PromptChanges({
   );
 }
 
+function CommitChanges({ changes, l }: { changes: CommitChange[]; l: (typeof copy)["en"] }) {
+  if (!changes.length) return <p className="hint">{l.noCommitChanges}</p>;
+  return (
+    <div className="commit-changes">
+      {changes.map((change) => (
+        <section key={`${change.before}:${change.after}:${change.iteration ?? ""}`}>
+          <div className="commit-changes__head">
+            <strong>{change.before.slice(0, 12)} → {change.after.slice(0, 12)}</strong>
+            <small>{l.iteration} #{change.iteration ?? "—"} · {change.phase ?? "—"}</small>
+          </div>
+          {change.commits.length > 0 && (
+            <div className="commit-changes__group">
+              <small>{l.commits}</small>
+              <ul>
+                {change.commits.map((commit) => <li key={commit.sha}><code>{commit.sha.slice(0, 12)}</code><span>{commit.subject}</span></li>)}
+              </ul>
+            </div>
+          )}
+          <div className="commit-changes__group">
+            <small>{l.changedFiles}</small>
+            {change.changed_paths.length > 0 ? (
+              <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul>
+            ) : <p className="hint">{l.noChangedFiles}</p>}
+          </div>
+          {change.diff_artifact?.relative_path && <p className="commit-changes__artifact">{l.diffArtifact}: <code>{change.diff_artifact.relative_path}</code></p>}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function PromptDiff({ before, after }: { before: string; after: string }) {
   const beforeLines = before.split("\n"), afterLines = after.split("\n");
   let prefix = 0;
@@ -529,13 +561,14 @@ export function EvaluationsPage({
     l = copy[locale],
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
-    [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "prompt" | "result">(
+    [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "prompt" | "commits" | "result">(
       "result",
     ),
     [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
     [iterationTab, setIterationTab] = useState(1),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
     [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
+    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -654,6 +687,12 @@ export function EvaluationsPage({
       api<RunTelemetry>(`/api/runs/${selected.id}/telemetry`)
         .then(setTelemetry)
         .catch(() => setTelemetry({ spans: [] }));
+  }, [selected]);
+  useEffect(() => {
+    if (!selected) return;
+    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
+      .then(setCommitChanges)
+      .catch(() => setCommitChanges([]));
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
@@ -1276,6 +1315,12 @@ export function EvaluationsPage({
               {l.promptChanges}
             </button>
             <button
+              className={tab === "commits" ? "active" : ""}
+              onClick={() => setTab("commits")}
+            >
+              {l.commitChanges}
+            </button>
+            <button
               className={tab === "supervisor" ? "active" : ""}
               onClick={() => setTab("supervisor")}
             >
@@ -1362,6 +1407,7 @@ export function EvaluationsPage({
           {tab === "prompt" && (
             <PromptChanges key={selected.id} revisions={promptRevisions} l={l} />
           )}{" "}
+          {tab === "commits" && <CommitChanges changes={commitChanges} l={l} />}{" "}
           {tab === "supervisor" && (
             <>
               {supervisorTranslationId && (

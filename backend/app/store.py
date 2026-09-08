@@ -2915,6 +2915,36 @@ if __name__ == "__main__":
                 current_by_path[path] = after
         return [*initial_revisions, *ordered]
 
+    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
+        """Return commit ranges automatically retained by SDK runner phases."""
+        run = self._load(run_id)
+        changes: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            event = result.get("commit_change") if isinstance(result, dict) else None
+            if not isinstance(event, dict):
+                continue
+            before, after = str(event.get("before") or ""), str(event.get("after") or "")
+            if not before or not after or before == after:
+                continue
+            changes.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "recorded_at": step.get("ended_at"),
+                    "before": before,
+                    "after": after,
+                    "changed_paths": event.get("changed_paths")
+                    if isinstance(event.get("changed_paths"), list)
+                    else [],
+                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
+                    "diff_artifact": event.get("diff_artifact")
+                    if isinstance(event.get("diff_artifact"), dict)
+                    else None,
+                }
+            )
+        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
+
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
         run = self._load(run_id)
