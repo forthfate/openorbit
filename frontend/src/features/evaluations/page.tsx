@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
@@ -96,6 +96,7 @@ function LineNumberedOutput({ value }: { value: string }) {
 export function EvaluationsPage({
   runs,
   onStop,
+  onRetry,
   onApprove,
   onReject,
   onEmergencyStop,
@@ -106,6 +107,7 @@ export function EvaluationsPage({
 }: {
   runs: Run[];
   onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onEmergencyStop: () => void;
@@ -168,7 +170,9 @@ export function EvaluationsPage({
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
-    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
+  const retryCopy = locale === "ko" ? { title: "평가 실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "評価実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry evaluation run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
   const selected = initialSelectedRun ?? selectedInternal;
   const supervisorTranslationIds = useMemo(
     () =>
@@ -498,6 +502,11 @@ export function EvaluationsPage({
                 <X size={16} />
               </button>
             </>
+          )}
+          {["failed", "cancelled"].includes(r.status) && r.execution_type === "pipeline" && (
+            <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} onClick={(event) => { event.stopPropagation(); setRetryingRun(r); }}>
+              <RotateCcw size={16} />
+            </button>
           )}
           <button
             className="icon-button danger"
@@ -1233,6 +1242,16 @@ export function EvaluationsPage({
           )}
         </Modal>
       )}
+      <Modal open={Boolean(retryingRun)} title={retryCopy.title} onClose={() => setRetryingRun(null)} className="modal--confirm">
+        <div className="modal-form retry-confirmation">
+          <p className="confirm-description">{retryCopy.warning}</p>
+          <div className="modal-actions">
+            <button className="ghost" onClick={() => setRetryingRun(null)}>{retryCopy.cancel}</button>
+            <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{retryCopy.resume}</button>
+            <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{retryCopy.restart}</button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

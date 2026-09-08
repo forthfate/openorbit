@@ -986,6 +986,7 @@ export function EvaluationBuildsPage(props: {
           initialSelectedRun={testRun}
           onSelectedRunClose={closeTest}
           onStop={() => undefined}
+          onRetry={() => undefined}
           onApprove={() => undefined}
           onReject={() => undefined}
           onEmergencyStop={() => undefined}

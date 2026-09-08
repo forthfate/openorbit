@@ -3505,6 +3505,9 @@ if __name__ == "__main__":
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
         loop_limit: int = 1,
+        start_iteration: int = 1,
+        retry_of_run_id: str | None = None,
+        retry_mode: str | None = None,
         repeat_interval_minutes: int = 0,
         approval_score: int | None = None,
         iteration_strategy: str = "linear",
@@ -3529,6 +3532,9 @@ if __name__ == "__main__":
             execution_mode=execution_mode,
             execution_type="pipeline",
             loop_limit=max(1, loop_limit),
+            start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
+            retry_of_run_id=retry_of_run_id,
+            retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
             repeat_interval_minutes=max(0, repeat_interval_minutes),
             approval_score=approval_score,
             iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
@@ -3780,11 +3786,12 @@ if __name__ == "__main__":
             loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
             teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
-            for step in init:
-                self._execute_step(run_id, step, 0, resources)
-                if self._load(run_id).status in {"failed", "cancelled"}:
-                    break
-            for loop_index in range(1, run.loop_limit + 1):
+            if run.start_iteration == 1 and run.retry_mode != "resume":
+                for step in init:
+                    self._execute_step(run_id, step, 0, resources)
+                    if self._load(run_id).status in {"failed", "cancelled"}:
+                        break
+            for loop_index in range(run.start_iteration, run.loop_limit + 1):
                 run = self._load(run_id)
                 candidate_ids = (
                     (
@@ -4471,6 +4478,37 @@ if __name__ == "__main__":
         )
         self._save(run)
         return run
+
+    def retry(self, run_id: str, restart_from_first: bool) -> Run:
+        run = self._load(run_id)
+        if run.execution_type != "pipeline" or run.status not in {"failed", "cancelled"}:
+            raise ValueError("Only failed or cancelled pipeline runs can be retried")
+        latest_iteration = max(
+            (
+                int(item.get("loop_index", 0))
+                for item in run.step_results
+                if int(item.get("loop_index", 0)) > 0
+            ),
+            default=1,
+        )
+        return self.create_run(
+            run.workflow_id,
+            execution_mode=run.execution_mode,
+            evaluation_build_id=run.evaluation_build_id,
+            evaluation_build_name=run.evaluation_build_name,
+            supervisor_profile_name=run.supervisor_profile_name,
+            prompt_source=run.prompt_source,
+            prompt_snapshot=run.prompt_snapshot,
+            loop_limit=run.loop_limit,
+            start_iteration=1 if restart_from_first else min(latest_iteration, run.loop_limit),
+            repeat_interval_minutes=run.repeat_interval_minutes,
+            approval_score=run.approval_score,
+            iteration_strategy=run.iteration_strategy,
+            candidates_per_iteration=run.candidates_per_iteration,
+            repository=run.repository,
+            retry_of_run_id=run.id,
+            retry_mode="restart" if restart_from_first else "resume",
+        )
 
     def emergency_stop(self) -> list[Run]:
         stopped = []

@@ -102,6 +102,13 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
+  const retryRun = (id: string, restartFromFirst: boolean) =>
+    api(`/api/runs/${id}/retry`, "POST", { restart_from_first: restartFromFirst })
+      .then(() => {
+        room.setNotice("Evaluation retry started.", "warning");
+        room.refresh();
+      })
+      .catch((e) => room.setNotice(e.message));
   const deleteRuns = (ids: string[]) =>
     Promise.all(
       ids.map((id) => api(`/api/runs/${encodeURIComponent(id)}`, "DELETE")),
@@ -290,6 +297,7 @@ export default function App() {
         locale={locale}
         runs={room.runs}
         onStop={stopRun}
+        onRetry={retryRun}
         onApprove={approveRun}
         onReject={rejectRun}
         onEmergencyStop={() => setConfirmingEmergencyStop(true)}

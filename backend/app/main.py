@@ -861,6 +861,10 @@ class ApplicationDataLocationUpdate(BaseModel):
     path: str = Field(min_length=1, max_length=4_096)
 
 
+class RetryRunRequest(BaseModel):
+    restart_from_first: bool = False
+
+
 def application_data_summary() -> dict[str, object]:
     root = store_module.APP_DATA
     total = 0
@@ -1238,6 +1242,11 @@ def reject(run_id: str):
 @app.post("/api/runs/{run_id}/cancel")
 def cancel(run_id: str):
     return safely(lambda: store.cancel(run_id))
+
+
+@app.post("/api/runs/{run_id}/retry")
+def retry(run_id: str, values: RetryRunRequest):
+    return safely(lambda: store.retry(run_id, values.restart_from_first))
 
 
 @app.post("/api/runs/emergency-stop")
