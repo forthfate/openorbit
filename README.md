@@ -6,6 +6,13 @@ OpenOrbit does not use AI merely to automate work. It automates the operating cy
 
 Run the control room locally, keep the operational record in your own AppData, and decide which changes deserve approval.
 
+## See OpenOrbit in action
+
+Start with a Quick Start, watch the evaluation loop take shape, and review
+evidence-backed improvements in one place.
+
+![OpenOrbit dashboard opening the Agent self-improvement Quick Start](docs/images/openorbit-quick-start.gif)
+
 ## Why OpenOrbit?
 
 An AI feature can look healthy in a demo and still regress after a prompt, model, tool, or product change. OpenOrbit gives that feature a repeatable operating loop rather than a one-off test:
@@ -40,24 +47,16 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | **Evaluation run detail** | What happened in each phase, and what evidence supports the result? |
 | **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
 
-The screenshots below follow a customer-support AI through recurring quality
-evaluation, an evidence-backed failed handoff, and a proposed improvement.
+The screenshots below follow a customer-support AI through its retained
+evaluation evidence and improvement cycle.
 
-### Monitor a healthy AI system
+### See what the evaluated AI actually did
 
-Start with the operating picture: completed evaluations, active work, errors,
-and the latest supervisor feedback. This lets an operator spot a regression
-before opening an individual run.
+Open a retained run to review the behavior observed from the evaluated AI at
+each iteration. Then compare that behavior with the proposed improvement and
+the evidence supporting it.
 
-![OpenOrbit dashboard showing successful evaluations, zero errors, and supervisor feedback](docs/images/dashboard-healthy.png)
-
-### Review a successful evaluation result
-
-Open a retained run to see the supervisor score and decision beside the
-improvements and issues supported by that evaluation. Every proposal remains
-connected to the iteration that produced it.
-
-![OpenOrbit evaluation-run detail with a completed result, approved decision, and adopted improvement](docs/images/evaluation-result-approved.png)
+![OpenOrbit Evaluation result showing observed target-AI behavior across two iterations and an adopted prompt improvement](docs/images/evaluation-result-approved.png)
 
 ### Review evidence across the improvement cycle
 
