@@ -484,9 +484,21 @@
       "running": "Running"
     },
     "quickStartLabels": {
+      "openorbit.user-journey-smoke-test": {
+        "name": "User journey smoke test",
+        "description": "Create a browser-based smoke test. Requires a running app and Playwright browser."
+      },
       "openorbit.site-exploration-review": {
         "name": "Site exploration review",
         "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph."
+      },
+      "openorbit.agent-self-improvement": {
+        "name": "Agent self-improvement",
+        "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile."
+      },
+      "openorbit.ai-slo-drift-monitor": {
+        "name": "AI SLO and behavior drift monitor",
+        "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions."
       }
     },
     "evaluations": {

@@ -483,9 +483,21 @@
       "running": "실행 중"
     },
     "quickStartLabels": {
+      "openorbit.user-journey-smoke-test": {
+        "name": "사용자 여정 스모크 테스트",
+        "description": "브라우저 기반 스모크 테스트를 만듭니다. 실행 중인 앱과 Playwright 브라우저가 필요합니다."
+      },
       "openorbit.site-exploration-review": {
         "name": "사이트 탐색 검토",
         "description": "안전한 링크로 사이트를 탐색하고 근거 기반 제품 피드백을 남깁니다. 실행 중인 앱, Playwright 브라우저, LangGraph가 필요합니다."
+      },
+      "openorbit.agent-self-improvement": {
+        "name": "에이전트 자체 개선",
+        "description": "실제 대상 AI의 보존된 응답을 바탕으로 관리 프롬프트를 개선합니다. Git 저장소, 프롬프트 파일, 구성된 모델 프로필이 필요합니다."
+      },
+      "openorbit.ai-slo-drift-monitor": {
+        "name": "AI SLO 및 행동 변화 모니터",
+        "description": "고정 기준선에 따라 AI 품질, 안전성, 지연 시간, 비용을 반복 평가합니다. 기존 구조화된 AI 평가기를 연결하면 OpenOrbit이 근거, 감독, 개선 결정을 보존합니다."
       }
     },
     "evaluations": {
