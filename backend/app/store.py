@@ -22,6 +22,7 @@ import yaml
 
 from orbit import load_bundle
 
+from .assistant_tools import normalize_settings as normalize_assistant_tools
 from .models import Run, Step, Workflow
 from .observability import configure_telemetry
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
@@ -3181,12 +3182,13 @@ if __name__ == "__main__":
                 active = str(stored.get("active_profile", ""))
         return next((profile for profile in profiles if profile["profile_name"] == active), profiles[0])
 
-    def application_settings(self) -> dict[str, str]:
+    def application_settings(self) -> dict[str, Any]:
         """Settings for operating this console, separate from build assets."""
         if not SETTINGS.exists():
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "chat_model_profile_name": "",
+                "assistant_tools": normalize_assistant_tools(None),
             }
         stored = json.loads(SETTINGS.read_text(encoding="utf-8"))
         values = stored.get("application_settings", {}) if isinstance(stored, dict) else {}
@@ -3194,6 +3196,7 @@ if __name__ == "__main__":
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "chat_model_profile_name": "",
+                "assistant_tools": normalize_assistant_tools(None),
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
         if MANAGER_PROMPT_SLOT not in prompt:
@@ -3201,10 +3204,14 @@ if __name__ == "__main__":
         return {
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),
+            "assistant_tools": normalize_assistant_tools(values.get("assistant_tools")),
         }
 
-    def save_application_settings(self, values: dict[str, str]) -> dict[str, str]:
-        chat_profile_name = str(values.get("chat_model_profile_name", "")).strip()
+    def save_application_settings(self, values: dict[str, Any]) -> dict[str, Any]:
+        current = self.application_settings()
+        chat_profile_name = str(
+            values.get("chat_model_profile_name", current["chat_model_profile_name"])
+        ).strip()
         if chat_profile_name and not any(
             item["profile_name"] == chat_profile_name for item in self.profiles()
         ):
@@ -3212,8 +3219,13 @@ if __name__ == "__main__":
         stored = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
         document = stored if isinstance(stored, dict) else {}
         document["application_settings"] = {
-            "manager_prompt_template": str(values.get("manager_prompt_template", "")).strip(),
+            "manager_prompt_template": str(
+                values.get("manager_prompt_template", current["manager_prompt_template"])
+            ).strip(),
             "chat_model_profile_name": chat_profile_name,
+            "assistant_tools": normalize_assistant_tools(
+                values.get("assistant_tools", current["assistant_tools"])
+            ),
         }
         temporary = SETTINGS.with_suffix(".tmp")
         temporary.write_text(json.dumps(document, indent=2), encoding="utf-8")

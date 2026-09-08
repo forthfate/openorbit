@@ -583,6 +583,14 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
     assert store.save_application_settings({"manager_prompt_template": "Operate with audit context."}) == {
         "manager_prompt_template": expected_prompt,
         "chat_model_profile_name": "",
+        "assistant_tools": {
+            "workspace_root": str(store_module.ROOT),
+            "file_read_enabled": True,
+            "file_search_enabled": True,
+            "run_process_enabled": True,
+            "terminal_enabled": True,
+            "terminal_visible": True,
+        },
     }
     store.save_settings(
         {

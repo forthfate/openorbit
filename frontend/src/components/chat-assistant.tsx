@@ -1,43 +1,501 @@
-import { Bot, Send, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { localeMessages, resolveLocale } from '../locales'
-import { api } from '../services/api'
+import {
+  Bot,
+  MessageCircle,
+  Send,
+  Settings,
+  SquareTerminal,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { localeMessages, resolveLocale } from "../locales";
+import { api } from "../services/api";
+import { AssistantTerminal } from "./assistant-terminal";
 
-type Message={role:'user'|'assistant';content:string}
-type Position={x:number;y:number}
-type DragTarget='launcher'|'window'
-type ChatAssistantCopy={open:string;title:string;collapse:string;empty:string;requestFailed:string;thinking:string;message:string;placeholder:string;send:string}
-const positionKey='orbit.chat.position'
-const windowPositionKey='orbit.chat.window.position'
+type Message = { role: "user" | "assistant"; content: string };
+type Position = { x: number; y: number };
+type DragTarget = "launcher" | "window";
+type ToolSettings = {
+  workspace_root: string;
+  file_read_enabled: boolean;
+  file_search_enabled: boolean;
+  run_process_enabled: boolean;
+  terminal_enabled: boolean;
+  terminal_visible: boolean;
+};
+type ApplicationSettings = { assistant_tools: ToolSettings };
+type ChatAssistantCopy = {
+  open: string;
+  title: string;
+  collapse: string;
+  settings: string;
+  terminal: string;
+  chat: string;
+  toolsAvailable: string;
+  noToolsAvailable: string;
+  workspace: string;
+  fileRead: string;
+  fileSearch: string;
+  runProcess: string;
+  terminalVisible: string;
+  saveTools: string;
+  empty: string;
+  requestFailed: string;
+  thinking: string;
+  message: string;
+  placeholder: string;
+  send: string;
+};
+const positionKey = "orbit.chat.position";
+const windowPositionKey = "orbit.chat.window.position";
+const defaultToolSettings: ToolSettings = {
+  workspace_root: "",
+  file_read_enabled: true,
+  file_search_enabled: true,
+  run_process_enabled: true,
+  terminal_enabled: true,
+  terminal_visible: true,
+};
+const normalizedToolSettings = (
+  value: Partial<ToolSettings> | undefined,
+): ToolSettings => ({
+  ...defaultToolSettings,
+  ...value,
+  workspace_root:
+    typeof value?.workspace_root === "string" ? value.workspace_root : "",
+});
 
-const initialPosition=():Position=>{
-  const saved=localStorage.getItem(positionKey)
-  if(saved){try{const position=JSON.parse(saved) as Position;if(Number.isFinite(position.x)&&Number.isFinite(position.y))return {x:Math.min(Math.max(12,position.x),Math.max(12,window.innerWidth-60)),y:Math.min(Math.max(12,position.y),Math.max(12,window.innerHeight-60))}}catch{/* use default */}}
-  return {x:Math.max(16,window.innerWidth-72),y:Math.max(16,window.innerHeight-72)}
-}
+const initialPosition = (): Position => {
+  const saved = localStorage.getItem(positionKey);
+  if (saved) {
+    try {
+      const position = JSON.parse(saved) as Position;
+      if (Number.isFinite(position.x) && Number.isFinite(position.y))
+        return {
+          x: Math.min(
+            Math.max(12, position.x),
+            Math.max(12, window.innerWidth - 60),
+          ),
+          y: Math.min(
+            Math.max(12, position.y),
+            Math.max(12, window.innerHeight - 60),
+          ),
+        };
+    } catch {
+      /* use default */
+    }
+  }
+  return {
+    x: Math.max(16, window.innerWidth - 72),
+    y: Math.max(16, window.innerHeight - 72),
+  };
+};
 
-const initialWindowPosition=():Position|null=>{
-  const saved=localStorage.getItem(windowPositionKey)
-  if(saved){try{const position=JSON.parse(saved) as Position;if(Number.isFinite(position.x)&&Number.isFinite(position.y))return position}catch{/* use default */}}
-  return null
-}
+const initialWindowPosition = (): Position | null => {
+  const saved = localStorage.getItem(windowPositionKey);
+  if (saved) {
+    try {
+      const position = JSON.parse(saved) as Position;
+      if (Number.isFinite(position.x) && Number.isFinite(position.y))
+        return position;
+    } catch {
+      /* use default */
+    }
+  }
+  return null;
+};
 
-export function ChatAssistant(){
-  const copy=localeMessages<ChatAssistantCopy>(resolveLocale(localStorage.getItem('orbit.locale')),'chatAssistant')
-  const [open,setOpen]=useState(false),[messages,setMessages]=useState<Message[]>([]),[draft,setDraft]=useState(''),[sending,setSending]=useState(false),[position,setPosition]=useState<Position>(initialPosition),[windowPosition,setWindowPosition]=useState<Position|null>(initialWindowPosition)
-  const drag=useRef<{target:DragTarget;startX:number;startY:number;x:number;y:number;moved:boolean}|null>(null)
-  const suppressClick=useRef(false)
-  const messageList=useRef<HTMLDivElement>(null)
-  const chatWindow=useRef<HTMLElement>(null)
-  useEffect(()=>{messageList.current?.scrollTo({top:messageList.current.scrollHeight})},[messages,sending])
-  useEffect(()=>{localStorage.setItem(positionKey,JSON.stringify(position))},[position])
-  useEffect(()=>{if(windowPosition)localStorage.setItem(windowPositionKey,JSON.stringify(windowPosition))},[windowPosition])
-  useEffect(()=>{const move=(event:PointerEvent)=>{const active=drag.current;if(!active)return;const size=active.target==='window'&&chatWindow.current?chatWindow.current.getBoundingClientRect():{width:60,height:60};const x=Math.min(Math.max(12,active.x+event.clientX-active.startX),Math.max(12,window.innerWidth-size.width-12)),y=Math.min(Math.max(12,active.y+event.clientY-active.startY),Math.max(12,window.innerHeight-size.height-12));if(Math.abs(event.clientX-active.startX)>4||Math.abs(event.clientY-active.startY)>4)active.moved=true;if(active.target==='window')setWindowPosition({x,y});else setPosition({x,y})};const end=()=>{if(drag.current?.moved)suppressClick.current=true;drag.current=null};window.addEventListener('pointermove',move);window.addEventListener('pointerup',end);return()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',end)}},[])
-  const send=async()=>{const content=draft.trim();if(!content||sending)return;const history=messages.slice(-12);setDraft('');setMessages(current=>[...current,{role:'user',content}]);setSending(true);try{const result=await api<{response:string}>('/api/chat','POST',{content,history});setMessages(current=>[...current,{role:'assistant',content:result.response}])}catch(error){setMessages(current=>[...current,{role:'assistant',content:error instanceof Error?error.message:copy.requestFailed}])}finally{setSending(false)}}
-  const defaultWindowPosition={x:Math.max(16,position.x-332),y:Math.max(16,position.y-512)}
-  if(!open)return <button className="chat-launcher" style={{left:position.x,top:position.y}} aria-label={copy.open} onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);drag.current={target:'launcher',startX:event.clientX,startY:event.clientY,x:position.x,y:position.y,moved:false}}} onClick={()=>{if(suppressClick.current){suppressClick.current=false;return}setWindowPosition(current=>current??defaultWindowPosition);setOpen(true)}}><Bot size={22}/></button>
-  const popupPosition=windowPosition??defaultWindowPosition
-  return <section ref={chatWindow} className="chat-assistant" style={{left:popupPosition.x,top:popupPosition.y,right:'auto',bottom:'auto'}} aria-label={copy.title}><header onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);drag.current={target:'window',startX:event.clientX,startY:event.clientY,x:popupPosition.x,y:popupPosition.y,moved:false}}}><div><Bot size={18}/><strong>{copy.title}</strong></div><button className="ghost" aria-label={copy.collapse} onPointerDown={event=>event.stopPropagation()} onClick={()=>setOpen(false)}><X size={18}/></button></header><div className="chat-messages" ref={messageList}>{messages.length===0&&<p className="chat-empty">{copy.empty}</p>}{messages.map((message,index)=><article key={index} className={`chat-message chat-message--${message.role}`}>{message.role==='assistant'?<ReactMarkdown remarkPlugins={[remarkGfm]} components={{a:props=><a {...props} target="_blank" rel="noreferrer"/>}}>{message.content}</ReactMarkdown>:message.content}</article>)}{sending&&<article className="chat-message chat-message--assistant">{copy.thinking}</article>}</div><form onSubmit={event=>{event.preventDefault();send()}}><textarea aria-label={copy.message} rows={2} placeholder={copy.placeholder} value={draft} onChange={event=>setDraft(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}}}/><button className="approve" type="submit" disabled={!draft.trim()||sending} aria-label={copy.send}><Send size={16}/></button></form></section>
+export function ChatAssistant() {
+  const copy = localeMessages<ChatAssistantCopy>(
+    resolveLocale(localStorage.getItem("orbit.locale")),
+    "chatAssistant",
+  );
+  const [open, setOpen] = useState(false),
+    [messages, setMessages] = useState<Message[]>([]),
+    [draft, setDraft] = useState(""),
+    [sending, setSending] = useState(false),
+    [position, setPosition] = useState<Position>(initialPosition),
+    [windowPosition, setWindowPosition] = useState<Position | null>(
+      initialWindowPosition,
+    ),
+    [settingsOpen, setSettingsOpen] = useState(false),
+    [settingsPosition, setSettingsPosition] = useState<Position>({
+      x: 0,
+      y: 0,
+    }),
+    [terminalMode, setTerminalMode] = useState(false),
+    [terminalStarted, setTerminalStarted] = useState(false),
+    [toolSettings, setToolSettings] =
+      useState<ToolSettings>(defaultToolSettings);
+  const drag = useRef<{
+    target: DragTarget;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  const messageList = useRef<HTMLDivElement>(null);
+  const chatWindow = useRef<HTMLElement>(null);
+  useEffect(() => {
+    messageList.current?.scrollTo({ top: messageList.current.scrollHeight });
+  }, [messages, sending]);
+  useEffect(() => {
+    localStorage.setItem(positionKey, JSON.stringify(position));
+  }, [position]);
+  useEffect(() => {
+    if (windowPosition)
+      localStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
+  }, [windowPosition]);
+  useEffect(() => {
+    if (open)
+      api<ApplicationSettings>("/api/application-settings")
+        .then((values) =>
+          setToolSettings(normalizedToolSettings(values.assistant_tools)),
+        )
+        .catch(() => undefined);
+  }, [open]);
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (
+        settingsOpen &&
+        !target.closest(".chat-tools-popover") &&
+        !target.closest(".chat-settings-button")
+      )
+        setSettingsOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [settingsOpen]);
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const active = drag.current;
+      if (!active) return;
+      const size =
+        active.target === "window" && chatWindow.current
+          ? chatWindow.current.getBoundingClientRect()
+          : { width: 60, height: 60 };
+      const x = Math.min(
+          Math.max(12, active.x + event.clientX - active.startX),
+          Math.max(12, window.innerWidth - size.width - 12),
+        ),
+        y = Math.min(
+          Math.max(12, active.y + event.clientY - active.startY),
+          Math.max(12, window.innerHeight - size.height - 12),
+        );
+      if (
+        Math.abs(event.clientX - active.startX) > 4 ||
+        Math.abs(event.clientY - active.startY) > 4
+      )
+        active.moved = true;
+      if (active.target === "window") setWindowPosition({ x, y });
+      else setPosition({ x, y });
+    };
+    const end = () => {
+      if (drag.current?.moved) suppressClick.current = true;
+      drag.current = null;
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+    };
+  }, []);
+  const send = async () => {
+    const content = draft.trim();
+    if (!content || sending) return;
+    const history = messages.slice(-12);
+    setDraft("");
+    setMessages((current) => [...current, { role: "user", content }]);
+    setSending(true);
+    try {
+      const result = await api<{ response: string }>("/api/chat", "POST", {
+        content,
+        history,
+      });
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", content: result.response },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: error instanceof Error ? error.message : copy.requestFailed,
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  };
+  const defaultWindowPosition = {
+    x: Math.max(16, position.x - 332),
+    y: Math.max(16, position.y - 512),
+  };
+  const enabledTools = [
+    [toolSettings.file_read_enabled, copy.fileRead],
+    [toolSettings.file_search_enabled, copy.fileSearch],
+    [toolSettings.run_process_enabled, copy.runProcess],
+  ]
+    .filter(([enabled]) => enabled)
+    .map(([, label]) => label);
+  const saveTools = () =>
+    api<ApplicationSettings>("/api/application-settings", "PUT", {
+      assistant_tools: toolSettings,
+    }).then((values) => {
+      const next = normalizedToolSettings(values.assistant_tools);
+      setToolSettings(next);
+      if (!next.terminal_visible) setTerminalMode(false);
+      setSettingsOpen(false);
+    });
+  if (!open)
+    return (
+      <button
+        className="chat-launcher"
+        style={{ left: position.x, top: position.y }}
+        aria-label={copy.open}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          drag.current = {
+            target: "launcher",
+            startX: event.clientX,
+            startY: event.clientY,
+            x: position.x,
+            y: position.y,
+            moved: false,
+          };
+        }}
+        onClick={() => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          setWindowPosition((current) => current ?? defaultWindowPosition);
+          setOpen(true);
+        }}
+      >
+        <Bot size={22} />
+      </button>
+    );
+  const popupPosition = windowPosition ?? defaultWindowPosition;
+  const toolsReady = Boolean(
+    toolSettings.workspace_root && enabledTools.length,
+  );
+  const toolSummary = toolsReady
+    ? `${copy.toolsAvailable}: ${enabledTools.join(", ")}`
+    : copy.noToolsAvailable;
+  return (
+    <>
+      <section
+        ref={chatWindow}
+        className="chat-assistant"
+        style={{
+          left: popupPosition.x,
+          top: popupPosition.y,
+          right: "auto",
+          bottom: "auto",
+        }}
+        aria-label={copy.title}
+      >
+        <header
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            drag.current = {
+              target: "window",
+              startX: event.clientX,
+              startY: event.clientY,
+              x: popupPosition.x,
+              y: popupPosition.y,
+              moved: false,
+            };
+          }}
+        >
+          <div>
+            <Bot size={18} />
+            <strong>{terminalMode ? copy.terminal : copy.title}</strong>
+          </div>
+          <div className="chat-header-actions">
+            {toolSettings.terminal_visible && (
+              <button
+                className="ghost"
+                aria-label={terminalMode ? copy.chat : copy.terminal}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  if (!terminalMode) setTerminalStarted(true);
+                  setTerminalMode((current) => !current);
+                }}
+              >
+                {terminalMode ? (
+                  <MessageCircle size={17} />
+                ) : (
+                  <SquareTerminal size={17} />
+                )}
+              </button>
+            )}
+            <button
+              className="ghost chat-settings-button"
+              aria-label={copy.settings}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setSettingsPosition({
+                  x: Math.max(12, rect.right - 320),
+                  y: rect.bottom + 8,
+                });
+                setSettingsOpen((current) => !current);
+              }}
+            >
+              <Settings size={17} />
+            </button>
+            <button
+              className="ghost"
+              aria-label={copy.collapse}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => setOpen(false)}
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </header>
+        <div className={terminalMode ? "chat-pane chat-pane--hidden" : "chat-pane"}>
+            <div
+              className={`chat-tool-summary ${toolsReady ? "chat-tool-summary--ready" : "chat-tool-summary--empty"}`}
+            >
+              {toolSummary}
+            </div>
+            <div className="chat-messages" ref={messageList}>
+              {messages.length === 0 && (
+                <p className="chat-empty">{copy.empty}</p>
+              )}
+              {messages.map((message, index) => (
+                <article
+                  key={index}
+                  className={`chat-message chat-message--${message.role}`}
+                >
+                  {message.role === "assistant" ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: (props) => (
+                          <a {...props} target="_blank" rel="noreferrer" />
+                        ),
+                      }}
+                    >
+                      {message.content}
+                    </ReactMarkdown>
+                  ) : (
+                    message.content
+                  )}
+                </article>
+              ))}
+              {sending && (
+                <article className="chat-message chat-message--assistant">
+                  {copy.thinking}
+                </article>
+              )}
+            </div>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                send();
+              }}
+            >
+              <textarea
+                aria-label={copy.message}
+                rows={2}
+                placeholder={copy.placeholder}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    send();
+                  }
+                }}
+              />
+              <button
+                className="approve"
+                type="submit"
+                disabled={!draft.trim() || sending}
+                aria-label={copy.send}
+              >
+                <Send size={16} />
+              </button>
+            </form>
+        </div>
+        {terminalStarted && <AssistantTerminal active={terminalMode} />}
+      </section>
+      {settingsOpen && (
+        <section
+          className="chat-tools-popover"
+          style={{ left: settingsPosition.x, top: settingsPosition.y }}
+          role="dialog"
+          aria-label={copy.settings}
+        >
+          <strong>{copy.settings}</strong>
+          <p>{toolSummary}</p>
+          <label>
+            <span>{copy.workspace}</span>
+            <input
+              value={toolSettings.workspace_root}
+              onChange={(event) =>
+                setToolSettings((current) => ({
+                  ...current,
+                  workspace_root: event.target.value,
+                }))
+              }
+            />
+          </label>
+          {(
+            [
+              ["file_read_enabled", copy.fileRead],
+              ["file_search_enabled", copy.fileSearch],
+              ["run_process_enabled", copy.runProcess],
+            ] as const
+          ).map(([key, label]) => (
+            <label className="chat-tool-popover-toggle" key={key}>
+              <span>{label}</span>
+              <input
+                type="checkbox"
+                checked={toolSettings[key]}
+                onChange={(event) =>
+                  setToolSettings((current) => ({
+                    ...current,
+                    [key]: event.target.checked,
+                  }))
+                }
+              />
+            </label>
+          ))}
+          <label className="chat-tool-popover-toggle">
+            <span>{copy.terminalVisible}</span>
+            <input
+              type="checkbox"
+              checked={toolSettings.terminal_visible}
+              onChange={(event) =>
+                setToolSettings((current) => ({
+                  ...current,
+                  terminal_visible: event.target.checked,
+                  terminal_enabled: event.target.checked,
+                }))
+              }
+            />
+          </label>
+          <div>
+            <button className="ghost" onClick={() => setSettingsOpen(false)}>
+              {copy.collapse}
+            </button>
+            <button className="approve" onClick={saveTools}>
+              {copy.saveTools}
+            </button>
+          </div>
+        </section>
+      )}
+    </>
+  );
 }
