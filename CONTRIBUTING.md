@@ -22,10 +22,10 @@ use `.venv\\Scripts\\python.exe`.
 ## UI smoke tests
 
 Start OpenOrbit with the sample data expected by
-`frontend/e2e/orbit-ui.spec.ts`, then run from `frontend/`:
+`frontend/e2e/orbit-ui.spec.ts`, then run from the repository root:
 
 ```bash
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm exec playwright test
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm --filter agent-improvement-console-ui exec playwright test
 ```
 
 Set `PLAYWRIGHT_BASE_URL` to the URL printed by your running app if it uses
