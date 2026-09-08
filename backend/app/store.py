@@ -2949,6 +2949,23 @@ if __name__ == "__main__":
             )
         return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
 
+    def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
+        """Resolve one retained run artifact without permitting path traversal."""
+        if loop_index < 0:
+            raise KeyError(relative_path)
+        relative = Path(relative_path)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise KeyError(relative_path)
+        directory = (APP_DATA / "artifacts" / run_id / f"loop-{loop_index}").resolve()
+        candidate = (directory / relative).resolve()
+        if directory not in candidate.parents or not candidate.is_file():
+            raise KeyError(relative_path)
+        return candidate
+
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
         run = self._load(run_id)

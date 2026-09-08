@@ -452,35 +452,81 @@ function PromptChanges({
   );
 }
 
-function CommitChanges({ changes, l }: { changes: CommitChange[]; l: (typeof copy)["en"] }) {
+function CommitChanges({ runId, changes, l }: { runId: string; changes: CommitChange[]; l: (typeof copy)["en"] }) {
+  const items = [...changes].reverse();
+  const [changeIndex, setChangeIndex] = useState(0);
   if (!changes.length) return <p className="hint">{l.noCommitChanges}</p>;
+  const index = Math.min(changeIndex, items.length - 1), change = items[index];
   return (
     <div className="commit-changes">
-      {changes.map((change) => (
-        <section key={`${change.before}:${change.after}:${change.iteration ?? ""}`}>
-          <div className="commit-changes__head">
-            <strong>{change.before.slice(0, 12)} → {change.after.slice(0, 12)}</strong>
-            <small>{l.iteration} #{change.iteration ?? "—"} · {change.phase ?? "—"}</small>
-          </div>
-          {change.commits.length > 0 && (
-            <div className="commit-changes__group">
-              <small>{l.commits}</small>
-              <ul>
-                {change.commits.map((commit) => <li key={commit.sha}><code>{commit.sha.slice(0, 12)}</code><span>{commit.subject}</span></li>)}
-              </ul>
-            </div>
-          )}
+      <div className="prompt-version-navigator">
+        <button className="ghost icon-button" type="button" disabled={index >= items.length - 1} onClick={() => setChangeIndex(index + 1)} aria-label={l.previousCommitChange} title={l.previousCommitChange}><ChevronLeft size={16} /></button>
+        <span>{l.commitVersion.replace("{0}", String(items.length - index)).replace("{1}", String(items.length))}</span>
+        <button className="ghost icon-button" type="button" disabled={index === 0} onClick={() => setChangeIndex(index - 1)} aria-label={l.nextCommitChange} title={l.nextCommitChange}><ChevronRight size={16} /></button>
+      </div>
+      <section>
+        <div className="commit-changes__head">
+          <strong>{change.before.slice(0, 12)} → {change.after.slice(0, 12)}</strong>
+          <small>{l.iteration} #{change.iteration ?? "—"} · {change.phase ?? "—"}</small>
+        </div>
+        {change.commits.length > 0 && (
           <div className="commit-changes__group">
-            <small>{l.changedFiles}</small>
-            {change.changed_paths.length > 0 ? (
-              <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul>
-            ) : <p className="hint">{l.noChangedFiles}</p>}
+            <small>{l.commits}</small>
+            <ul>{change.commits.map((commit) => <li key={commit.sha}><code>{commit.sha.slice(0, 12)}</code><span>{commit.subject}</span></li>)}</ul>
           </div>
-          {change.diff_artifact?.relative_path && <p className="commit-changes__artifact">{l.diffArtifact}: <code>{change.diff_artifact.relative_path}</code></p>}
-        </section>
-      ))}
+        )}
+        <div className="commit-changes__group">
+          <small>{l.changedFiles}</small>
+          {change.changed_paths.length > 0 ? <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p className="hint">{l.noChangedFiles}</p>}
+        </div>
+        {change.diff_artifact?.relative_path ? <CommitPatch key={`${change.iteration}:${change.diff_artifact.relative_path}`} runId={runId} iteration={change.iteration ?? 0} relativePath={change.diff_artifact.relative_path} l={l} /> : null}
+      </section>
     </div>
   );
+}
+
+type UnifiedDiffRow = { kind: "added" | "removed" | "unchanged"; before?: number; after?: number; line: string } | { kind: "meta"; line: string };
+
+function unifiedDiffRows(value: string): UnifiedDiffRow[] {
+  let before: number | undefined, after: number | undefined;
+  return value.split("\n").map((line) => {
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      before = Number(hunk[1]);
+      after = Number(hunk[2]);
+      return { kind: "meta", line };
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      const row = { kind: "added" as const, after, line };
+      after = (after ?? 0) + 1;
+      return row;
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      const row = { kind: "removed" as const, before, line };
+      before = (before ?? 0) + 1;
+      return row;
+    }
+    if (line.startsWith(" ")) {
+      const row = { kind: "unchanged" as const, before, after, line };
+      before = (before ?? 0) + 1;
+      after = (after ?? 0) + 1;
+      return row;
+    }
+    return { kind: "meta", line };
+  });
+}
+
+function CommitPatch({ runId, iteration, relativePath, l }: { runId: string; iteration: number; relativePath: string; l: (typeof copy)["en"] }) {
+  const [patch, setPatch] = useState<string>(), [error, setError] = useState(false);
+  useEffect(() => {
+    fetch(`/api/runs/${runId}/artifacts/${iteration}/${relativePath}`)
+      .then((response) => response.ok ? response.text() : Promise.reject())
+      .then(setPatch)
+      .catch(() => setError(true));
+  }, [runId, iteration, relativePath]);
+  if (error) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
+  if (patch === undefined) return <p className="hint">{l.loadingCommitDiff}</p>;
+  return <div className="prompt-diff commit-diff" aria-label={l.diffArtifact}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;
 }
 
 function PromptDiff({ before, after }: { before: string; after: string }) {
@@ -1407,7 +1453,7 @@ export function EvaluationsPage({
           {tab === "prompt" && (
             <PromptChanges key={selected.id} revisions={promptRevisions} l={l} />
           )}{" "}
-          {tab === "commits" && <CommitChanges changes={commitChanges} l={l} />}{" "}
+          {tab === "commits" && <CommitChanges runId={selected.id} changes={commitChanges} l={l} />}{" "}
           {tab === "supervisor" && (
             <>
               {supervisorTranslationId && (
