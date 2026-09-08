@@ -56,6 +56,10 @@
       "placeholder": "Orbit에 메시지 보내기…",
       "send": "메시지 전송"
     },
+    "appMeta": {
+      "title": "OpenOrbit",
+      "titleSeparator": " - "
+    },
     "shell": {
       "dashboard": "평가 운영 상태, 최근 활동, 운영 이벤트를 한눈에 확인합니다.",
       "assets": "평가에 사용하는 재사용 환경, 러너, 템플릿, 테스트 케이스, 워크플로를 관리합니다.",
