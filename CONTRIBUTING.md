@@ -31,6 +31,17 @@ React application with a Vite production build before each commit.
 
 The React hook needs `npm --prefix frontend install` to have been run once.
 
+## UI smoke tests
+
+The Playwright spec in `frontend/e2e/orbit-ui.spec.ts` targets the local
+OpenOrbit instance via the `PLAYWRIGHT_BASE_URL` environment variable, which
+defaults to `http://127.0.0.1:3001` when unset:
+
+```bash
+# Target an app running on the default port 3000:
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3000 pnpm --dir frontend exec playwright test
+```
+
 ## Releases
 
 Every release follows the same protected sequence so that a version tag always
