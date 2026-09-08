@@ -277,6 +277,23 @@ class RunnerContext:
         :meth:`rollback_file` to restore a selected one.
         """
         target, relative, directory, manifest_path, manifest = self._load_file_history(relative_path)
+        build = self.evaluation_build
+        managed_prompt_path = str(build.get("managed_prompt_path") or build.get("prompt_bundle") or "")
+        requires_human_approval = bool(build.get("require_human_approval_before_apply", False))
+        if requires_human_approval and relative == managed_prompt_path:
+            # This guard lives in the SDK rather than only in a runner template,
+            # so existing saved native-improvement runners cannot bypass the
+            # Build-level approval policy.
+            current = target.read_bytes() if target.exists() else b""
+            result = {
+                "changed": False,
+                "path": relative,
+                "sha256": _sha256(current),
+                "version": None,
+                "reason": "awaiting_human_approval",
+            }
+            self.emit_result({"file_update_blocked": result})
+            return result
         next_content = content.encode(encoding) if isinstance(content, str) else bytes(content)
         previous = target.read_bytes() if target.exists() else None
         if previous == next_content:

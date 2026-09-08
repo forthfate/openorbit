@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from base64 import b64encode
 
 import orbit_sdk as sdk
 
@@ -67,6 +68,36 @@ def test_update_file_can_rollback_a_file_created_by_the_runner(tmp_path, monkeyp
     context(project, iteration=2).rollback_file("new.txt", created["version"]["id"])
 
     assert not (project / "new.txt").exists()
+
+
+def test_update_file_blocks_a_managed_prompt_when_human_approval_is_required(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    prompt = project / "prompt.md"
+    prompt.write_text("before", encoding="utf-8")
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    resources = {
+        "evaluation_build": {
+            "managed_prompt_path": "prompt.md",
+            "require_human_approval_before_apply": True,
+        }
+    }
+    ctx = sdk.RunnerContext(
+        phase="setup",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={
+            "ORBIT_RUN_ID": "run-123",
+            "ORBIT_RUNNER_RESOURCES": b64encode(json.dumps(resources).encode()).decode(),
+        },
+    )
+
+    result = ctx.update_file("prompt.md", "after")
+
+    assert prompt.read_text(encoding="utf-8") == "before"
+    assert result["changed"] is False
+    assert result["reason"] == "awaiting_human_approval"
 
 
 def test_proposal_decisions_are_a_deduplicated_auditable_event_stream(tmp_path, monkeypatch):
