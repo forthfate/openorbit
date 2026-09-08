@@ -346,6 +346,8 @@
       "evaluationStarted": "評価を開始しました",
       "evaluationTestStarted": "評価テストを開始しました",
       "evaluationBuildCreated": "評価ビルドを作成しました",
+      "aiSettingsSaved": "AI 設定を保存しました",
+      "settingsTestRequired": "保存する前に設定をテストしてください。",
       "evaluationBuildUpdated": "評価ビルドを更新しました",
       "evaluationBuildDeleted": "評価ビルドを削除しました",
       "quickStartCreated": "クイックスタートがアセットと評価ビルドを作成しました",

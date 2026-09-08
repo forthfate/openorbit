@@ -347,6 +347,8 @@
       "evaluationStarted": "Evaluation started",
       "evaluationTestStarted": "Evaluation test started",
       "evaluationBuildCreated": "Evaluation build created",
+      "aiSettingsSaved": "AI settings saved",
+      "settingsTestRequired": "Test the configuration before saving.",
       "evaluationBuildUpdated": "Evaluation build updated",
       "evaluationBuildDeleted": "Evaluation build deleted",
       "quickStartCreated": "Quick Start created its assets and evaluation build",

@@ -346,6 +346,8 @@
       "evaluationStarted": "평가를 시작했습니다",
       "evaluationTestStarted": "평가 테스트를 시작했습니다",
       "evaluationBuildCreated": "평가 빌드를 생성했습니다",
+      "aiSettingsSaved": "AI 설정을 저장했습니다",
+      "settingsTestRequired": "저장하기 전에 구성을 테스트하세요.",
       "evaluationBuildUpdated": "평가 빌드를 수정했습니다",
       "evaluationBuildDeleted": "평가 빌드를 삭제했습니다",
       "quickStartCreated": "퀵 스타트가 자산과 평가 빌드를 생성했습니다",
