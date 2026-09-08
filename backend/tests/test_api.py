@@ -1,8 +1,13 @@
+import base64
+import json
+
 import pytest
+from app import providers
 from app import store as store_module
 from app.main import app
 from app.models import Run
 from fastapi.testclient import TestClient
+from orbit_sdk import RunnerContext
 
 
 def test_health_is_available():
@@ -54,6 +59,40 @@ def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     store.delete_run("completed-run")
 
     assert not (store_module.RUNS / "completed-run.json").exists()
+
+
+def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="feedback-history-run",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        evaluation_build_id="build-one",
+        execution_mode="run",
+        execution_type="pipeline",
+        status="succeeded",
+        created_at=timestamp,
+        updated_at=timestamp,
+        supervisor_response={"improvements": [], "reported_issues": []},
+        supervisor_results=[
+            {
+                "iteration": 1,
+                "response": {
+                    "improvements": [{"title": "Add refund intake", "status": "adopted"}],
+                    "reported_issues": [{"title": "Missing refund details"}],
+                },
+            },
+            {"iteration": 2, "response": {"improvements": [], "reported_issues": []}},
+        ],
+    )
+    monkeypatch.setattr(store, "evaluation_builds", lambda: [{"id": "build-one", "approval_score": 8}])
+
+    active = store.active_evaluations([run])
+
+    assert active[0]["proposed_improvements"] == 1
+    assert active[0]["approved_improvements"] == 1
+    assert active[0]["reported_issues"] == 1
 
 
 def test_transient_test_session_is_not_written_to_run_history(tmp_path, monkeypatch):
@@ -275,6 +314,42 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
     assert "Prompt evidence" in captured_prompts[0]
 
 
+def test_runner_context_uses_the_supplied_model_profile_without_exposing_its_secret(tmp_path, monkeypatch):
+    resources = {
+        "model_profile": {
+            "profile_name": "Target AI",
+            "provider": "azure-openai",
+            "model": "test-model",
+            "endpoint": "https://example.test/openai/v1",
+            "secret_env": "TARGET_AI_KEY",
+        }
+    }
+    context = RunnerContext(
+        "run",
+        tmp_path,
+        "run",
+        1,
+        environment={
+            "ORBIT_RUNNER_RESOURCES": base64.b64encode(json.dumps(resources).encode()).decode(),
+            "TARGET_AI_KEY": "not-in-evidence",
+        },
+    )
+
+    class FakeProvider:
+        def complete(self, settings, prompt):
+            assert settings.secret_env == "TARGET_AI_KEY"
+            assert prompt == "Reply to this request"
+            return "Observed target response"
+
+    monkeypatch.setattr(providers, "AzureOpenAIProvider", FakeProvider)
+
+    assert context.complete_model("Reply to this request") == {
+        "profile_name": "Target AI",
+        "model": "test-model",
+        "response": "Observed target response",
+    }
+
+
 def test_direct_browser_and_site_exploration_evidence_trigger_supervision():
     class BrowserRun:
         step_results = [{"phase": "run", "result": {"browser_journey": {"results": [{"passed": True}]}}}]
@@ -303,7 +378,9 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "previous_supervisor_feedback" in user_journey
     assert "user-journey-state" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" in adapter
-    assert "playwright_journey" in improvement
+    assert "playwright_journey" not in improvement
+    assert "complete_model" in improvement
+    assert "target_ai_responses" in improvement
     assert "ORBIT_CYCLE_COMMAND" not in improvement
     assert "run_paired_improvement_cycle" not in improvement
     assert "update_prompt_from_accepted_proposals" in improvement

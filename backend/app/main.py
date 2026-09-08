@@ -121,22 +121,30 @@ def runs():
     values = []
     for run in store.runs():
         item = run.model_dump(mode="json")
-        response = run.supervisor_response or {"improvements": [], "reported_issues": []}
-        improvements = response.get("improvements", [])
-        item["proposed_improvements"] = len(improvements) if isinstance(improvements, list) else 0
-        item["approved_improvements"] = (
-            len(
-                [
-                    entry
-                    for entry in improvements
-                    if isinstance(entry, dict) and entry.get("status") == "adopted"
-                ]
-            )
-            if isinstance(improvements, list)
-            else 0
+        responses = [
+            record.get("response")
+            for record in run.supervisor_results
+            if isinstance(record, dict) and isinstance(record.get("response"), dict)
+        ]
+        if not responses and isinstance(run.supervisor_response, dict):
+            responses = [run.supervisor_response]
+        improvements = [
+            improvement
+            for response in responses
+            for improvement in response.get("improvements", [])
+            if isinstance(improvement, dict)
+        ]
+        issues = [
+            issue
+            for response in responses
+            for issue in response.get("reported_issues", [])
+            if isinstance(issue, dict)
+        ]
+        item["proposed_improvements"] = len(improvements)
+        item["approved_improvements"] = sum(
+            improvement.get("status") == "adopted" for improvement in improvements
         )
-        issues = response.get("reported_issues", [])
-        item["reported_issues"] = len(issues) if isinstance(issues, list) else 0
+        item["reported_issues"] = len(issues)
         values.append(item)
     return values
 
