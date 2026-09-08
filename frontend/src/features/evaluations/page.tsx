@@ -429,13 +429,18 @@ function PromptChanges({
         <div className="prompt-changes__head">
           <div>
             <strong>{item.path}</strong>
-            <small>{item.version_id ?? item.reason ?? l.noPromptSnapshot}</small>
+            <small>{item.status === "initial" ? l.initialPromptState : item.version_id ?? item.reason ?? l.noPromptSnapshot}</small>
           </div>
           <StatusBadge value={item.status} label={l[`prompt${item.status}` as keyof typeof l] ?? item.status} />
         </div>
-        <p className="prompt-change-meta">{l.iteration} #{item.iteration ?? "—"} · {item.phase ?? "—"}{item.run_id ? ` · ${item.run_id}` : ""}</p>
-        {item.status === "blocked" ? (
-          <p className="hint">{l.promptBlockedHint}</p>
+        {item.status === "initial" ? (
+          <p className="prompt-change-meta">{l.initialPromptHint}</p>
+        ) : (
+          <p className="prompt-change-meta">{l.iteration} #{item.iteration ?? "—"} · {item.phase ?? "—"}{item.run_id ? ` · ${item.run_id}` : ""}</p>
+        )}
+        {item.status === "blocked" && <p className="hint">{l.promptBlockedHint}</p>}
+        {(item.status === "initial" || item.status === "blocked" || item.status === "unchanged") && typeof item.after === "string" ? (
+          <LineNumberedOutput value={item.after} />
         ) : typeof item.before === "string" && typeof item.after === "string" ? (
           <PromptDiff before={item.before} after={item.after} />
         ) : (

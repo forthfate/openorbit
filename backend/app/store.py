@@ -2878,7 +2878,42 @@ if __name__ == "__main__":
                         "after_sha256": written.get("sha256") if isinstance(written, dict) else None,
                     }
                 )
-        return sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+        ordered = sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+        initial_revisions: list[dict[str, Any]] = []
+        current_by_path: dict[str, str] = {}
+        for revision in ordered:
+            path = str(revision.get("path") or "")
+            before = revision.get("before")
+            after = revision.get("after")
+            if path and path not in current_by_path:
+                initial = before if isinstance(before, str) else after if isinstance(after, str) else None
+                if initial is not None:
+                    initial_revisions.append(
+                        {
+                            "iteration": None,
+                            "phase": "initial",
+                            "path": path,
+                            "status": "initial",
+                            "reason": None,
+                            "recorded_at": None,
+                            "version_id": None,
+                            "run_id": None,
+                            "before": initial,
+                            "after": initial,
+                            "before_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                        }
+                    )
+                    current_by_path[path] = initial
+            if revision.get("status") == "blocked" and path in current_by_path:
+                revision["before"] = current_by_path[path]
+                revision["after"] = current_by_path[path]
+                digest = hashlib.sha256(current_by_path[path].encode("utf-8")).hexdigest()
+                revision["before_sha256"] = digest
+                revision["after_sha256"] = digest
+            elif isinstance(after, str) and path:
+                current_by_path[path] = after
+        return [*initial_revisions, *ordered]
 
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""

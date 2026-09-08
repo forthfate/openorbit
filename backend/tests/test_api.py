@@ -77,16 +77,32 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
                     "loop_index": 1,
                     "ended_at": timestamp.isoformat(),
                     "result": {"file_update": update},
-                }
+                },
+                {
+                    "phase": "setup",
+                    "loop_index": 2,
+                    "ended_at": timestamp.isoformat(),
+                    "result": {
+                        "file_update_blocked": {
+                            "path": "prompt.md",
+                            "reason": "awaiting_human_approval",
+                        }
+                    },
+                },
             ],
         )
     )
 
     revisions = store.prompt_revisions("prompt-run")
 
-    assert revisions[0]["status"] == "applied"
-    assert revisions[0]["before"] == "before\n"
-    assert revisions[0]["after"] == "after\n"
+    assert revisions[0]["status"] == "initial"
+    assert revisions[0]["after"] == "before\n"
+    assert revisions[1]["status"] == "applied"
+    assert revisions[1]["before"] == "before\n"
+    assert revisions[1]["after"] == "after\n"
+    assert revisions[2]["status"] == "blocked"
+    assert revisions[2]["before"] == "after\n"
+    assert revisions[2]["after"] == "after\n"
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
