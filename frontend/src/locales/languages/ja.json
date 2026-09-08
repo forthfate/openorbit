@@ -374,7 +374,7 @@
       "translate": "翻訳",
       "translating": "翻訳中…",
       "showOriginal": "原文を表示",
-      "failed": "テンプレートの翻訳に失敗しました。"
+      "failed": "テンプレートの翻訳に失敗しました。もう一度お試しください。"
     },
     "assetsHelp": {
       "id": "Orbit と API がこのアセットを識別するための安定した ID です。",

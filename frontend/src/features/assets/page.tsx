@@ -381,8 +381,8 @@ function RunnerModal({
                 disabled={translations.loading}
                 onClick={
                   translations.content(templates[0]?.id ?? "")
-                    ? translations.showOriginal
-                    : translations.translate
+                    ? () => translations.showOriginal()
+                    : () => translations.translate()
                 }
               >
                 <Languages size={15} />

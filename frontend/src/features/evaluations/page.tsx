@@ -494,6 +494,11 @@ export function EvaluationsPage({
     supervisorTranslationIds,
     locale,
   );
+  const resultTranslations = useTemplateTranslations<SupervisorResultTranslation>(
+    "supervisor-result",
+    supervisorTranslationIds,
+    locale,
+  );
   const translateSupervisorResponse = (record: SupervisorRecord) => {
     const response = record.response;
     const translated = supervisorTranslations.content(`${selected?.id}:${record.iteration}`);
@@ -521,6 +526,25 @@ export function EvaluationsPage({
       ...record,
       ...(translated.prompt ? { prompt: translated.prompt } : {}),
       response: translateSupervisorResponse(record),
+    };
+  };
+  const translateResultResponse = (record: SupervisorRecord) => {
+    const response = record.response;
+    const translated = resultTranslations.content(`${selected?.id}:${record.iteration}`);
+    if (!response || !translated) return response;
+    return {
+      ...response,
+      evaluation: response.evaluation
+        ? { ...response.evaluation, ...translated.response.evaluation }
+        : response.evaluation,
+      improvements: response.improvements.map((item, index) => ({
+        ...item,
+        ...translated.response.improvements[index],
+      })),
+      reported_issues: response.reported_issues.map((item, index) => ({
+        ...item,
+        ...translated.response.reported_issues[index],
+      })),
     };
   };
   const translationCopy = locales[locale].templateTranslation;
@@ -838,7 +862,7 @@ export function EvaluationsPage({
     );
     const latestIteration = records[0]?.iteration;
     return records.filter((record) => {
-      const response = translateSupervisorResponse(record),
+      const response = translateResultResponse(record),
         recordEvaluation = response?.evaluation,
         decision = recordEvaluation?.approval ?? "no_response",
         score = recordEvaluation?.score,
@@ -902,14 +926,30 @@ export function EvaluationsPage({
     resultIterationTo,
     resultScoreBucket,
   ]);
+  const supervisorTranslationId = supervision?.response
+    ? `${selected?.id}:${supervision.iteration}`
+    : null;
+  const resultTranslationIds = resultRecords
+    .filter((record) => Boolean(record.response))
+    .map((record) => `${selected?.id}:${record.iteration}`);
+  const supervisorTranslationVisible = Boolean(
+    supervisorTranslationId && supervisorTranslations.content(supervisorTranslationId),
+  );
+  const supervisorTranslationLoading = Boolean(
+    supervisorTranslationId && supervisorTranslations.isLoading([supervisorTranslationId]),
+  );
+  const resultTranslationsVisible =
+    resultTranslationIds.length > 0 &&
+    resultTranslationIds.every((templateId) => Boolean(resultTranslations.content(templateId)));
+  const resultTranslationsLoading = resultTranslations.isLoading(resultTranslationIds);
   const resultImprovements = resultRecords.flatMap((record) =>
-      (translateSupervisorResponse(record)?.improvements ?? []).map((item) => ({
+      (translateResultResponse(record)?.improvements ?? []).map((item) => ({
         ...item,
         __iteration: record.iteration,
       })),
     ),
-    resultIssues = resultRecords.flatMap((record) =>
-      (translateSupervisorResponse(record)?.reported_issues ?? []).map((item) => ({
+  resultIssues = resultRecords.flatMap((record) =>
+      (translateResultResponse(record)?.reported_issues ?? []).map((item) => ({
         ...item,
         __iteration: record.iteration,
       })),
@@ -918,7 +958,7 @@ export function EvaluationsPage({
     .map((record) => ({
       iteration: record.iteration,
       recordedAt: record.recorded_at,
-      summary: translateSupervisorResponse(record)?.evaluation?.behavior_summary,
+      summary: translateResultResponse(record)?.evaluation?.behavior_summary,
     }))
     .filter(
       (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
@@ -1210,22 +1250,22 @@ export function EvaluationsPage({
           )}{" "}
           {tab === "supervisor" && (
             <>
-              {supervisorTranslationIds.length > 0 && (
+              {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
                     className="ghost"
                     type="button"
-                    disabled={supervisorTranslations.loading}
-                    onClick={
-                      supervisorTranslations.content(supervisorTranslationIds[0])
-                        ? supervisorTranslations.showOriginal
-                        : supervisorTranslations.translate
+                    disabled={supervisorTranslationLoading}
+                    onClick={() =>
+                      supervisorTranslationVisible
+                        ? supervisorTranslations.showOriginal([supervisorTranslationId])
+                        : supervisorTranslations.translate([supervisorTranslationId])
                     }
                   >
                     <Languages size={15} />
-                    {supervisorTranslations.loading
+                    {supervisorTranslationLoading
                       ? translationCopy.translating
-                      : supervisorTranslations.content(supervisorTranslationIds[0])
+                      : supervisorTranslationVisible
                         ? translationCopy.showOriginal
                         : translationCopy.translate}
                   </button>
@@ -1253,21 +1293,21 @@ export function EvaluationsPage({
                   <ListFilter size={15} />
                   {l.filter}
                 </button>
-                {supervisorTranslationIds.length > 0 && (
+                {resultTranslationIds.length > 0 && (
                   <button
                     className="ghost result-translation-action"
                     type="button"
-                    disabled={supervisorTranslations.loading}
-                    onClick={
-                      supervisorTranslations.content(supervisorTranslationIds[0])
-                        ? supervisorTranslations.showOriginal
-                        : supervisorTranslations.translate
+                    disabled={resultTranslationsLoading}
+                    onClick={() =>
+                      resultTranslationsVisible
+                        ? resultTranslations.showOriginal(resultTranslationIds)
+                        : resultTranslations.translate(resultTranslationIds)
                     }
                   >
                     <Languages size={15} />
-                    {supervisorTranslations.loading
+                    {resultTranslationsLoading
                       ? translationCopy.translating
-                      : supervisorTranslations.content(supervisorTranslationIds[0])
+                      : resultTranslationsVisible
                         ? translationCopy.showOriginal
                         : translationCopy.translate}
                   </button>
@@ -1420,7 +1460,7 @@ export function EvaluationsPage({
                   </div>
                 )}
               </div>
-              {supervisorTranslations.error && <small className="hint">{translationCopy.failed}</small>}
+              {resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
               {resultRecords.length ? (
                 <>
                   {resultBehaviorSummaries.length > 0 && (

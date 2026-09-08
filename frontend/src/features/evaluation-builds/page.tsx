@@ -1003,8 +1003,8 @@ export function EvaluationBuildsPage(props: {
                   disabled={translations.loading}
                   onClick={
                     translations.content(items[0]?.id ?? "")
-                      ? translations.showOriginal
-                      : translations.translate
+                      ? () => translations.showOriginal()
+                      : () => translations.translate()
                   }
                 >
                   <Languages size={15} />

@@ -374,7 +374,7 @@
       "translate": "번역",
       "translating": "번역 중…",
       "showOriginal": "원문 보기",
-      "failed": "템플릿 번역에 실패했습니다."
+      "failed": "템플릿 번역에 실패했습니다. 다시 시도해 주세요."
     },
     "assetsHelp": {
       "id": "Orbit과 API에서 이 자산을 식별하는 고유 ID입니다.",
