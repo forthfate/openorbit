@@ -4,14 +4,16 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .store import ConsoleStore
+from .terminal import serve_terminal
 
 app = FastAPI(
     title="OpenOrbit API",
@@ -832,11 +834,12 @@ def application_settings():
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
     chat_model_profile_name: str = Field(default="", max_length=200)
+    assistant_tools: dict | None = None
 
 
 @app.put("/api/application-settings")
 def update_application_settings(values: ApplicationSettingsUpdate):
-    return store.save_application_settings(values.model_dump())
+    return store.save_application_settings(values.model_dump(exclude_unset=True))
 
 
 class ChatTurn(BaseModel):
@@ -970,9 +973,21 @@ def chat(values: ChatMessage):
         if history:
             prompt += f"Conversation so far:\n{history}\n\n"
         prompt += f"User: {values.content}\nAssistant:"
-        return {"response": provider.complete(settings, prompt), "profile_name": profile_name}
+        tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
+        definitions = tool_executor.definitions()
+        response = (
+            provider.complete_with_tools(settings, prompt, definitions, tool_executor.execute)
+            if definitions
+            else provider.complete(settings, prompt)
+        )
+        return {"response": response, "profile_name": profile_name}
     except RuntimeError as error:
         raise HTTPException(409, str(error))
+
+
+@app.websocket("/api/terminal")
+async def terminal(websocket: WebSocket):
+    await serve_terminal(websocket, store.application_settings()["assistant_tools"])
 
 
 class SettingsUpdate(BaseModel):

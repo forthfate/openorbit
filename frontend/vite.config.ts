@@ -7,8 +7,10 @@ function releaseVersion(){
   return `v${process.env.npm_package_version??'development'}`
 }
 
+const apiTarget=process.env.OPENORBIT_API_URL??`http://${process.env.ORBIT_HOST??'127.0.0.1'}:${process.env.ORBIT_PORT??'3000'}`
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: { __OPENORBIT_VERSION__: JSON.stringify(releaseVersion()) },
-  server: { proxy: { '/api': process.env.OPENORBIT_API_URL ?? 'http://127.0.0.1:3001' } },
+  server: { proxy: { '/api': { target: apiTarget, ws: true } } },
 })
