@@ -35,9 +35,9 @@ def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatc
     assert version["previous"]["sha256"] == sdk._sha256(b"before")
     assert version["written"]["sha256"] == sdk._sha256(b"after")
     assert version["written"]["snapshot"]
-    snapshot = next((tmp_path / "orbit-data").rglob("*.bin"))
-    assert snapshot.read_bytes() == b"before"
     manifest = next((tmp_path / "orbit-data").rglob("manifest.json"))
+    snapshot = manifest.parent / version["previous"]["snapshot"]
+    assert snapshot.read_bytes() == b"before"
     assert json.loads(manifest.read_text(encoding="utf-8"))["history"][0]["id"] == version["id"]
 
 
