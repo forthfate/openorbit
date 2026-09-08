@@ -1,11 +1,12 @@
 import base64
 import json
 
+import orbit_sdk as sdk
 import pytest
 from app import providers
 from app import store as store_module
 from app.main import app
-from app.models import Run
+from app.models import Run, Step, Workflow
 from fastapi.testclient import TestClient
 from orbit_sdk import RunnerContext
 
@@ -38,6 +39,113 @@ def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch
     assert cancelled.status == "cancelled"
     assert cancelled.current_step is None
     assert cancelled.current_phase is None
+
+
+def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
+    app_data = tmp_path / "orbit-data"
+    project = tmp_path / "project"
+    project.mkdir()
+    prompt = project / "prompt.md"
+    prompt.write_text("before\n", encoding="utf-8")
+    monkeypatch.setattr(store_module, "APP_DATA", app_data)
+    monkeypatch.setattr(store_module, "RUNS", app_data / "data" / "runs")
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", app_data)
+    resources = base64.b64encode(
+        json.dumps({"evaluation_build": {"managed_prompt_path": "prompt.md"}}).encode()
+    ).decode()
+    update = RunnerContext(
+        phase="setup",
+        target_repository=project,
+        mode="run",
+        loop_index=1,
+        environment={"ORBIT_RUN_ID": "prompt-run", "ORBIT_RUNNER_RESOURCES": resources},
+    ).update_file("prompt.md", "after\n")
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="prompt-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            step_results=[
+                {
+                    "phase": "setup",
+                    "loop_index": 1,
+                    "ended_at": timestamp.isoformat(),
+                    "result": {"file_update": update},
+                },
+                {
+                    "phase": "setup",
+                    "loop_index": 2,
+                    "ended_at": timestamp.isoformat(),
+                    "result": {
+                        "file_update_blocked": {
+                            "path": "prompt.md",
+                            "reason": "awaiting_human_approval",
+                        }
+                    },
+                },
+            ],
+        )
+    )
+
+    revisions = store.prompt_revisions("prompt-run")
+
+    assert revisions[0]["status"] == "initial"
+    assert revisions[0]["after"] == "before\n"
+    assert revisions[1]["status"] == "applied"
+    assert revisions[1]["before"] == "before\n"
+    assert revisions[1]["after"] == "after\n"
+    assert revisions[2]["status"] == "blocked"
+    assert revisions[2]["before"] == "after\n"
+    assert revisions[2]["after"] == "after\n"
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypatch, terminal_status):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id=f"cleanup-{terminal_status}",
+        workflow_id="cleanup-workflow",
+        workflow_name="Cleanup workflow",
+        execution_mode="test",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="cleanup-workflow",
+        name="Cleanup workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[
+            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
+            Step(id="teardown", phase="teardown", name="Teardown", command=[], working_directory="."),
+        ],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    calls = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
+        calls.append((step.phase, loop_index, allow_terminal))
+        if step.phase == "setup":
+            current = store._load(run_id)
+            current.status = terminal_status
+            store._save(current)
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+
+    store._execute(run.id)
+
+    assert calls == [("setup", 1, False), ("teardown", 1, True)]
 
 
 def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):

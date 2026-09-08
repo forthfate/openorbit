@@ -158,6 +158,11 @@
         "label": "Approval score",
         "hint": "Minimum supervisor score required for approval."
       },
+      "humanApproval": {
+        "label": "Require human approval before applying improvements",
+        "hint": "Keep supervisor proposals as evidence until a human approves their application."
+      },
+      "humanApprovalEnable": "Enable",
       "name": "Name",
       "next": "Next"
     },
@@ -510,6 +515,20 @@
       "logs": "Logs",
       "supervisor": "Supervisor AI",
       "result": "Evaluation result",
+      "promptChanges": "Prompt changes",
+      "noPromptChanges": "No prompt changes were recorded for this iteration.",
+      "noPromptSnapshot": "This older revision has no retained comparison snapshot.",
+      "initialPromptState": "Initial prompt state",
+      "initialPromptHint": "The managed prompt before any recorded change.",
+      "promptinitial": "Initial",
+      "promptapplied": "Applied",
+      "promptblocked": "Awaiting approval",
+      "promptrolled_back": "Rolled back",
+      "promptunchanged": "No change",
+      "promptBlockedHint": "The human-approval policy blocked this write before the file changed.",
+      "previousPromptChange": "Previous prompt change",
+      "nextPromptChange": "Next prompt change",
+      "promptVersion": "Change {0} of {1}",
       "score": "Score",
       "decision": "Evaluation decision",
       "proposals": "Proposed improvements",

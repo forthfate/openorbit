@@ -171,6 +171,11 @@ def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
 
 
+@app.get("/api/runs/{run_id}/prompt-revisions")
+def prompt_revisions(run_id: str):
+    return safely(lambda: store.prompt_revisions(run_id))
+
+
 @app.get("/api/dashboard")
 def dashboard():
     return store.dashboard()
@@ -364,6 +369,7 @@ class EvaluationBuildCreate(BaseModel):
     repeat_interval_minutes: int = Field(ge=1, le=10080)
     run_limit: int = Field(ge=1, le=10000)
     approval_score: int = Field(ge=0, le=10)
+    require_human_approval_before_apply: bool = False
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
     )  # Legacy fallback; selected execution environment is authoritative.

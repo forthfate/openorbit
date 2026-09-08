@@ -54,6 +54,7 @@ type Draft = {
   repeat_interval_minutes: number;
   run_limit: number;
   approval_score: number;
+  require_human_approval_before_apply: boolean;
   enabled: boolean;
 };
 
@@ -87,6 +88,8 @@ type BuildWizardCopy = {
   repeatInterval: LabelCopy;
   runLimit: LabelCopy;
   approvalScore: LabelCopy;
+  humanApproval: LabelCopy;
+  humanApprovalEnable: string;
   name: string;
   next: string;
 };
@@ -133,6 +136,7 @@ const empty: Draft = {
   repeat_interval_minutes: 30,
   run_limit: 1,
   approval_score: 8,
+  require_human_approval_before_apply: false,
   enabled: true,
 };
 const testIsActive = (status: string) =>
@@ -152,6 +156,8 @@ const draftOf = (b: Build, copy = false): Draft => ({
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
   approval_score: b.approval_score,
+  require_human_approval_before_apply:
+    b.require_human_approval_before_apply ?? false,
   enabled: b.enabled,
 });
 const Field = ({
@@ -478,6 +484,24 @@ function Direct({
                 setD({ ...d, approval_score: Number(e.target.value) })
               }
             />
+          </Field>
+          <Field
+            label={copy.humanApproval.label}
+            description={copy.humanApproval.hint}
+          >
+            <span className="build-approval-toggle">
+              <input
+                type="checkbox"
+                checked={d.require_human_approval_before_apply}
+                onChange={(e) =>
+                  setD({
+                    ...d,
+                    require_human_approval_before_apply: e.target.checked,
+                  })
+                }
+              />
+              {copy.humanApprovalEnable}
+            </span>
           </Field>
         </div>
       )}

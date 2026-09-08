@@ -187,7 +187,20 @@ def setup(ctx):
         proposal for proposal in feedback.get("improvements", [])
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
-    prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    requires_human_approval = bool(
+        ctx.evaluation_build.get("require_human_approval_before_apply", False)
+    )
+    if requires_human_approval and accepted:
+        # A supervisor's adoption is a recommendation, not an operator
+        # authorization. Keep it as evidence until an operator approves it.
+        prompt_update = {
+            "changed": False,
+            "reason": "awaiting_human_approval",
+            "proposal_count": len(accepted),
+        }
+        accepted = []
+    else:
+        prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
@@ -198,6 +211,7 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
             }
@@ -1923,6 +1937,9 @@ if __name__ == "__main__":
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
         runs = self.runs()
         for build in builds:
+            # Existing builds predate this optional policy, so leave it off
+            # unless an operator explicitly enabled it.
+            build.setdefault("require_human_approval_before_apply", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
@@ -2495,6 +2512,9 @@ if __name__ == "__main__":
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds = self.evaluation_builds()
@@ -2562,6 +2582,9 @@ if __name__ == "__main__":
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds[index] = build
@@ -2687,6 +2710,210 @@ if __name__ == "__main__":
             return []
         lines = TELEMETRY.read_text(encoding="utf-8").splitlines()[-100:]
         return [json.loads(line) for line in reversed(lines)]
+
+    @staticmethod
+    def _prompt_snapshot_content(directory: Path, state: object) -> str | None:
+        if not isinstance(state, dict) or not state.get("exists"):
+            return ""
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, str):
+            return None
+        candidate = (directory / snapshot).resolve()
+        if directory.resolve() not in candidate.parents:
+            return None
+        try:
+            payload = candidate.read_bytes()
+        except OSError:
+            return None
+        if len(payload) > 100_000:
+            return None
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def prompt_revisions(self, run_id: str) -> list[dict[str, Any]]:
+        """Return immutable managed-prompt changes and blocked writes for one Run."""
+        run = self._load(run_id)
+        repository = Path(run.repository or "").expanduser()
+        if not repository.is_dir():
+            return []
+        revisions: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            if not isinstance(result, dict):
+                continue
+            update = result.get("file_update") or result.get("file_rollback")
+            blocked = result.get("file_update_blocked")
+            cycle = result.get("improvement_cycle")
+            prompt_update = cycle.get("prompt_update") if isinstance(cycle, dict) else None
+            if (
+                not isinstance(update, dict)
+                and not isinstance(blocked, dict)
+                and not isinstance(prompt_update, dict)
+            ):
+                continue
+            event = (
+                update
+                if isinstance(update, dict)
+                else blocked
+                if isinstance(blocked, dict)
+                else prompt_update
+            )
+            path = str(event.get("path") or "")
+            version = event.get("version") if isinstance(event.get("version"), dict) else None
+            if not path and isinstance(prompt_update, dict):
+                path = str(prompt_update.get("path") or "")
+                version = (
+                    prompt_update.get("version")
+                    if isinstance(prompt_update.get("version"), dict)
+                    else version
+                )
+            if not path:
+                continue
+            project_key = hashlib.sha256(str(repository.resolve()).encode("utf-8")).hexdigest()
+            path_key = hashlib.sha256(path.encode("utf-8")).hexdigest()
+            directory = APP_DATA / "file-history" / project_key / path_key
+            previous = version.get("previous") if version else None
+            written = version.get("written") if version else None
+            operation = str(version.get("operation") if version else "")
+            reason = str(event.get("reason") or (prompt_update or {}).get("reason") or "")
+            if not version and reason != "awaiting_human_approval":
+                continue
+            revisions.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "path": path,
+                    "status": "blocked"
+                    if reason == "awaiting_human_approval"
+                    else "rolled_back"
+                    if operation == "rollback"
+                    else "applied"
+                    if version
+                    else "unchanged",
+                    "reason": reason or None,
+                    "recorded_at": (version or {}).get("recorded_at") or step.get("ended_at"),
+                    "version_id": (version or {}).get("id"),
+                    "run_id": (version or {}).get("run_id") or run.id,
+                    "before": self._prompt_snapshot_content(directory, previous),
+                    "after": self._prompt_snapshot_content(directory, written),
+                    "before_sha256": (previous or {}).get("sha256"),
+                    "after_sha256": (written or {}).get("sha256"),
+                }
+            )
+        # A Run record is convenient for current executions, but prompt files
+        # have a longer life than a single Run. Merge the durable file history
+        # so older updates remain visible even when their old runner did not
+        # emit a structured result in the current schema.
+        expected_path = ""
+        if run.evaluation_build_id:
+            try:
+                expected_path = str(
+                    self.evaluation_build(run.evaluation_build_id).get("managed_prompt_path", "")
+                )
+            except KeyError:
+                pass
+        history_root = APP_DATA / "file-history"
+        for manifest_path in history_root.glob("*/*/manifest.json"):
+            try:
+                document = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if document.get("project_root") != str(repository.resolve()):
+                continue
+            path = str(document.get("relative_path") or "")
+            if not path or (expected_path and path != expected_path):
+                continue
+            history = document.get("history")
+            if not isinstance(history, list):
+                continue
+            directory = manifest_path.parent
+            current_path = repository / path
+            current = current_path.read_bytes() if current_path.is_file() else None
+            for index, version in enumerate(history):
+                if not isinstance(version, dict):
+                    continue
+                previous = version.get("previous")
+                written = version.get("written")
+                after = self._prompt_snapshot_content(directory, written)
+                if after is None and isinstance(written, dict):
+                    next_previous = (
+                        history[index + 1].get("previous")
+                        if index + 1 < len(history) and isinstance(history[index + 1], dict)
+                        else None
+                    )
+                    if isinstance(next_previous, dict) and next_previous.get("sha256") == written.get(
+                        "sha256"
+                    ):
+                        after = self._prompt_snapshot_content(directory, next_previous)
+                    elif current is not None and hashlib.sha256(current).hexdigest() == written.get("sha256"):
+                        try:
+                            after = current.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
+                existing = next(
+                    (item for item in revisions if item.get("version_id") == version.get("id")), None
+                )
+                if existing is not None:
+                    if existing.get("before") is None:
+                        existing["before"] = self._prompt_snapshot_content(directory, previous)
+                    if existing.get("after") is None:
+                        existing["after"] = after
+                    existing["run_id"] = existing.get("run_id") or version.get("run_id")
+                    continue
+                operation = str(version.get("operation") or "")
+                revisions.append(
+                    {
+                        "iteration": version.get("iteration"),
+                        "phase": version.get("phase"),
+                        "path": path,
+                        "status": "rolled_back" if operation == "rollback" else "applied",
+                        "recorded_at": version.get("recorded_at"),
+                        "version_id": version.get("id"),
+                        "run_id": version.get("run_id"),
+                        "before": self._prompt_snapshot_content(directory, previous),
+                        "after": after,
+                        "before_sha256": previous.get("sha256") if isinstance(previous, dict) else None,
+                        "after_sha256": written.get("sha256") if isinstance(written, dict) else None,
+                    }
+                )
+        ordered = sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+        initial_revisions: list[dict[str, Any]] = []
+        current_by_path: dict[str, str] = {}
+        for revision in ordered:
+            path = str(revision.get("path") or "")
+            before = revision.get("before")
+            after = revision.get("after")
+            if path and path not in current_by_path:
+                initial = before if isinstance(before, str) else after if isinstance(after, str) else None
+                if initial is not None:
+                    initial_revisions.append(
+                        {
+                            "iteration": None,
+                            "phase": "initial",
+                            "path": path,
+                            "status": "initial",
+                            "reason": None,
+                            "recorded_at": None,
+                            "version_id": None,
+                            "run_id": None,
+                            "before": initial,
+                            "after": initial,
+                            "before_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                        }
+                    )
+                    current_by_path[path] = initial
+            if revision.get("status") == "blocked" and path in current_by_path:
+                revision["before"] = current_by_path[path]
+                revision["after"] = current_by_path[path]
+                digest = hashlib.sha256(current_by_path[path].encode("utf-8")).hexdigest()
+                revision["before_sha256"] = digest
+                revision["after_sha256"] = digest
+            elif isinstance(after, str) and path:
+                current_by_path[path] = after
+        return [*initial_revisions, *ordered]
 
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
@@ -3356,19 +3583,27 @@ if __name__ == "__main__":
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
             init = [step for step in steps if step.phase == "init"]
-            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval", "teardown"}]
+            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
+            teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
             for step in init:
                 self._execute_step(run_id, step, 0, resources)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
             for loop_index in range(1, run.loop_limit + 1):
+                terminal_before_iteration = self._load(run_id).status in {"failed", "cancelled"}
+                if not terminal_before_iteration:
+                    for step in loop_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                # Cleanup is part of the lifecycle contract, not merely the
+                # happy path. Run it after an earlier phase fails or a user
+                # cancels the Run; the terminal status remains unchanged.
+                for step in teardown_steps:
+                    self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
-                for step in loop_steps:
-                    self._execute_step(run_id, step, loop_index, resources)
-                    if self._load(run_id).status in {"failed", "cancelled"}:
-                        break
                 if (
                     self._load(run_id).status == "running"
                     and run.execution_mode == "run"
@@ -3703,7 +3938,13 @@ if __name__ == "__main__":
             return
 
     def _execute_step(
-        self, run_id: str, step, loop_index: int = 1, resources: dict[str, Any] | None = None
+        self,
+        run_id: str,
+        step,
+        loop_index: int = 1,
+        resources: dict[str, Any] | None = None,
+        *,
+        allow_terminal: bool = False,
     ) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
             "workflow.step",
@@ -3714,7 +3955,7 @@ if __name__ == "__main__":
             },
         ) as span:
             run = self._load(run_id)
-            if run.status == "cancelled":
+            if run.status in {"failed", "cancelled"} and not allow_terminal:
                 return
             run.current_step, run.current_phase, run.updated_at = step.id, step.phase, now()
             self._save(run)
@@ -3830,11 +4071,18 @@ if __name__ == "__main__":
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    # A stop request intentionally terminates the subprocess.
+                    # Preserve cancellation while still letting the caller run
+                    # the terminal teardown path.
+                    if self._load(run_id).status == "cancelled":
+                        return
                     self._fail(run, step.id, f"exit code {process.returncode}")
                     return
             except subprocess.TimeoutExpired:
                 process.kill()
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
+                if self._load(run_id).status == "cancelled":
+                    return
                 self._fail(self._load(run_id), step.id, f"timed out after {step.timeout_seconds}s")
                 return
             except ValueError as error:
