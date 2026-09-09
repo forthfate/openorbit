@@ -129,15 +129,17 @@ function PipelineYamlEditor({
   value,
   onChange,
   hint,
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
   hint: string;
+  label: string;
 }) {
   return (
     <div className="pipeline-yaml-editor">
       <p className="hint">{hint}</p>
-      <YamlEditor value={value} onChange={onChange} />
+      <YamlEditor value={value} onChange={onChange} label={label} />
     </div>
   );
 }
@@ -250,6 +252,7 @@ function WorkflowModal({
             value={workflowYaml}
             onChange={setWorkflowYaml}
             hint={l.pipelineHint}
+            label={l.steps}
           />
         )}
         <div className="modal-actions">
