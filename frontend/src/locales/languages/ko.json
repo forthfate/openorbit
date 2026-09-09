@@ -56,6 +56,10 @@
       "placeholder": "Orbit에 메시지 보내기…",
       "send": "메시지 전송"
     },
+    "appMeta": {
+      "title": "OpenOrbit",
+      "titleSeparator": " - "
+    },
     "navigationAccessibility": {
       "expandNavigation": "탐색 메뉴 펼치기",
       "collapseNavigation": "탐색 메뉴 접기",
@@ -160,10 +164,25 @@
         "label": "실행 제한",
         "hint": "이 빌드에 예약하거나 유지할 최대 실행 수입니다."
       },
+      "iterationStrategy": {
+        "label": "반복 전략",
+        "hint": "선형 반복 또는 감독자 점수로 병렬 후보를 비교하는 방식을 선택합니다."
+      },
+      "iterationStrategyLinear": "선형",
+      "iterationStrategyScoreSelect": "점수 기반 선택",
+      "candidatesPerIteration": {
+        "label": "반복당 후보 수",
+        "hint": "다음 반복으로 진행할 승자를 고르기 전에 비교할 후보 수입니다."
+      },
       "approvalScore": {
         "label": "승인 점수",
         "hint": "승인에 필요한 최소 감독자 점수입니다."
       },
+      "humanApproval": {
+        "label": "개선 적용 전 사람 승인 필요",
+        "hint": "감독자 제안은 사람이 적용을 승인할 때까지 증거로만 보존합니다."
+      },
+      "humanApprovalEnable": "유효화",
       "name": "이름",
       "next": "다음"
     },
@@ -513,9 +532,39 @@
       "iteration": "반복",
       "detail": "평가 실행 상세",
       "workflow": "워크플로 로그",
+      "workflowDescription": "단계별 실행 로그와 브라우저 근거를 검토합니다.",
       "logs": "로그",
+      "logsDescription": "전체 실행 출력을 시간순으로 한 번에 확인합니다.",
       "supervisor": "감독관 AI",
+      "supervisorDescription": "감독관에게 전달한 프롬프트와 평가 응답을 확인합니다.",
       "result": "평가 결과",
+      "resultDescription": "평가 점수, 판단, 개선 제안 및 보고된 이슈를 확인합니다.",
+      "promptChanges": "프롬프트 변화",
+      "promptChangesDescription": "평가 반복 과정에서 기록된 프롬프트 변경을 비교합니다.",
+      "commitChanges": "커밋 변화",
+      "commitChangesDescription": "이 실행에서 생성된 커밋, 변경 파일 및 보관된 diff를 검토합니다.",
+      "noCommitChanges": "이 실행에는 기록된 커밋 변화가 없습니다.",
+      "commits": "커밋",
+      "changedFiles": "변경 파일",
+      "noChangedFiles": "기록된 변경 파일이 없습니다.",
+      "diffArtifact": "보관된 diff",
+      "loadingCommitDiff": "보관된 diff를 불러오는 중…",
+      "previousCommitChange": "이전 커밋 변화",
+      "nextCommitChange": "다음 커밋 변화",
+      "commitVersion": "변화 {0} / {1}",
+      "noPromptChanges": "이 반복에는 기록된 프롬프트 변화가 없습니다.",
+      "noPromptSnapshot": "이전 버전이라 비교용 스냅샷을 보관하지 않았습니다.",
+      "initialPromptState": "최초 프롬프트 상태",
+      "initialPromptHint": "기록된 변경이 적용되기 전의 관리 프롬프트입니다.",
+      "promptinitial": "최초 상태",
+      "promptapplied": "적용됨",
+      "promptblocked": "승인 대기",
+      "promptrolled_back": "롤백됨",
+      "promptunchanged": "변경 없음",
+      "promptBlockedHint": "사람 승인 필요 정책에 따라 실제 파일 변경 전에 차단됐습니다.",
+      "previousPromptChange": "이전 프롬프트 변화",
+      "nextPromptChange": "다음 프롬프트 변화",
+      "promptVersion": "변화 {0} / {1}",
       "score": "점수",
       "decision": "평가 결정",
       "proposals": "개선 제안",

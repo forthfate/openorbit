@@ -44,6 +44,10 @@ export function AppShell({
     locale,
     "shell",
   );
+  const appMeta = localeMessages<{ title: string; titleSeparator: string }>(
+    locale,
+    "appMeta",
+  );
   const dashboardLinks = localeMessages<{
     repository: string;
     releases: string;
@@ -93,6 +97,10 @@ export function AppShell({
     () => localStorage.setItem(sidebarStorageKey, String(collapsed)),
     [collapsed],
   );
+  useEffect(() => {
+    document.title = `${appMeta.title}${appMeta.titleSeparator}${pageDescriptions[page]}`;
+    document.documentElement.lang = locale;
+  }, [appMeta, locale, page, pageDescriptions]);
   const navigationLabels = localeMessages<{
     expandNavigation: string;
     collapseNavigation: string;
@@ -133,7 +141,7 @@ export function AppShell({
           <div className="brand">
             <Sparkles size={20} />
             <div>
-              <span>OpenOrbit</span>
+              <span>{appMeta.title}</span>
               <small>{__OPENORBIT_VERSION__}</small>
             </div>
           </div>

@@ -56,6 +56,10 @@
       "placeholder": "Orbit にメッセージ…",
       "send": "メッセージを送信"
     },
+    "appMeta": {
+      "title": "OpenOrbit",
+      "titleSeparator": " - "
+    },
     "navigationAccessibility": {
       "expandNavigation": "ナビゲーションを展開",
       "collapseNavigation": "ナビゲーションを折りたたむ",
@@ -160,10 +164,25 @@
         "label": "実行上限",
         "hint": "このビルドでスケジュールまたは保持する最大実行数です。"
       },
+      "iterationStrategy": {
+        "label": "反復戦略",
+        "hint": "線形反復または監督者スコアで並列候補を比較する方式を選択します。"
+      },
+      "iterationStrategyLinear": "線形",
+      "iterationStrategyScoreSelect": "スコアベース選択",
+      "candidatesPerIteration": {
+        "label": "反復ごとの候補数",
+        "hint": "次の反復へ進む勝者を選ぶ前に比較する候補数です。"
+      },
       "approvalScore": {
         "label": "承認スコア",
         "hint": "承認に必要な監督者の最低スコアです。"
       },
+      "humanApproval": {
+        "label": "改善の適用前に人の承認を必須にする",
+        "hint": "監督者の提案は、人が適用を承認するまで証跡として保持します。"
+      },
+      "humanApprovalEnable": "有効化",
       "name": "名前",
       "next": "次へ"
     },
@@ -513,9 +532,39 @@
       "iteration": "反復",
       "detail": "評価実行の詳細",
       "workflow": "ワークフローログ",
+      "workflowDescription": "フェーズごとの実行ログとブラウザー証跡を確認します。",
       "logs": "ログ",
+      "logsDescription": "すべての実行出力を時系列でまとめて確認します。",
       "supervisor": "監督AI",
+      "supervisorDescription": "監督AIに送信したプロンプトと評価応答を確認します。",
       "result": "評価結果",
+      "resultDescription": "評価スコア、判断、改善提案、報告された問題を確認します。",
+      "promptChanges": "プロンプトの変更",
+      "promptChangesDescription": "評価の反復で記録されたプロンプト変更を比較します。",
+      "commitChanges": "コミット変更",
+      "commitChangesDescription": "この実行で作成されたコミット、変更ファイル、保持済み diff を確認します。",
+      "noCommitChanges": "この実行には記録済みのコミット変更がありません。",
+      "commits": "コミット",
+      "changedFiles": "変更ファイル",
+      "noChangedFiles": "記録済みの変更ファイルはありません。",
+      "diffArtifact": "保持済み diff",
+      "loadingCommitDiff": "保持済み diff を読み込み中…",
+      "previousCommitChange": "前のコミット変更",
+      "nextCommitChange": "次のコミット変更",
+      "commitVersion": "変更 {0} / {1}",
+      "noPromptChanges": "この反復には記録済みのプロンプト変更がありません。",
+      "noPromptSnapshot": "この旧版には比較用のスナップショットがありません。",
+      "initialPromptState": "初期プロンプト状態",
+      "initialPromptHint": "記録された変更が適用される前の管理プロンプトです。",
+      "promptinitial": "初期状態",
+      "promptapplied": "適用済み",
+      "promptblocked": "承認待ち",
+      "promptrolled_back": "ロールバック済み",
+      "promptunchanged": "変更なし",
+      "promptBlockedHint": "人の承認が必要なポリシーにより、ファイル変更前にブロックされました。",
+      "previousPromptChange": "前のプロンプト変更",
+      "nextPromptChange": "次のプロンプト変更",
+      "promptVersion": "変更 {0} / {1}",
       "score": "スコア",
       "decision": "評価判断",
       "proposals": "改善提案",

@@ -53,7 +53,10 @@ type Draft = {
   timezone: string;
   repeat_interval_minutes: number;
   run_limit: number;
+  iteration_strategy: "linear" | "score_select";
+  candidates_per_iteration: number;
   approval_score: number;
+  require_human_approval_before_apply: boolean;
   enabled: boolean;
 };
 
@@ -86,7 +89,13 @@ type BuildWizardCopy = {
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
   runLimit: LabelCopy;
+  iterationStrategy: LabelCopy;
+  iterationStrategyLinear: string;
+  iterationStrategyScoreSelect: string;
+  candidatesPerIteration: LabelCopy;
   approvalScore: LabelCopy;
+  humanApproval: LabelCopy;
+  humanApprovalEnable: string;
   name: string;
   next: string;
 };
@@ -132,7 +141,10 @@ const empty: Draft = {
   timezone: "Asia/Tokyo",
   repeat_interval_minutes: 30,
   run_limit: 1,
+  iteration_strategy: "linear",
+  candidates_per_iteration: 2,
   approval_score: 8,
+  require_human_approval_before_apply: false,
   enabled: true,
 };
 const testIsActive = (status: string) =>
@@ -151,7 +163,11 @@ const draftOf = (b: Build, copy = false): Draft => ({
   timezone: b.timezone,
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
+  iteration_strategy: b.iteration_strategy ?? "linear",
+  candidates_per_iteration: b.candidates_per_iteration ?? 2,
   approval_score: b.approval_score,
+  require_human_approval_before_apply:
+    b.require_human_approval_before_apply ?? false,
   enabled: b.enabled,
 });
 const Field = ({
@@ -467,6 +483,17 @@ function Direct({
               }
             />
           </Field>
+          <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
+            <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
+              <option value="linear">{copy.iterationStrategyLinear}</option>
+              <option value="score_select">{copy.iterationStrategyScoreSelect}</option>
+            </select>
+          </Field>
+          {d.iteration_strategy === "score_select" && (
+            <Field label={copy.candidatesPerIteration.label} description={copy.candidatesPerIteration.hint}>
+              <input type="number" min="2" max="8" value={d.candidates_per_iteration} onChange={(e) => setD({ ...d, candidates_per_iteration: Number(e.target.value) })} />
+            </Field>
+          )}
           <Field
             label={copy.approvalScore.label}
             description={copy.approvalScore.hint}
@@ -478,6 +505,24 @@ function Direct({
                 setD({ ...d, approval_score: Number(e.target.value) })
               }
             />
+          </Field>
+          <Field
+            label={copy.humanApproval.label}
+            description={copy.humanApproval.hint}
+          >
+            <span className="build-approval-toggle">
+              <input
+                type="checkbox"
+                checked={d.require_human_approval_before_apply}
+                onChange={(e) =>
+                  setD({
+                    ...d,
+                    require_human_approval_before_apply: e.target.checked,
+                  })
+                }
+              />
+              {copy.humanApprovalEnable}
+            </span>
           </Field>
         </div>
       )}
