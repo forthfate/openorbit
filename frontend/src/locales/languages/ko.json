@@ -170,6 +170,14 @@
         "label": "반복 간격",
         "hint": "반복 실행 사이의 시간(분)입니다."
       },
+      "iterationTiming": {
+        "label": "반복 실행 시점",
+        "hint": "이전 실행이 끝난 뒤 간격을 시작할지, 고정된 시각 기준으로 실행할지 선택합니다."
+      },
+      "iterationTimingAfterCompletion": "완료 후 대기",
+      "iterationTimingFixed": "고정 간격",
+      "iterationTimingWait": "현재 작업이 끝나는 즉시 시작",
+      "iterationTimingInterrupt": "평가를 끝내고 정리 단계로 진행",
       "runLimit": {
         "label": "실행 제한",
         "hint": "이 빌드에 예약하거나 유지할 최대 실행 수입니다."

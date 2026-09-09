@@ -170,6 +170,14 @@
         "label": "繰り返し間隔",
         "hint": "繰り返し実行の間隔（分）です。"
       },
+      "iterationTiming": {
+        "label": "反復実行のタイミング",
+        "hint": "前の実行の完了後に間隔を開始するか、固定時刻を基準に実行するかを選択します。"
+      },
+      "iterationTimingAfterCompletion": "完了後に待機",
+      "iterationTimingFixed": "固定間隔",
+      "iterationTimingWait": "現在の作業が終わり次第開始",
+      "iterationTimingInterrupt": "評価を終了して後処理へ進む",
       "runLimit": {
         "label": "実行上限",
         "hint": "このビルドでスケジュールまたは保持する最大実行数です。"

@@ -94,6 +94,11 @@ type BuildWizardCopy = {
   aiProfile: LabelCopy;
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
+  iterationTiming: LabelCopy;
+  iterationTimingAfterCompletion: string;
+  iterationTimingFixed: string;
+  iterationTimingWait: string;
+  iterationTimingInterrupt: string;
   runLimit: LabelCopy;
   iterationStrategy: LabelCopy;
   iterationStrategyLinear: string;
@@ -493,9 +498,9 @@ function Direct({
               }
             />
           </Field>
-          <Field label="Iteration timing" description="Choose whether the interval begins after completion or stays on a fixed clock.">
-            <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">Wait after completion</option><option value="fixed">Fixed interval</option></select>
-            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">Start as soon as the current work finishes</option><option value="interrupt_eval">End evaluation and continue with teardown</option></select>}
+          <Field label={copy.iterationTiming.label} description={copy.iterationTiming.hint}>
+            <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">{copy.iterationTimingAfterCompletion}</option><option value="fixed">{copy.iterationTimingFixed}</option></select>
+            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select>}
           </Field>
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
