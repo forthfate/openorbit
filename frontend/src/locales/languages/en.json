@@ -81,7 +81,7 @@
         "title": "Operational manager prompt",
         "description": "Defines Orbit-wide manager behavior and the required response contract. The selected evaluation-build manager template is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
         "warning": "This prompt contains Orbit-reserved instructions, placeholders, and a response contract. Preserve all reserved sections and their structure; changing or removing them can stop evaluations or make results unreadable.",
-        "edit": "Edit prompt",
+        "edit": "Edit",
         "content": "Prompt content",
         "save": "Save",
         "cancel": "Cancel",

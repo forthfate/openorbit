@@ -41,16 +41,21 @@ export function RunDetailTabs({
 export function RunDetailTabPanel({
   description,
   hint,
+  action,
   children,
 }: {
   description: string;
   hint?: string;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <section className="run-detail-tab-panel" role="tabpanel">
       {hint && <TooltipBox>{hint}</TooltipBox>}
-      <p className="run-detail-tab-panel__description">{description}</p>
+      <div className="run-detail-tab-panel__intro">
+        <p className="run-detail-tab-panel__description">{description}</p>
+        {action}
+      </div>
       {children}
     </section>
   );

@@ -32,6 +32,7 @@ import {
   localeMessageMap,
   localeMessages,
   locales,
+  intlLocales,
   resolveLocale,
   type Locale,
 } from "../../locales";
@@ -85,8 +86,8 @@ const tick = (value: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-const timestamp = (value?: string) =>
-  value ? new Date(value).toLocaleString() : "—";
+const timestamp = (locale: Locale, value?: string) =>
+  value ? new Date(value).toLocaleString(intlLocales[locale]) : "—";
 function Card({ title, children }: { title: string; children: ReactNode }) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     chartHints = localeMessages<Record<string, string>>(locale, "chartHints"),
@@ -381,9 +382,11 @@ function iterationDataFiles(items: ProposalLifecycle[]): SavedDataFile[] {
 
 function ProposalHistory({
   t,
+  locale,
   buildId,
 }: {
   t: (typeof copy)["en"];
+  locale: Locale;
   buildId?: string;
 }) {
   const [items, setItems] = useState<ProposalLifecycle[]>([]),
@@ -523,7 +526,7 @@ function ProposalHistory({
                             {t.iteration} #{group.iteration}
                           </strong>
                           <small>
-                            {timestamp(group.recordedAt)}
+                            {timestamp(locale, group.recordedAt)}
                           </small>
                         </span>
                         <span className="proposal-tree__iteration-meta">
@@ -624,7 +627,7 @@ function ProposalHistory({
                       )}
                     />
                     <div>
-                      <strong>{timestamp(event.recorded_at)}</strong>
+                      <strong>{timestamp(locale, event.recorded_at)}</strong>
                       <small>
                         {t.iteration} #{event.iteration ?? "—"} ·{" "}
                         {event.phase || "—"}
@@ -726,7 +729,7 @@ function CycleImprovementAI({
               </div>
             )}
           </div>
-          <ProposalHistory t={copy[locale]} buildId={build} />
+          <ProposalHistory t={copy[locale]} locale={locale} buildId={build} />
         </>
       )}
     </section>

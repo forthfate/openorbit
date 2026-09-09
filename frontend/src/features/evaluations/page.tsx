@@ -704,6 +704,28 @@ export function EvaluationsPage({
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
+  const iterationNavigator =
+    tab !== "result" && tab !== "prompt" && iterations.length > 0 ? (
+      <div className="iteration-navigator" aria-label={l.iteration}>
+        <button className="ghost icon-button" type="button" aria-label={ui.previousIteration} title={ui.previousIteration} disabled={previousIteration === undefined} onClick={() => {
+          if (previousIteration !== undefined) {
+            setIterationTab(previousIteration);
+            setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
+          }
+        }}><ChevronLeft size={16} /></button>
+        <select aria-label={l.iteration} value={iterationTab} onChange={(event) => {
+          const next = Number(event.target.value);
+          setIterationTab(next);
+          setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
+        }}>{[...iterations].reverse().map((iteration) => <option key={iteration} value={iteration}>#{iteration}</option>)}</select>
+        <button className="ghost icon-button" type="button" aria-label={ui.nextIteration} title={ui.nextIteration} disabled={nextIteration === undefined} onClick={() => {
+          if (nextIteration !== undefined) {
+            setIterationTab(nextIteration);
+            setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
+          }
+        }}><ChevronRight size={16} /></button>
+      </div>
+    ) : undefined;
   return (
     <section className="panel active-evaluation-panel">
       <PanelHeader
@@ -921,51 +943,6 @@ export function EvaluationsPage({
           />
           {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
             <>
-            <div className="iteration-navigator" aria-label={l.iteration}>
-              <button
-                className="ghost icon-button"
-                type="button"
-                aria-label={ui.previousIteration}
-                title={ui.previousIteration}
-                disabled={previousIteration === undefined}
-                onClick={() => {
-                  if (previousIteration !== undefined) {
-                    setIterationTab(previousIteration);
-                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
-                  }
-                }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <select
-                aria-label={l.iteration}
-                value={iterationTab}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setIterationTab(next);
-                  setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
-                }}
-              >
-                {[...iterations].reverse().map((iteration) => (
-                  <option key={iteration} value={iteration}>#{iteration}</option>
-                ))}
-              </select>
-              <button
-                className="ghost icon-button"
-                type="button"
-                aria-label={ui.nextIteration}
-                title={ui.nextIteration}
-                disabled={nextIteration === undefined}
-                onClick={() => {
-                  if (nextIteration !== undefined) {
-                    setIterationTab(nextIteration);
-                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
-                  }
-                }}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
             {selected.iteration_strategy === "score_select" && (
               <div className="iteration-candidates">
                 {(selected.iteration_candidates ?? []).filter((candidate) => candidate.iteration === iterationTab).map((candidate) => (
@@ -978,7 +955,7 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint}>
+            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint} action={iterationNavigator}>
               <div className="run-tabs phase-tabs">
                 {phases.map((phase) => (
                   <button
@@ -1000,7 +977,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "logs" && (
-            <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint}>
+            <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint} action={iterationNavigator}>
               <CombinedLogPanel
                 steps={selectedSteps}
                 locale={locale}
@@ -1021,12 +998,12 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint}>
+            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint} action={iterationNavigator}>
               <CommitChangesPanel changes={commitChanges} l={l} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
-            <RunDetailTabPanel description={l.supervisorDescription} hint={l.supervisorDataHint}>
+            <RunDetailTabPanel description={l.supervisorDescription} hint={l.supervisorDataHint} action={iterationNavigator}>
               {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
