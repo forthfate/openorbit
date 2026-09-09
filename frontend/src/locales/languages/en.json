@@ -227,6 +227,10 @@
       "quickStarts": "Quick starts",
       "quickStartsHint": "Choose a validated example to start an evaluation build quickly."
     },
+    "dashboardOverview": {
+      "title": "Evaluation overview",
+      "description": "Live counts across all local evaluation builds and runs."
+    },
     "dashboardLinks": {
       "repository": "GitHub repository",
       "releases": "Release notes",
@@ -235,7 +239,8 @@
     },
     "dashboardOperations": {
       "title": "Evaluation health",
-      "description": "A 24-hour operating summary from retained supervisor evidence.",
+      "description": "Review feedback, accepted changes, issues, and scores from the last 24 hours.",
+      "tooltip": "Calculated from supervisor evidence retained by completed evaluations during the last 24 hours; it does not represent live target availability.",
       "feedback": "Feedback",
       "accepted": "Accepted",
       "issues": "Reported issues",
@@ -247,15 +252,19 @@
     "dashboardFeedbackTrends": {
       "title": "Evaluation feedback trends",
       "range": "Range",
-      "evaluation": "Evaluation",
       "feedbackVolume": "Feedback by evaluation",
-      "iterationTrend": "Accepted feedback & score by iteration",
       "activeTrend": "Active evaluations over time",
       "feedbackStatus": "Feedback status distribution",
       "issueSeverity": "Reported issue severity",
       "runHealth": "Evaluation run health",
-      "accepted": "Accepted", "score": "Score", "feedbackCount": "Feedback count", "activeCount": "Active evaluations", "noIterationFeedback": "No iteration feedback in this period.",
-      "adopted": "Adopted", "rejected": "Rejected", "proposed": "Proposed", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+      "activeCount": "Active evaluations",
+      "feedbackCount": "Feedback count", "adopted": "Adopted", "rejected": "Rejected", "proposed": "Proposed", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+    },
+    "improvementEvaluationTrends": {
+      "title": "Iteration improvement trend",
+      "range": "Range",
+      "iterationTrend": "Accepted feedback & score by iteration",
+      "accepted": "Accepted", "score": "Score", "noIterationFeedback": "No iteration feedback in this period."
     },
     "dashboardHelp": {
       "trend": "Compare hourly supervisor feedback with the improvements accepted during the same period."
@@ -694,6 +703,7 @@
       "改善効果": "改善前後のスコアと成功差分を比較します。",
       "Runners": "Create reusable runners that execute project-specific automation.",
       "Evaluation feedback trends": "Review feedback volume, acceptance, issues, and run health across evaluation builds.",
+      "Iteration improvement trend": "Review accepted improvement feedback and supervisor-score changes in each iteration of the selected evaluation build.",
       "평가 피드백 추이": "평가 빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.",
       "評価フィードバックの推移": "評価ビルドごとのフィードバック、受容結果、課題、実行状態の推移を確認します。",
       "Proposal decision history": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",

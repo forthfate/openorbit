@@ -226,6 +226,10 @@
       "quickStarts": "빠른 시작",
       "quickStartsHint": "검증된 예시를 선택해 평가 빌드를 빠르게 시작하세요."
     },
+    "dashboardOverview": {
+      "title": "평가 개요",
+      "description": "모든 로컬 평가 빌드와 실행의 현재 집계를 확인합니다."
+    },
     "dashboardLinks": {
       "repository": "GitHub 저장소",
       "releases": "릴리스 노트",
@@ -234,7 +238,8 @@
     },
     "dashboardOperations": {
       "title": "평가 운영 상태",
-      "description": "보존된 감독관 증거를 기준으로 한 최근 24시간 운영 요약입니다.",
+      "description": "최근 24시간의 피드백, 수용된 변경, 문제, 점수를 확인합니다.",
+      "tooltip": "완료된 평가가 최근 24시간 동안 보존한 감독관 증거를 바탕으로 계산합니다. 대상 시스템의 실시간 가용성을 뜻하지는 않습니다.",
       "feedback": "피드백",
       "accepted": "수용",
       "issues": "보고된 문제",
@@ -246,15 +251,19 @@
     "dashboardFeedbackTrends": {
       "title": "평가 피드백 추이",
       "range": "기간",
-      "evaluation": "평가",
       "feedbackVolume": "평가별 피드백",
-      "iterationTrend": "반복별 수용 피드백 및 점수",
       "activeTrend": "실행 중 평가",
       "feedbackStatus": "피드백 상태 분포",
       "issueSeverity": "보고된 문제 심각도",
       "runHealth": "평가 실행 건강도",
-      "accepted": "수용됨", "score": "점수", "feedbackCount": "피드백 수", "activeCount": "실행 중 평가", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다.",
-      "adopted": "적용됨", "rejected": "기각됨", "proposed": "제안됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
+      "activeCount": "실행 중 평가",
+      "feedbackCount": "피드백 수", "adopted": "적용됨", "rejected": "기각됨", "proposed": "제안됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
+    },
+    "improvementEvaluationTrends": {
+      "title": "반복 개선 추이",
+      "range": "기간",
+      "iterationTrend": "반복별 수용 피드백 및 점수",
+      "accepted": "수용됨", "score": "점수", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다."
     },
     "dashboardHelp": {
       "trend": "시간대별 감독관 피드백과 같은 기간에 수용된 개선을 비교합니다."
@@ -694,6 +703,7 @@
       "Runners": "Create reusable runners that execute project-specific automation.",
       "Evaluation feedback trends": "Review feedback volume, acceptance, issues, and run health across evaluation builds.",
       "평가 피드백 추이": "평가 빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.",
+      "반복 개선 추이": "선택한 평가 빌드의 각 반복에서 수용된 개선 피드백과 감독관 점수 변화를 확인합니다.",
       "評価フィードバックの推移": "評価ビルドごとのフィードバック、受容結果、課題、実行状態の推移を確認します。",
       "Proposal decision history": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",
       "제안 결정 히스토리": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",

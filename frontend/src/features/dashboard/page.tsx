@@ -15,7 +15,7 @@ import type {
   ImprovementAnalytics,
   QuickStart,
 } from "../../domain/models";
-import { MetricCard } from "../../components/ui/page-header";
+import { MetricCard, PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
 import {
@@ -38,6 +38,7 @@ type HeroCopy = {
 type OperationsCopy = {
   title: string;
   description: string;
+  tooltip: string;
   feedback: string;
   accepted: string;
   issues: string;
@@ -47,6 +48,7 @@ type OperationsCopy = {
   previous: string;
 };
 type DashboardHelp = { trend: string };
+type OverviewCopy = { title: string; description: string };
 
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
@@ -106,7 +108,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
         <div>
           <p className="eyebrow">IMPROVEMENT RESULTS</p>
           <h2>
-            <SectionInfo title={copy.title} description={copy.description} />
+            <SectionInfo title={copy.title} description={copy.tooltip} />
           </h2>
           <p className="hint">{copy.description}</p>
         </div>
@@ -182,6 +184,7 @@ export function DashboardPage({
 }) {
   const t = locales[locale].common,
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
+    overview = localeMessages<OverviewCopy>(locale, "dashboardOverview"),
     dashboard = locales[locale].dashboardUi,
     quickStartLabels = localeMessages<
       Record<string, { name: string; description: string }>
@@ -240,7 +243,10 @@ export function DashboardPage({
           </div>
         </section>
       )}
-      <div className="metrics">
+      <section className="panel dashboard-overview">
+        <PanelHeader title={overview.title} description={overview.description} />
+        <p className="hint">{overview.description}</p>
+        <div className="metrics">
         <MetricCard
           label={t.totalEval}
           value={`${data?.metrics.evaluation_builds ?? 0}`}
@@ -254,7 +260,8 @@ export function DashboardPage({
           value={`${data?.active_runs.length ?? 0}`}
         />
         <MetricCard label={t.totalError} value={`${errors}`} />
-      </div>
+        </div>
+      </section>
       <section className="recent-evaluations">
         {recent.map((run) => {
           const active = ["queued", "running", "awaiting_approval"].includes(

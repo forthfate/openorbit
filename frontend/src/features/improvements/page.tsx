@@ -37,6 +37,7 @@ import {
   type Locale,
 } from "../../locales";
 import "./saved-data-files.css";
+import { FeedbackTrends } from "../dashboard/feedback-trends";
 
 type ImprovementCopy = {
   improvement: string;
@@ -758,6 +759,7 @@ export function ImprovementsPage() {
           </select>
         </label>
       </section>
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
       <CycleImprovementAI locale={locale} build={build} />
     </>
   );
