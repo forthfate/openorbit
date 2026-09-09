@@ -60,6 +60,13 @@
       "title": "OpenOrbit",
       "titleSeparator": " - "
     },
+    "navigationAccessibility": {
+      "expandNavigation": "ナビゲーションを展開",
+      "collapseNavigation": "ナビゲーションを折りたたむ",
+      "activeRuns": "実行中: {count}件",
+      "githubLabel": "GitHub の OpenOrbit",
+      "githubTitle": "OpenOrbit の GitHub リポジトリ"
+    },
     "shell": {
       "dashboard": "評価の運用状態、最近のアクティビティ、運用イベントを一目で確認します。",
       "assets": "評価で使う再利用可能な環境、ランナー、テンプレート、テストケース、ワークフローを管理します。",
