@@ -252,6 +252,7 @@ export default function App() {
         executionEnvironments={room.executionEnvironments}
         targetEnvironments={room.targetEnvironments}
         profiles={room.profiles}
+        loading={room.loading}
         settings={room.settings}
         setSettings={room.setSettings}
         test={test}
