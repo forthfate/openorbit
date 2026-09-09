@@ -1005,6 +1005,8 @@ export function EvaluationsPage({
                 steps={selectedSteps}
                 locale={locale}
                 empty={l.noLogs}
+                orbitLogs={l.orbitLogs}
+                targetLogs={l.targetLogs}
               />
             </RunDetailTabPanel>
           )}

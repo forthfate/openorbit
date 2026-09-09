@@ -1,5 +1,6 @@
 import base64
 import json
+import sys
 
 import orbit_sdk as sdk
 import pytest
@@ -39,6 +40,57 @@ def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch
     assert cancelled.status == "cancelled"
     assert cancelled.current_step is None
     assert cancelled.current_phase is None
+
+
+def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    project = tmp_path / "target"
+    project.mkdir()
+    runner = project / "runner.py"
+    runner.write_text(
+        "from orbit_sdk import runner\n"
+        "@runner.phase('run')\n"
+        "def run(ctx):\n"
+        "    ctx.target_log('service started', source='target-api')\n"
+        "    ctx.target_log('slow response', level='warn', source='target-api')\n"
+        "if __name__ == '__main__': runner.main()\n",
+        encoding="utf-8",
+    )
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="target-log-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+
+    store._execute_step(
+        "target-log-run",
+        Step(
+            id="run",
+            phase="run",
+            name="Run",
+            command=[sys.executable, str(runner), "--phase", "run"],
+            working_directory=str(project),
+        ),
+        loop_index=3,
+    )
+
+    step = store._load("target-log-run").step_results[-1]
+    assert "target_logs" not in (step.get("result") or {})
+    assert step["output"] == ""
+    assert [(entry["level"], entry["source"], entry["message"]) for entry in step["target_logs"]] == [
+        ("info", "target-api", "service started"),
+        ("warn", "target-api", "slow response"),
+    ]
+    assert all(entry["run_id"] == "target-log-run" for entry in step["target_logs"])
+    assert all(entry["iteration"] == 3 and entry["phase"] == "run" for entry in step["target_logs"])
 
 
 def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):

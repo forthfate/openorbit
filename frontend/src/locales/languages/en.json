@@ -541,6 +541,8 @@
       "workflowDescription": "Review phase-by-phase execution logs and browser evidence.",
       "logs": "Logs",
       "logsDescription": "View all execution output together in chronological order.",
+      "orbitLogs": "Orbit logs",
+      "targetLogs": "Target logs",
       "supervisor": "Supervisor AI",
       "supervisorDescription": "Review the prompt sent to the supervisor and its evaluation response.",
       "result": "Evaluation result",

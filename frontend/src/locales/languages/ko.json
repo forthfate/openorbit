@@ -540,6 +540,8 @@
       "workflowDescription": "단계별 실행 로그와 브라우저 근거를 검토합니다.",
       "logs": "로그",
       "logsDescription": "전체 실행 출력을 시간순으로 한 번에 확인합니다.",
+      "orbitLogs": "Orbit 로그",
+      "targetLogs": "대상 로그",
       "supervisor": "감독관 AI",
       "supervisorDescription": "감독관에게 전달한 프롬프트와 평가 응답을 확인합니다.",
       "result": "평가 결과",

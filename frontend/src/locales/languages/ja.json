@@ -540,6 +540,8 @@
       "workflowDescription": "フェーズごとの実行ログとブラウザー証跡を確認します。",
       "logs": "ログ",
       "logsDescription": "すべての実行出力を時系列でまとめて確認します。",
+      "orbitLogs": "Orbit ログ",
+      "targetLogs": "対象ログ",
       "supervisor": "監督AI",
       "supervisorDescription": "監督AIに送信したプロンプトと評価応答を確認します。",
       "result": "評価結果",

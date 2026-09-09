@@ -18,7 +18,11 @@ export function WorkflowLogPanel({ steps, locale, empty }: { steps: RunStepResul
   return <div className="console-output workflow-log-output">{visibleSteps.length ? visibleSteps.map((step, index) => <section key={`${step.step_id}-${index}`}>{step.result && <BrowserEvidence result={step.result} />}{(step.log_lines?.length || step.output || step.error) && <TimestampedLogOutput locale={locale} lines={stepLogLines(step)} />}</section>) : <p className="hint">{empty}</p>}</div>;
 }
 
-export function CombinedLogPanel({ steps, locale, empty }: { steps: RunStepResult[]; locale: Locale; empty: string }) {
+export function CombinedLogPanel({ steps, locale, empty, orbitLogs, targetLogs }: { steps: RunStepResult[]; locale: Locale; empty: string; orbitLogs: string; targetLogs: string }) {
   const logSteps = steps.filter((step) => step.output || step.error);
-  return <div className="console-output">{logSteps.length ? <TimestampedLogOutput lines={logSteps.flatMap(stepLogLines)} locale={locale} /> : <p className="hint">{empty}</p>}</div>;
+  const targetLines = steps.flatMap((step) => step.target_logs ?? []).map((entry) => ({
+    timestamp: entry.timestamp,
+    value: `[${entry.level ?? "info"}]${entry.source ? ` ${entry.source}` : ""} ${entry.message}`,
+  }));
+  return <div className="console-output"><section><h3>{orbitLogs}</h3>{logSteps.length ? <TimestampedLogOutput lines={logSteps.flatMap(stepLogLines)} locale={locale} /> : <p className="hint">{empty}</p>}</section><section><h3>{targetLogs}</h3>{targetLines.length ? <TimestampedLogOutput lines={targetLines} locale={locale} /> : <p className="hint">{empty}</p>}</section></div>;
 }

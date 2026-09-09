@@ -4456,6 +4456,7 @@ if __name__ == "__main__":
                 output_reader.join()
                 persist_live_output()
                 structured_result: dict[str, Any] | None = None
+                target_logs: list[dict[str, Any]] = []
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
                     if line.startswith("__ORBIT_RESULT__"):
@@ -4463,6 +4464,27 @@ if __name__ == "__main__":
                             emitted = json.loads(line.removeprefix("__ORBIT_RESULT__"))
                             if not isinstance(emitted, dict):
                                 raise ValueError("structured runner result must be an object")
+                            emitted_target_logs = emitted.pop("target_logs", [])
+                            if isinstance(emitted_target_logs, list):
+                                for entry in emitted_target_logs:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    message = entry.get("message")
+                                    if not isinstance(message, str) or not message.strip():
+                                        continue
+                                    target_logs.append(
+                                        {
+                                            "timestamp": entry.get("timestamp")
+                                            if isinstance(entry.get("timestamp"), str)
+                                            else timestamp,
+                                            "level": str(entry.get("level") or "info")[:32],
+                                            "source": str(entry.get("source") or "")[:256],
+                                            "message": message.strip()[:4000],
+                                            "run_id": run_id,
+                                            "iteration": loop_index,
+                                            "phase": step.phase,
+                                        }
+                                    )
                             structured_result = {**(structured_result or {}), **emitted}
                         except json.JSONDecodeError:
                             visible_lines.append((timestamp, line))
@@ -4487,6 +4509,8 @@ if __name__ == "__main__":
                 }
                 if structured_result is not None:
                     result["result"] = structured_result
+                if target_logs:
+                    result["target_logs"] = target_logs[-200:]
                 run = self._load(run_id)
                 live_index = next(
                     (
