@@ -978,7 +978,7 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription}>
+            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint}>
               <div className="run-tabs phase-tabs">
                 {phases.map((phase) => (
                   <button
@@ -1000,7 +1000,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "logs" && (
-            <RunDetailTabPanel description={l.logsDescription}>
+            <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint}>
               <CombinedLogPanel
                 steps={selectedSteps}
                 locale={locale}
@@ -1011,7 +1011,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription}>
+            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
               <PromptChangesPanel
                 key={selected.id}
                 revisions={promptRevisions}
@@ -1021,12 +1021,12 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription}>
+            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint}>
               <CommitChangesPanel changes={commitChanges} l={l} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
-            <RunDetailTabPanel description={l.supervisorDescription}>
+            <RunDetailTabPanel description={l.supervisorDescription} hint={l.supervisorDataHint}>
               {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
@@ -1059,7 +1059,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "result" && (
-            <RunDetailTabPanel description={l.resultDescription}>
+            <RunDetailTabPanel description={l.resultDescription} hint={l.resultDataHint}>
               <div className="run-result">
               <div className="result-filter-trigger" ref={resultFilterMenu}>
                 <button
