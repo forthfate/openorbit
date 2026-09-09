@@ -747,11 +747,14 @@ function PromptTemplateEditor({
       const saved = localStorage.getItem(draftKey);
       return saved ? (JSON.parse(saved) as PromptTemplate) : { ...template };
     }),
-    [selectedVersion, setSelectedVersion] = useState(template.version),
+    [selectedVersion, setSelectedVersion] = useState(draft.version),
     [notice, setNotice] = useState("");
+  const selectedContent =
+    versions.find((item) => item.version === selectedVersion)?.content ??
+    template.content;
   const dirty =
     draft.name !== template.name ||
-    draft.content !== template.content ||
+    draft.content !== selectedContent ||
     draft.id !== template.id;
   useEffect(() => {
     if (dirty) localStorage.setItem(draftKey, JSON.stringify(draft));
