@@ -32,9 +32,25 @@ for (const language of [en, ko, ja]) {
     await expect(body).toHaveValue('Previous prompt')
     await expect(editor.getByRole('combobox')).toHaveValue('1')
 
+    // A saved historical version is clean and must not survive as a draft.
+    await expect.poll(() => page.evaluate(key => localStorage.getItem(key), draftKey)).toBeNull()
+    await editor.getByRole('button', { name: close, exact: true }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await page.getByText('Draft regression template', { exact: true }).click()
+    await expect(body).toHaveValue('Current prompt')
+    await expect(editor.getByRole('combobox')).toHaveValue('2')
+
+    // A genuine edit based on v1 restores both its content and version.
+    await editor.getByRole('combobox').selectOption('1')
+    await body.fill('Edited previous prompt')
+    await expect.poll(() => page.evaluate(key => JSON.parse(localStorage.getItem(key)!).content, draftKey)).toBe('Edited previous prompt')
+    await page.reload()
+    await page.getByText('Draft regression template', { exact: true }).click()
+    await expect(body).toHaveValue('Edited previous prompt')
+    await expect(editor.getByRole('combobox')).toHaveValue('1')
     await editor.getByRole('button', { name: close, exact: true }).click()
     await confirm.getByRole('button', { name: close, exact: true }).click()
-    await expect(body).toHaveValue('Previous prompt')
+    await expect(body).toHaveValue('Edited previous prompt')
     await editor.getByRole('button', { name: close, exact: true }).click()
     await confirm.getByRole('button', { name: copy.discard, exact: true }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
