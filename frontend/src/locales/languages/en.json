@@ -65,6 +65,10 @@
       "placeholder": "Message Orbit…",
       "send": "Send message"
     },
+    "appMeta": {
+      "title": "OpenOrbit",
+      "titleSeparator": " - "
+    },
     "shell": {
       "dashboard": "Monitor evaluation health, recent activity, and operational events at a glance.",
       "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by evaluations.",
@@ -162,10 +166,25 @@
         "label": "Run limit",
         "hint": "Maximum number of runs to retain or schedule for this build."
       },
+      "iterationStrategy": {
+        "label": "Iteration strategy",
+        "hint": "Run iterations linearly or compare parallel candidates by supervisor score."
+      },
+      "iterationStrategyLinear": "Linear",
+      "iterationStrategyScoreSelect": "Score-based selection",
+      "candidatesPerIteration": {
+        "label": "Candidates per iteration",
+        "hint": "Number of candidates to compare before selecting the winner."
+      },
       "approvalScore": {
         "label": "Approval score",
         "hint": "Minimum supervisor score required for approval."
       },
+      "humanApproval": {
+        "label": "Require human approval before applying improvements",
+        "hint": "Keep supervisor proposals as evidence until a human approves their application."
+      },
+      "humanApprovalEnable": "Enable",
       "name": "Name",
       "next": "Next"
     },
@@ -515,9 +534,39 @@
       "iteration": "Iteration",
       "detail": "Evaluation run detail",
       "workflow": "Workflow logs",
+      "workflowDescription": "Review phase-by-phase execution logs and browser evidence.",
       "logs": "Logs",
+      "logsDescription": "View all execution output together in chronological order.",
       "supervisor": "Supervisor AI",
+      "supervisorDescription": "Review the prompt sent to the supervisor and its evaluation response.",
       "result": "Evaluation result",
+      "resultDescription": "Review evaluation scores, decisions, proposed improvements, and reported issues.",
+      "promptChanges": "Prompt changes",
+      "promptChangesDescription": "Compare the prompt changes recorded across evaluation iterations.",
+      "commitChanges": "Commit changes",
+      "commitChangesDescription": "Inspect commits, changed files, and retained diffs created during this run.",
+      "noCommitChanges": "No commit changes were recorded for this run.",
+      "commits": "Commits",
+      "changedFiles": "Changed files",
+      "noChangedFiles": "No changed files were recorded.",
+      "diffArtifact": "Retained diff",
+      "loadingCommitDiff": "Loading retained diff…",
+      "previousCommitChange": "Previous commit change",
+      "nextCommitChange": "Next commit change",
+      "commitVersion": "Change {0} of {1}",
+      "noPromptChanges": "No prompt changes were recorded for this iteration.",
+      "noPromptSnapshot": "This older revision has no retained comparison snapshot.",
+      "initialPromptState": "Initial prompt state",
+      "initialPromptHint": "The managed prompt before any recorded change.",
+      "promptinitial": "Initial",
+      "promptapplied": "Applied",
+      "promptblocked": "Awaiting approval",
+      "promptrolled_back": "Rolled back",
+      "promptunchanged": "No change",
+      "promptBlockedHint": "The human-approval policy blocked this write before the file changed.",
+      "previousPromptChange": "Previous prompt change",
+      "nextPromptChange": "Next prompt change",
+      "promptVersion": "Change {0} of {1}",
       "score": "Score",
       "decision": "Evaluation decision",
       "proposals": "Proposed improvements",

@@ -187,7 +187,20 @@ def setup(ctx):
         proposal for proposal in feedback.get("improvements", [])
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
-    prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    requires_human_approval = bool(
+        ctx.evaluation_build.get("require_human_approval_before_apply", False)
+    )
+    if requires_human_approval and accepted:
+        # A supervisor's adoption is a recommendation, not an operator
+        # authorization. Keep it as evidence until an operator approves it.
+        prompt_update = {
+            "changed": False,
+            "reason": "awaiting_human_approval",
+            "proposal_count": len(accepted),
+        }
+        accepted = []
+    else:
+        prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
@@ -198,6 +211,7 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
             }
@@ -1923,6 +1937,9 @@ if __name__ == "__main__":
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
         runs = self.runs()
         for build in builds:
+            # Existing builds predate this optional policy, so leave it off
+            # unless an operator explicitly enabled it.
+            build.setdefault("require_human_approval_before_apply", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
@@ -2494,7 +2511,12 @@ if __name__ == "__main__":
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds = self.evaluation_builds()
@@ -2561,7 +2583,12 @@ if __name__ == "__main__":
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
             "run_limit": values["run_limit"],
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds[index] = build
@@ -2687,6 +2714,272 @@ if __name__ == "__main__":
             return []
         lines = TELEMETRY.read_text(encoding="utf-8").splitlines()[-100:]
         return [json.loads(line) for line in reversed(lines)]
+
+    @staticmethod
+    def _prompt_snapshot_content(directory: Path, state: object) -> str | None:
+        if not isinstance(state, dict) or not state.get("exists"):
+            return ""
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, str):
+            return None
+        candidate = (directory / snapshot).resolve()
+        if directory.resolve() not in candidate.parents:
+            return None
+        try:
+            payload = candidate.read_bytes()
+        except OSError:
+            return None
+        if len(payload) > 100_000:
+            return None
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def prompt_revisions(self, run_id: str) -> list[dict[str, Any]]:
+        """Return immutable managed-prompt changes and blocked writes for one Run."""
+        run = self._load(run_id)
+        repository = Path(run.repository or "").expanduser()
+        if not repository.is_dir():
+            return []
+        revisions: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            if not isinstance(result, dict):
+                continue
+            update = result.get("file_update") or result.get("file_rollback")
+            blocked = result.get("file_update_blocked")
+            cycle = result.get("improvement_cycle")
+            prompt_update = cycle.get("prompt_update") if isinstance(cycle, dict) else None
+            if (
+                not isinstance(update, dict)
+                and not isinstance(blocked, dict)
+                and not isinstance(prompt_update, dict)
+            ):
+                continue
+            event = (
+                update
+                if isinstance(update, dict)
+                else blocked
+                if isinstance(blocked, dict)
+                else prompt_update
+            )
+            path = str(event.get("path") or "")
+            version = event.get("version") if isinstance(event.get("version"), dict) else None
+            if not path and isinstance(prompt_update, dict):
+                path = str(prompt_update.get("path") or "")
+                version = (
+                    prompt_update.get("version")
+                    if isinstance(prompt_update.get("version"), dict)
+                    else version
+                )
+            if not path:
+                continue
+            project_key = hashlib.sha256(str(repository.resolve()).encode("utf-8")).hexdigest()
+            path_key = hashlib.sha256(path.encode("utf-8")).hexdigest()
+            directory = APP_DATA / "file-history" / project_key / path_key
+            previous = version.get("previous") if version else None
+            written = version.get("written") if version else None
+            operation = str(version.get("operation") if version else "")
+            reason = str(event.get("reason") or (prompt_update or {}).get("reason") or "")
+            if not version and reason != "awaiting_human_approval":
+                continue
+            revisions.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "path": path,
+                    "status": "blocked"
+                    if reason == "awaiting_human_approval"
+                    else "rolled_back"
+                    if operation == "rollback"
+                    else "applied"
+                    if version
+                    else "unchanged",
+                    "reason": reason or None,
+                    "recorded_at": (version or {}).get("recorded_at") or step.get("ended_at"),
+                    "version_id": (version or {}).get("id"),
+                    "run_id": (version or {}).get("run_id") or run.id,
+                    "before": self._prompt_snapshot_content(directory, previous),
+                    "after": self._prompt_snapshot_content(directory, written),
+                    "before_sha256": (previous or {}).get("sha256"),
+                    "after_sha256": (written or {}).get("sha256"),
+                }
+            )
+        # A Run record is convenient for current executions, but prompt files
+        # have a longer life than a single Run. Merge the durable file history
+        # so older updates remain visible even when their old runner did not
+        # emit a structured result in the current schema.
+        expected_path = ""
+        if run.evaluation_build_id:
+            try:
+                expected_path = str(
+                    self.evaluation_build(run.evaluation_build_id).get("managed_prompt_path", "")
+                )
+            except KeyError:
+                pass
+        history_root = APP_DATA / "file-history"
+        for manifest_path in history_root.glob("*/*/manifest.json"):
+            try:
+                document = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if document.get("project_root") != str(repository.resolve()):
+                continue
+            path = str(document.get("relative_path") or "")
+            if not path or (expected_path and path != expected_path):
+                continue
+            history = document.get("history")
+            if not isinstance(history, list):
+                continue
+            directory = manifest_path.parent
+            current_path = repository / path
+            current = current_path.read_bytes() if current_path.is_file() else None
+            for index, version in enumerate(history):
+                if not isinstance(version, dict):
+                    continue
+                previous = version.get("previous")
+                written = version.get("written")
+                after = self._prompt_snapshot_content(directory, written)
+                if after is None and isinstance(written, dict):
+                    next_previous = (
+                        history[index + 1].get("previous")
+                        if index + 1 < len(history) and isinstance(history[index + 1], dict)
+                        else None
+                    )
+                    if isinstance(next_previous, dict) and next_previous.get("sha256") == written.get(
+                        "sha256"
+                    ):
+                        after = self._prompt_snapshot_content(directory, next_previous)
+                    elif current is not None and hashlib.sha256(current).hexdigest() == written.get("sha256"):
+                        try:
+                            after = current.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
+                existing = next(
+                    (item for item in revisions if item.get("version_id") == version.get("id")), None
+                )
+                if existing is not None:
+                    if existing.get("before") is None:
+                        existing["before"] = self._prompt_snapshot_content(directory, previous)
+                    if existing.get("after") is None:
+                        existing["after"] = after
+                    existing["run_id"] = existing.get("run_id") or version.get("run_id")
+                    continue
+                operation = str(version.get("operation") or "")
+                revisions.append(
+                    {
+                        "iteration": version.get("iteration"),
+                        "phase": version.get("phase"),
+                        "path": path,
+                        "status": "rolled_back" if operation == "rollback" else "applied",
+                        "recorded_at": version.get("recorded_at"),
+                        "version_id": version.get("id"),
+                        "run_id": version.get("run_id"),
+                        "before": self._prompt_snapshot_content(directory, previous),
+                        "after": after,
+                        "before_sha256": previous.get("sha256") if isinstance(previous, dict) else None,
+                        "after_sha256": written.get("sha256") if isinstance(written, dict) else None,
+                    }
+                )
+        ordered = sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+        initial_revisions: list[dict[str, Any]] = []
+        current_by_path: dict[str, str] = {}
+        for revision in ordered:
+            path = str(revision.get("path") or "")
+            before = revision.get("before")
+            after = revision.get("after")
+            if path and path not in current_by_path:
+                initial = before if isinstance(before, str) else after if isinstance(after, str) else None
+                if initial is not None:
+                    initial_revisions.append(
+                        {
+                            "iteration": None,
+                            "phase": "initial",
+                            "path": path,
+                            "status": "initial",
+                            "reason": None,
+                            "recorded_at": None,
+                            "version_id": None,
+                            "run_id": None,
+                            "before": initial,
+                            "after": initial,
+                            "before_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                        }
+                    )
+                    current_by_path[path] = initial
+            if revision.get("status") == "blocked" and path in current_by_path:
+                revision["before"] = current_by_path[path]
+                revision["after"] = current_by_path[path]
+                digest = hashlib.sha256(current_by_path[path].encode("utf-8")).hexdigest()
+                revision["before_sha256"] = digest
+                revision["after_sha256"] = digest
+            elif isinstance(after, str) and path:
+                current_by_path[path] = after
+        return [*initial_revisions, *ordered]
+
+    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
+        """Return commit ranges automatically retained by SDK runner phases."""
+        run = self._load(run_id)
+        changes: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            event = result.get("commit_change") if isinstance(result, dict) else None
+            if not isinstance(event, dict) and isinstance(result, dict):
+                jgent = result.get("jgent_paired")
+                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
+                event = candidate if isinstance(candidate, dict) else None
+            if not isinstance(event, dict):
+                continue
+            before, after = str(event.get("before") or ""), str(event.get("after") or "")
+            if not before or not after or before == after:
+                continue
+            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
+            diff: str | None = None
+            if artifact:
+                raw_path = artifact.get("path")
+                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
+                artifacts_root = (APP_DATA / "artifacts").resolve()
+                if candidate and artifacts_root in candidate.parents:
+                    try:
+                        if candidate.stat().st_size <= 500_000:
+                            diff = candidate.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        pass
+            changes.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "recorded_at": step.get("ended_at"),
+                    "before": before,
+                    "after": after,
+                    "changed_paths": event.get("changed_paths")
+                    if isinstance(event.get("changed_paths"), list)
+                    else [],
+                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
+                    "diff_artifact": artifact,
+                    "diff": diff,
+                }
+            )
+        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
+
+    def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
+        """Resolve one retained run artifact without permitting path traversal."""
+        if loop_index < 0:
+            raise KeyError(relative_path)
+        relative = Path(relative_path)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise KeyError(relative_path)
+        directory = (APP_DATA / "artifacts" / run_id / f"loop-{loop_index}").resolve()
+        candidate = (directory / relative).resolve()
+        if directory not in candidate.parents or not candidate.is_file():
+            raise KeyError(relative_path)
+        return candidate
 
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
@@ -3107,6 +3400,8 @@ if __name__ == "__main__":
         loop_limit: int = 1,
         repeat_interval_minutes: int = 0,
         approval_score: int | None = None,
+        iteration_strategy: str = "linear",
+        candidates_per_iteration: int = 1,
         repository: str | None = None,
         transient: bool = False,
     ) -> Run:
@@ -3129,6 +3424,8 @@ if __name__ == "__main__":
             loop_limit=max(1, loop_limit),
             repeat_interval_minutes=max(0, repeat_interval_minutes),
             approval_score=approval_score,
+            iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
+            candidates_per_iteration=max(1, candidates_per_iteration),
             status="awaiting_approval" if needs_approval else "queued",
             created_at=now(),
             updated_at=now(),
@@ -3356,19 +3653,101 @@ if __name__ == "__main__":
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
             init = [step for step in steps if step.phase == "init"]
-            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval", "teardown"}]
+            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
+            teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
             for step in init:
                 self._execute_step(run_id, step, 0, resources)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
             for loop_index in range(1, run.loop_limit + 1):
-                if self._load(run_id).status in {"failed", "cancelled"}:
-                    break
-                for step in loop_steps:
-                    self._execute_step(run_id, step, loop_index, resources)
+                run = self._load(run_id)
+                candidate_ids = (
+                    (
+                        [str(loop_index)]
+                        if loop_index == 1
+                        else [f"{loop_index}-{index}" for index in range(1, run.candidates_per_iteration + 1)]
+                    )
+                    if run.iteration_strategy == "score_select"
+                    else []
+                )
+                base_candidate_id = next(
+                    (
+                        str(item["id"])
+                        for item in reversed(run.iteration_candidates)
+                        if item.get("iteration") == loop_index - 1 and item.get("selected")
+                    ),
+                    None,
+                )
+                candidate_results: list[dict[str, Any]] = []
+                for candidate_id in candidate_ids:
                     if self._load(run_id).status in {"failed", "cancelled"}:
                         break
+                    for step in loop_steps:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                    for step in teardown_steps:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            allow_terminal=True,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                    if self._load(run_id).status == "running" and run.execution_mode == "run":
+                        self._complete_supervision(run_id)
+                        record = (self._load(run_id).supervisor_results or [])[-1:]
+                        response = record[0].get("response", {}) if record else {}
+                        evaluation = response.get("evaluation", {}) if isinstance(response, dict) else {}
+                        candidate_results.append(
+                            {
+                                "id": candidate_id,
+                                "iteration": loop_index,
+                                "score": evaluation.get("score"),
+                                "status": record[0].get("status") if record else "failed",
+                            }
+                        )
+                if candidate_results:
+                    ranked = sorted(
+                        candidate_results,
+                        key=lambda item: (
+                            item.get("score") is not None,
+                            item.get("score") or float("-inf"),
+                            item["id"],
+                        ),
+                        reverse=True,
+                    )
+                    winner = ranked[0]
+                    current = self._load(run_id)
+                    for candidate in candidate_results:
+                        candidate["selected"] = candidate["id"] == winner["id"]
+                    current.iteration_candidates.extend(candidate_results)
+                    self._save(current)
+                if run.iteration_strategy == "score_select":
+                    continue
+                terminal_before_iteration = self._load(run_id).status in {"failed", "cancelled"}
+                if not terminal_before_iteration:
+                    for step in loop_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                # Cleanup is part of the lifecycle contract, not merely the
+                # happy path. Run it after an earlier phase fails or a user
+                # cancels the Run; the terminal status remains unchanged.
+                for step in teardown_steps:
+                    self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
+                if self._load(run_id).status in {"failed", "cancelled"}:
+                    break
                 if (
                     self._load(run_id).status == "running"
                     and run.execution_mode == "run"
@@ -3506,6 +3885,14 @@ if __name__ == "__main__":
             ),
             default=0,
         )
+        candidate_id = next(
+            (
+                str(item.get("candidate_id"))
+                for item in reversed(run.step_results)
+                if item.get("loop_index") == iteration and item.get("candidate_id")
+            ),
+            None,
+        )
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -3615,6 +4002,7 @@ if __name__ == "__main__":
                 run.supervisor_results.append(
                     {
                         "iteration": iteration,
+                        "candidate_id": candidate_id,
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
@@ -3703,7 +4091,15 @@ if __name__ == "__main__":
             return
 
     def _execute_step(
-        self, run_id: str, step, loop_index: int = 1, resources: dict[str, Any] | None = None
+        self,
+        run_id: str,
+        step,
+        loop_index: int = 1,
+        resources: dict[str, Any] | None = None,
+        *,
+        allow_terminal: bool = False,
+        candidate_id: str | None = None,
+        base_candidate_id: str | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
             "workflow.step",
@@ -3714,7 +4110,7 @@ if __name__ == "__main__":
             },
         ) as span:
             run = self._load(run_id)
-            if run.status == "cancelled":
+            if run.status in {"failed", "cancelled"} and not allow_terminal:
                 return
             run.current_step, run.current_phase, run.updated_at = step.id, step.phase, now()
             self._save(run)
@@ -3750,6 +4146,10 @@ if __name__ == "__main__":
                 environment["ORBIT_APP_DATA"] = str(APP_DATA)
                 environment["ORBIT_EXECUTION_MODE"] = run.execution_mode
                 environment["ORBIT_LOOP_INDEX"] = str(loop_index)
+                if candidate_id:
+                    environment["ORBIT_CANDIDATE_ID"] = candidate_id
+                if base_candidate_id:
+                    environment["ORBIT_BASE_CANDIDATE_ID"] = base_candidate_id
                 environment["ORBIT_RUN_ID"] = run_id
                 environment["ORBIT_RUNNER_RESOURCES"] = base64.b64encode(
                     json.dumps(resources or {}, ensure_ascii=False).encode("utf-8")
@@ -3769,11 +4169,47 @@ if __name__ == "__main__":
                     env=environment,
                 )
                 captured_lines: list[tuple[str, str]] = []
+                live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
+
+                def retained_visible_lines() -> list[tuple[str, str]]:
+                    retained: list[tuple[str, str]] = []
+                    retained_size = 0
+                    for item in reversed(captured_lines):
+                        if item[1].startswith("__ORBIT_RESULT__"):
+                            continue
+                        line_size = len(item[1]) + (1 if retained else 0)
+                        if retained and retained_size + line_size > 12_000:
+                            break
+                        retained.append(item)
+                        retained_size += line_size
+                    retained.reverse()
+                    return retained
+
+                def persist_live_output() -> None:
+                    retained = retained_visible_lines()
+                    # `_load` and `_save` each acquire the store lock for their
+                    # in-memory test-session handling.  Do not hold it here as
+                    # well: `Lock` is deliberately non-reentrant, and doing so
+                    # would deadlock the reader thread on its first live update.
+                    current = self._load(run_id)
+                    for item in reversed(current.step_results):
+                        if item.get("_live_step_key") == live_step_key:
+                            item["output"] = "\n".join(line for _, line in retained)
+                            item["log_lines"] = [
+                                {"timestamp": timestamp, "value": line} for timestamp, line in retained
+                            ]
+                            current.updated_at = now()
+                            self._save(current)
+                            return
 
                 def capture_output() -> None:
                     assert process.stdout is not None
+                    last_persist = 0.0
                     for line in process.stdout:
                         captured_lines.append((now(), line.rstrip("\r\n")))
+                        if time.monotonic() - last_persist >= 0.75:
+                            persist_live_output()
+                            last_persist = time.monotonic()
 
                 output_reader = threading.Thread(target=capture_output, daemon=True)
                 output_reader.start()
@@ -3781,10 +4217,27 @@ if __name__ == "__main__":
                     self._processes[run_id] = process
                 run = self._load(run_id)
                 run.pid, run.last_pid, run.updated_at = process.pid, process.pid, now()
+                run.step_results.append(
+                    {
+                        "step_id": step.id,
+                        "phase": step.phase,
+                        "loop_index": loop_index,
+                        "candidate_id": candidate_id,
+                        "name": step.name,
+                        "command": step.command,
+                        "working_directory": str(directory),
+                        "started_at": started,
+                        "in_progress": True,
+                        "_live_step_key": live_step_key,
+                        "output": "",
+                        "log_lines": [],
+                    }
+                )
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
                 output_reader.join()
+                persist_live_output()
                 structured_result: dict[str, Any] | None = None
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
@@ -3798,19 +4251,12 @@ if __name__ == "__main__":
                             visible_lines.append((timestamp, line))
                     else:
                         visible_lines.append((timestamp, line))
-                retained_lines: list[tuple[str, str]] = []
-                retained_size = 0
-                for item in reversed(visible_lines):
-                    line_size = len(item[1]) + (1 if retained_lines else 0)
-                    if retained_lines and retained_size + line_size > 12_000:
-                        break
-                    retained_lines.append(item)
-                    retained_size += line_size
-                retained_lines.reverse()
+                retained_lines = retained_visible_lines()
                 result: dict[str, Any] = {
                     "step_id": step.id,
                     "phase": step.phase,
                     "loop_index": loop_index,
+                    "candidate_id": candidate_id,
                     "name": step.name,
                     "command": step.command,
                     "working_directory": str(directory),
@@ -3825,16 +4271,34 @@ if __name__ == "__main__":
                 if structured_result is not None:
                     result["result"] = structured_result
                 run = self._load(run_id)
-                run.step_results.append(result)
+                live_index = next(
+                    (
+                        index
+                        for index, item in enumerate(run.step_results)
+                        if item.get("_live_step_key") == live_step_key
+                    ),
+                    None,
+                )
+                if live_index is None:
+                    run.step_results.append(result)
+                else:
+                    run.step_results[live_index] = result
                 run.pid, run.updated_at = None, now()
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    # A stop request intentionally terminates the subprocess.
+                    # Preserve cancellation while still letting the caller run
+                    # the terminal teardown path.
+                    if self._load(run_id).status == "cancelled":
+                        return
                     self._fail(run, step.id, f"exit code {process.returncode}")
                     return
             except subprocess.TimeoutExpired:
                 process.kill()
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
+                if self._load(run_id).status == "cancelled":
+                    return
                 self._fail(self._load(run_id), step.id, f"timed out after {step.timeout_seconds}s")
                 return
             except ValueError as error:
@@ -3899,6 +4363,8 @@ if __name__ == "__main__":
                 if execution_mode == "test"
                 else int(build.get("repeat_interval_minutes", 0)),
                 approval_score=int(build.get("approval_score", 0)),
+                iteration_strategy=str(build.get("iteration_strategy", "linear")),
+                candidates_per_iteration=int(build.get("candidates_per_iteration", 2)),
                 repository=build.get("repository"),
                 transient=execution_mode == "test",
             )

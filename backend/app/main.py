@@ -171,6 +171,21 @@ def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
 
 
+@app.get("/api/runs/{run_id}/prompt-revisions")
+def prompt_revisions(run_id: str):
+    return safely(lambda: store.prompt_revisions(run_id))
+
+
+@app.get("/api/runs/{run_id}/commit-changes")
+def commit_changes(run_id: str):
+    return safely(lambda: store.commit_changes(run_id))
+
+
+@app.get("/api/runs/{run_id}/artifacts/{loop_index}/{artifact_path:path}")
+def run_artifact(run_id: str, loop_index: int, artifact_path: str):
+    return safely(lambda: FileResponse(store.run_artifact(run_id, loop_index, artifact_path)))
+
+
 @app.get("/api/dashboard")
 def dashboard():
     return store.dashboard()
@@ -363,7 +378,10 @@ class EvaluationBuildCreate(BaseModel):
     timezone: str = Field(min_length=1, max_length=64)
     repeat_interval_minutes: int = Field(ge=1, le=10080)
     run_limit: int = Field(ge=1, le=10000)
+    iteration_strategy: Literal["linear", "score_select"] = "linear"
+    candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
+    require_human_approval_before_apply: bool = False
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
     )  # Legacy fallback; selected execution environment is authoritative.

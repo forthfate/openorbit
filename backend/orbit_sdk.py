@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -174,6 +175,66 @@ class RunnerContext:
         self.emit_result({"git_candidate": result})
         return result
 
+    def git_head(self) -> str | None:
+        """Return the checked-out commit, or None when the target is not a Git repository."""
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    def record_commit_change(self, before: str | None) -> dict[str, object] | None:
+        """Retain commit-range evidence when a runner phase advances the target HEAD."""
+        after = self.git_head()
+        if not before or not after or before == after:
+            return None
+        changed = subprocess.run(
+            ["git", "diff", "--name-only", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.splitlines()
+        commits = subprocess.run(
+            ["git", "log", "--format=%H%x1f%s", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout.splitlines()
+        patch = subprocess.run(
+            ["git", "diff", "--binary", f"{before}..{after}"],
+            cwd=self.project_root,
+            env=self.environment,
+            stdout=subprocess.PIPE,
+            check=True,
+        ).stdout
+        commit_records = [
+            {"sha": value.split("\x1f", 1)[0], "subject": value.split("\x1f", 1)[1]}
+            for value in commits
+            if "\x1f" in value
+        ]
+        result: dict[str, object] = {
+            "before": before,
+            "after": after,
+            "changed_paths": changed,
+            "commits": commit_records,
+        }
+        if patch:
+            result["diff_artifact"] = self.write_artifact(
+                f"commits/{before[:12]}..{after[:12]}.patch",
+                patch,
+                content_type="text/x-diff",
+            )
+        self.emit_result({"commit_change": result})
+        return result
+
     def windows_path(self, value: str | Path) -> str:
         """Convert a WSL-mounted path to a Windows path for a Windows child process."""
         path = Path(value)
@@ -244,6 +305,10 @@ class RunnerContext:
             _atomic_write(directory / snapshot_name, previous)
             previous_state["snapshot"] = snapshot_name
         written_state = self._file_state(written)
+        if written is not None:
+            snapshot_name = f"versions/{sequence:06d}-{written_state['sha256'][:16]}-written.bin"
+            _atomic_write(directory / snapshot_name, written)
+            written_state["snapshot"] = snapshot_name
         version_id = f"v{sequence:06d}-{str(previous_state['sha256'] or 'absent')[:12]}"
         record = {
             "id": version_id,
@@ -277,6 +342,23 @@ class RunnerContext:
         :meth:`rollback_file` to restore a selected one.
         """
         target, relative, directory, manifest_path, manifest = self._load_file_history(relative_path)
+        build = self.evaluation_build
+        managed_prompt_path = str(build.get("managed_prompt_path") or build.get("prompt_bundle") or "")
+        requires_human_approval = bool(build.get("require_human_approval_before_apply", False))
+        if requires_human_approval and relative == managed_prompt_path:
+            # This guard lives in the SDK rather than only in a runner template,
+            # so existing saved native-improvement runners cannot bypass the
+            # Build-level approval policy.
+            current = target.read_bytes() if target.exists() else b""
+            result = {
+                "changed": False,
+                "path": relative,
+                "sha256": _sha256(current),
+                "version": None,
+                "reason": "awaiting_human_approval",
+            }
+            self.emit_result({"file_update_blocked": result})
+            return result
         next_content = content.encode(encoding) if isinstance(content, str) else bytes(content)
         previous = target.read_bytes() if target.exists() else None
         if previous == next_content:
@@ -576,6 +658,20 @@ class RunnerContext:
         records = values.get("supervisor_results", [])
         if not isinstance(records, list):
             return {}
+        selected_candidates = values.get("iteration_candidates", [])
+        winner_ids = {
+            str(item.get("id"))
+            for item in selected_candidates
+            if isinstance(item, dict) and item.get("selected")
+        }
+        if winner_ids:
+            records = sorted(
+                records,
+                key=lambda record: (
+                    isinstance(record, dict) and str(record.get("candidate_id")) in winner_ids,
+                    record.get("iteration", 0) if isinstance(record, dict) else 0,
+                ),
+            )
         for record in reversed(records):
             response = record.get("response") if isinstance(record, dict) else None
             if isinstance(response, dict):
@@ -674,20 +770,36 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         evidence without starting a persistent child daemon.
         """
         self.log(f"exec: {' '.join(command)}")
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd or self.target_repository,
             env={**self.environment, **(env or {})},
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
-            timeout=timeout,
         )
-        if result.stdout:
-            print(result.stdout, end="", flush=True)
-        if result.returncode:
-            raise SystemExit(result.returncode)
-        return result.stdout
+        lines: list[str] = []
+
+        def forward_output() -> None:
+            assert process.stdout is not None
+            for line in process.stdout:
+                lines.append(line)
+                print(line, end="", flush=True)
+
+        reader = threading.Thread(target=forward_output, daemon=True)
+        reader.start()
+        try:
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            reader.join()
+        output = "".join(lines)
+        if process.returncode:
+            raise SystemExit(process.returncode)
+        return output
 
 
 class Runner:
@@ -710,14 +822,20 @@ class Runner:
         handler = self._handlers.get(args.phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
-        handler(
-            RunnerContext(
-                args.phase,
-                Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
-                os.environ.get("ORBIT_EXECUTION_MODE", "run"),
-                int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
-            )
+        context = RunnerContext(
+            args.phase,
+            Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
+            os.environ.get("ORBIT_EXECUTION_MODE", "run"),
+            int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
         )
+        before = context.git_head()
+        try:
+            handler(context)
+        finally:
+            try:
+                context.record_commit_change(before)
+            except (OSError, subprocess.CalledProcessError) as error:
+                context.log(f"Could not retain commit-change evidence: {error}")
 
 
 runner = Runner()

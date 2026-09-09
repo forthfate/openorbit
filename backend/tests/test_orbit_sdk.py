@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+from base64 import b64encode
 
 import orbit_sdk as sdk
 
@@ -33,9 +35,10 @@ def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatc
     assert version["run_id"] == "run-123"
     assert version["previous"]["sha256"] == sdk._sha256(b"before")
     assert version["written"]["sha256"] == sdk._sha256(b"after")
-    snapshot = next((tmp_path / "orbit-data").rglob("*.bin"))
-    assert snapshot.read_bytes() == b"before"
+    assert version["written"]["snapshot"]
     manifest = next((tmp_path / "orbit-data").rglob("manifest.json"))
+    snapshot = manifest.parent / version["previous"]["snapshot"]
+    assert snapshot.read_bytes() == b"before"
     assert json.loads(manifest.read_text(encoding="utf-8"))["history"][0]["id"] == version["id"]
 
 
@@ -67,6 +70,36 @@ def test_update_file_can_rollback_a_file_created_by_the_runner(tmp_path, monkeyp
     context(project, iteration=2).rollback_file("new.txt", created["version"]["id"])
 
     assert not (project / "new.txt").exists()
+
+
+def test_update_file_blocks_a_managed_prompt_when_human_approval_is_required(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    prompt = project / "prompt.md"
+    prompt.write_text("before", encoding="utf-8")
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    resources = {
+        "evaluation_build": {
+            "managed_prompt_path": "prompt.md",
+            "require_human_approval_before_apply": True,
+        }
+    }
+    ctx = sdk.RunnerContext(
+        phase="setup",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={
+            "ORBIT_RUN_ID": "run-123",
+            "ORBIT_RUNNER_RESOURCES": b64encode(json.dumps(resources).encode()).decode(),
+        },
+    )
+
+    result = ctx.update_file("prompt.md", "after")
+
+    assert prompt.read_text(encoding="utf-8") == "before"
+    assert result["changed"] is False
+    assert result["reason"] == "awaiting_human_approval"
 
 
 def test_proposal_decisions_are_a_deduplicated_auditable_event_stream(tmp_path, monkeypatch):
@@ -133,3 +166,38 @@ def test_exec_env_override(tmp_path, monkeypatch):
     )
 
     assert output.strip() == "set"
+
+
+def test_runner_records_a_commit_range_after_a_phase(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Orbit test"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.email", "orbit@example.test"], cwd=project, check=True)
+    target = project / "agent.txt"
+    target.write_text("before\n", encoding="utf-8")
+    subprocess.run(["git", "add", "agent.txt"], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "Initial agent"], cwd=project, check=True, capture_output=True)
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    monkeypatch.setenv("ORBIT_TARGET_REPOSITORY", str(project))
+    monkeypatch.setenv("ORBIT_RUN_ID", "commit-run")
+    monkeypatch.setattr(sys, "argv", ["runner", "--phase", "run"])
+    phase_runner = sdk.Runner()
+
+    @phase_runner.phase("run")
+    def commit_change(ctx):
+        target.write_text("after\n", encoding="utf-8")
+        subprocess.run(["git", "add", "agent.txt"], cwd=ctx.project_root, check=True)
+        subprocess.run(["git", "commit", "-m", "Improve agent"], cwd=ctx.project_root, check=True)
+
+    phase_runner.main()
+
+    events = [
+        json.loads(line.removeprefix("__ORBIT_RESULT__"))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("__ORBIT_RESULT__")
+    ]
+    recorded_change = next(event["commit_change"] for event in events if "commit_change" in event)
+    assert recorded_change["changed_paths"] == ["agent.txt"]
+    assert [item["subject"] for item in recorded_change["commits"]] == ["Improve agent"]
+    assert recorded_change["diff_artifact"]["content_type"] == "text/x-diff"

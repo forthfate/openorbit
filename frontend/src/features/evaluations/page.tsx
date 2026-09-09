@@ -2,10 +2,10 @@ import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilt
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
-  RunStepResult,
+  CommitChange,
+  PromptRevision,
   RunTelemetry,
   SupervisorRecord,
-  TelemetrySpan,
 } from "../../domain/models";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
@@ -18,6 +18,21 @@ import { Tooltip } from "../../components/ui/tooltip";
 import { intlLocales, localeMessageMap, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
+import {
+  RunDetailTabPanel,
+  RunDetailTabs,
+  type RunDetailTab,
+} from "./run-detail-tabs";
+import {
+  CommitChangesPanel,
+  PromptChangesPanel,
+} from "./run-detail-change-panels";
+import {
+  CombinedLogPanel,
+  WorkflowLogPanel,
+} from "./run-detail-log-panels";
+import { SupervisorPanel } from "./run-detail-supervisor-panel";
+import { EvaluationResultPanel } from "./run-detail-result-panel";
 
 const phases = [
   "init",
@@ -66,46 +81,6 @@ type SupervisorResultTranslation = {
     reported_issues: Record<string, string>[];
   };
 };
-function BrowserEvidence({ result }: { result: Record<string, unknown> }) {
-  const journey = result.browser_journey as
-    | {
-        base_url?: string;
-        results?: {
-          id?: string;
-          name?: string;
-          passed?: boolean;
-          url?: string;
-          expected_text?: string;
-          screenshot?: string;
-          error?: string;
-        }[];
-      }
-    | undefined;
-  if (!journey) return null;
-  return (
-    <div className="browser-evidence">
-      <strong>Playwright browser journey</strong>
-      <small>{journey.base_url}</small>
-      {journey.results?.map((item) => (
-        <div key={item.id}>
-          <b
-            className={
-              item.passed ? "browser-evidence__pass" : "browser-evidence__fail"
-            }
-          >
-            {item.passed ? "Passed" : "Failed"}
-          </b>
-          <span>
-            {item.name ?? item.id} · {item.url}
-          </span>
-          {item.expected_text && <small>Expected: {item.expected_text}</small>}
-          {item.screenshot && <small>Screenshot: {item.screenshot}</small>}
-          {item.error && <pre>{item.error}</pre>}
-        </div>
-      ))}
-    </div>
-  );
-}
 function LineNumberedOutput({ value }: { value: string }) {
   return (
     <div className="line-numbered-output">
@@ -118,294 +93,6 @@ function LineNumberedOutput({ value }: { value: string }) {
     </div>
   );
 }
-function TimestampedLogOutput({
-  lines,
-  locale,
-}: {
-  lines: { value: string; timestamp?: string }[];
-  locale: Locale;
-}) {
-  return (
-    <div className="timestamped-log-output">
-      {lines.map((line, index) => (
-        <div key={index}>
-          <time>{time(locale, line.timestamp)}</time>
-          <code>{line.value || " "}</code>
-        </div>
-      ))}
-    </div>
-  );
-}
-const stepLogLines = (step: RunStepResult) =>
-  step.log_lines?.length
-    ? step.log_lines.map(({ timestamp, value }) => ({ value, timestamp }))
-    : (step.output ?? step.error ?? "—").split("\n").map((value) => ({
-        value,
-        timestamp: step.ended_at ?? step.started_at,
-      }));
-function WorkflowLogOutput({
-  steps,
-  locale,
-}: {
-  steps: RunStepResult[];
-  locale: Locale;
-}) {
-  const l = copy[locale];
-  const visibleSteps = steps.filter(
-    (step) =>
-      Boolean(step.result) ||
-      Boolean(step.log_lines?.length) ||
-      Boolean(step.output) ||
-      Boolean(step.error),
-  );
-  return (
-    <div className="console-output workflow-log-output">
-      {visibleSteps.length ? (
-        visibleSteps.map((step, index) => (
-          <section key={`${step.step_id}-${index}`}>
-            {step.result && <BrowserEvidence result={step.result} />}
-            {(step.log_lines?.length || step.output || step.error) && (
-              <TimestampedLogOutput locale={locale} lines={stepLogLines(step)} />
-            )}
-          </section>
-        ))
-      ) : (
-        <p className="hint">{l.noCommandsForPhase}</p>
-      )}
-    </div>
-  );
-}
-function CombinedLogOutput({
-  steps,
-  locale,
-  empty,
-}: {
-  steps: RunStepResult[];
-  locale: Locale;
-  empty: string;
-}) {
-  const logSteps = steps.filter((step) => step.output || step.error);
-  const lines = logSteps.flatMap(stepLogLines);
-  return (
-    <div className="console-output">
-      {logSteps.length ? (
-        <TimestampedLogOutput lines={lines} locale={locale} />
-      ) : (
-        <p className="hint">{empty}</p>
-      )}
-    </div>
-  );
-}
-function ResultList({
-  items,
-  kind,
-  locale,
-  empty,
-  showIteration = false,
-}: {
-  items: Record<string, unknown>[];
-  kind: "improvement" | "issue";
-  locale: Locale;
-  empty: string;
-  showIteration?: boolean;
-}) {
-  return (
-    <div className="result-items">
-      {items.length ? (
-        items.map((item, index) => {
-          const status = String(item.status ?? "—"),
-            severity = String(item.severity ?? "—"),
-            reportedAt =
-              typeof item.reported_at === "string"
-                ? item.reported_at
-                : undefined;
-          return (
-            <article className="result-row" key={index}>
-              <time className="result-row__time">
-                {time(locale, reportedAt)}
-              </time>
-              <div className="result-row__body">
-                <strong>{String(item.title ?? "—")}</strong>
-                <p>
-                  {String(
-                    kind === "improvement"
-                      ? (item.rationale ?? "—")
-                      : (item.evidence ?? "—"),
-                  )}
-                </p>
-              </div>
-              <div className="result-row__metrics">
-                {showIteration && typeof item.__iteration === "number" && (
-                  <span>
-                    <small>Iteration</small>
-                    <b>#{item.__iteration}</b>
-                  </span>
-                )}
-                {kind === "improvement" ? (
-                  <>
-                    <span>
-                      <small>Status</small>
-                      <b className={`decision decision--${status}`}>{status}</b>
-                    </span>
-                    <span>
-                      <small>Score</small>
-                      <b>{String(item.effect_score ?? item.score ?? "—")}</b>
-                    </span>
-                    <span>
-                      <small>Attempted</small>
-                      <b>
-                        {item.attempted === true || status === "adopted"
-                          ? "Yes"
-                          : "No"}
-                      </b>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      <small>Severity</small>
-                      <b className={`decision decision--${severity}`}>
-                        {severity}
-                      </b>
-                    </span>
-                    <span>
-                      <small>Status</small>
-                      <b className={`decision decision--${status}`}>{status}</b>
-                    </span>
-                  </>
-                )}
-              </div>
-            </article>
-          );
-        })
-      ) : (
-        <p className="hint result-empty">{empty}</p>
-      )}
-    </div>
-  );
-}
-function TelemetryTree({
-  telemetry,
-  l,
-}: {
-  telemetry: RunTelemetry | undefined;
-  l: (typeof copy)["en"];
-}) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set()),
-    tree = useMemo(() => {
-      const spans = telemetry?.spans ?? [],
-        children = new Map<string, TelemetrySpan[]>(),
-        known = new Set(spans.map((span) => span.spanId));
-      for (const span of spans) {
-        if (span.parentSpanId && known.has(span.parentSpanId))
-          children.set(span.parentSpanId, [
-            ...(children.get(span.parentSpanId) ?? []),
-            span,
-          ]);
-      }
-      return {
-        roots: spans.filter(
-          (span) => !span.parentSpanId || !known.has(span.parentSpanId),
-        ),
-        children,
-      };
-    }, [telemetry]);
-  if (!telemetry)
-    return <p className="hint">{l.loadingOpenTelemetryTrace}</p>;
-  if (!tree.roots.length)
-    return <p className="hint">{l.noOpenTelemetrySpans}</p>;
-  const render = (span: TelemetrySpan): React.ReactNode => {
-    const children = tree.children.get(span.spanId) ?? [],
-      expandable = children.length > 0,
-      isCollapsed = collapsed.has(span.spanId);
-    return (
-      <li key={span.spanId}>
-        <button
-          type="button"
-          className="trace-node"
-          disabled={!expandable}
-          onClick={() => {
-            if (!expandable) return;
-            setCollapsed((current) => {
-              const next = new Set(current);
-              if (isCollapsed) next.delete(span.spanId);
-              else next.add(span.spanId);
-              return next;
-            });
-          }}
-        >
-          <span
-            className={`trace-status trace-status--${span.status === "ERROR" ? "error" : "ok"}`}
-          />
-          <div>
-            <strong>
-              {expandable
-                ? `${isCollapsed ? "▸" : "▾"} ${span.name}`
-                : span.name}
-            </strong>
-            <small>
-              {span.events?.map((event) => event.name).join(" · ") ||
-                span.status ||
-                "UNSET"}
-            </small>
-          </div>
-        </button>
-        {expandable && !isCollapsed && <ul>{children.map(render)}</ul>}
-      </li>
-    );
-  };
-  return <ul className="telemetry-tree">{tree.roots.map(render)}</ul>;
-}
-function SupervisorOutput({
-  record,
-  l,
-  telemetry,
-  iteration,
-}: {
-  record?: SupervisorRecord;
-  l: (typeof copy)["en"];
-  telemetry: RunTelemetry | undefined;
-  iteration: number;
-}) {
-  const response = record?.response;
-  const iterationTelemetry = telemetry
-    ? {
-        ...telemetry,
-        spans: telemetry.spans.filter(
-          (span) =>
-            span.name === "supervisor.evaluate" &&
-            Number(span.attributes?.["orbit.iteration"]) === iteration,
-        ),
-      }
-    : undefined;
-  return (
-    <div className="supervisor-output">
-      <section>
-        <div className="supervisor-output__head">
-          <strong>{l.supervisorPrompt}</strong>
-          <StatusBadge
-            value={record?.status ?? "pending"}
-            label={record?.status ?? "pending"}
-          />
-        </div>
-        <LineNumberedOutput value={record?.prompt || l.noSupervisorPrompt} />
-      </section>
-      <section>
-        <strong>{l.supervisorResponse}</strong>
-        {response ? (
-          <LineNumberedOutput value={JSON.stringify(response, null, 2)} />
-        ) : (
-          <p>{record?.error || l.supervisorWaiting}</p>
-        )}
-      </section>
-      <section>
-        <strong>{l.openTelemetryTrace}</strong>
-        <TelemetryTree telemetry={iterationTelemetry} l={l} />
-      </section>
-    </div>
-  );
-}
-
 export function EvaluationsPage({
   runs,
   onStop,
@@ -431,12 +118,13 @@ export function EvaluationsPage({
     l = copy[locale],
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
-    [tab, setTab] = useState<"workflow" | "logs" | "supervisor" | "result">(
-      "result",
-    ),
+    [tab, setTab] = useState<RunDetailTab>("result"),
     [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
     [iterationTab, setIterationTab] = useState(1),
+    [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
+    [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
+    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -555,6 +243,18 @@ export function EvaluationsPage({
       api<RunTelemetry>(`/api/runs/${selected.id}/telemetry`)
         .then(setTelemetry)
         .catch(() => setTelemetry({ spans: [] }));
+  }, [selected]);
+  useEffect(() => {
+    if (!selected) return;
+    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
+      .then(setCommitChanges)
+      .catch(() => setCommitChanges([]));
+  }, [selected]);
+  useEffect(() => {
+    if (!selected) return;
+    api<PromptRevision[]>(`/api/runs/${selected.id}/prompt-revisions`)
+      .then(setPromptRevisions)
+      .catch(() => setPromptRevisions([]));
   }, [selected]);
   const label = (status: string) =>
     ({
@@ -721,7 +421,7 @@ export function EvaluationsPage({
       render: (r) => (
         <span className="run-build">
           <strong>{r.evaluation_build_name ?? r.evaluation_build_id}</strong>
-          <small>{r.workflow_name}</small>
+          <code>{r.id}</code>
         </span>
       ),
     },
@@ -739,7 +439,15 @@ export function EvaluationsPage({
           terminal(r.status) ? (r.finished_at ?? r.updated_at) : undefined,
         ),
     },
-    { id: "phase", header: t.phase, render: finalPhase },
+    {
+      id: "phase",
+      header: t.phase,
+      render: (r) => (
+        <span className={`run-phase run-phase--${r.status}`}>
+          {finalPhase(r)}
+        </span>
+      ),
+    },
     { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—" },
     {
       id: "proposed",
@@ -825,15 +533,16 @@ export function EvaluationsPage({
     // visible without inventing a separate, misleading iteration.
     selectedSteps = steps.filter(
       (step) =>
-        step.loop_index === iterationTab ||
-        ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
-        ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1)),
+        (!candidateTab || step.candidate_id === candidateTab) &&
+        (step.loop_index === iterationTab ||
+          ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
+          ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1))),
     ),
     availablePhases = phases.filter((phase) =>
       selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
     ),
     supervision = selected?.supervisor_results?.find(
-      (item) => item.iteration === iterationTab,
+      (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
     ),
     result = supervision?.response,
     evaluation = result?.evaluation;
@@ -902,6 +611,7 @@ export function EvaluationsPage({
         resultIssueStatus === "all" ||
         issues.some((issue) => String(issue.status ?? "—") === resultIssueStatus);
       return (
+        (!candidateTab || record.candidate_id === candidateTab) &&
         resultDecisions.has(decision) &&
         scoreMatches &&
         contentMatches &&
@@ -915,6 +625,7 @@ export function EvaluationsPage({
     });
   }, [
     selected,
+    candidateTab,
     resultContent,
     resultDecisions,
     resultAttemptFilter,
@@ -1108,6 +819,7 @@ export function EvaluationsPage({
           setTab("result");
           setPhaseTab("init");
           setIterationTab(latest);
+          setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
         className="active-evaluation-table"
         gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
@@ -1125,6 +837,14 @@ export function EvaluationsPage({
           }}
           className="modal--run-detail"
         >
+          <div className="run-detail-evaluation">
+            <strong>
+              {selected.evaluation_build_name ??
+                selected.evaluation_build_id ??
+                selected.workflow_name}
+            </strong>
+            <code>{selected.id}</code>
+          </div>
           <div className="run-detail-summary">
             <div>
               <small>{l.status}</small>
@@ -1157,33 +877,20 @@ export function EvaluationsPage({
               <strong>{evaluation?.approval ?? "—"}</strong>
             </div>
           </div>
-          <div className="run-tabs">
-            <button
-              className={tab === "result" ? "active" : ""}
-              onClick={() => setTab("result")}
-            >
-              {l.result}
-            </button>
-            <button
-              className={tab === "supervisor" ? "active" : ""}
-              onClick={() => setTab("supervisor")}
-            >
-              {l.supervisor}
-            </button>
-            <button
-              className={tab === "workflow" ? "active" : ""}
-              onClick={() => setTab("workflow")}
-            >
-              {l.workflow}
-            </button>
-            <button
-              className={tab === "logs" ? "active" : ""}
-              onClick={() => setTab("logs")}
-            >
-              {l.logs}
-            </button>
-          </div>
-          {tab !== "result" && iterations.length > 0 && (
+          <RunDetailTabs
+            activeTab={tab}
+            onSelect={setTab}
+            tabs={[
+              { id: "result", label: l.result },
+              { id: "prompt", label: l.promptChanges },
+              { id: "commits", label: l.commitChanges },
+              { id: "supervisor", label: l.supervisor },
+              { id: "workflow", label: l.workflow },
+              { id: "logs", label: l.logs },
+            ]}
+          />
+          {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
+            <>
             <div className="iteration-navigator" aria-label={l.iteration}>
               <button
                 className="ghost icon-button"
@@ -1192,7 +899,10 @@ export function EvaluationsPage({
                 title={ui.previousIteration}
                 disabled={previousIteration === undefined}
                 onClick={() => {
-                  if (previousIteration !== undefined) setIterationTab(previousIteration);
+                  if (previousIteration !== undefined) {
+                    setIterationTab(previousIteration);
+                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
+                  }
                 }}
               >
                 <ChevronLeft size={16} />
@@ -1200,7 +910,11 @@ export function EvaluationsPage({
               <select
                 aria-label={l.iteration}
                 value={iterationTab}
-                onChange={(event) => setIterationTab(Number(event.target.value))}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  setIterationTab(next);
+                  setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
+                }}
               >
                 {[...iterations].reverse().map((iteration) => (
                   <option key={iteration} value={iteration}>#{iteration}</option>
@@ -1213,15 +927,28 @@ export function EvaluationsPage({
                 title={ui.nextIteration}
                 disabled={nextIteration === undefined}
                 onClick={() => {
-                  if (nextIteration !== undefined) setIterationTab(nextIteration);
+                  if (nextIteration !== undefined) {
+                    setIterationTab(nextIteration);
+                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
+                  }
                 }}
               >
                 <ChevronRight size={16} />
               </button>
             </div>
+            {selected.iteration_strategy === "score_select" && (
+              <div className="iteration-candidates">
+                {(selected.iteration_candidates ?? []).filter((candidate) => candidate.iteration === iterationTab).map((candidate) => (
+                  <button type="button" key={candidate.id} onClick={() => setCandidateTab(candidate.id)} className={candidateTab === candidate.id ? "selected" : ""}>
+                    <b>{candidate.id}</b><small>{candidate.score ?? "—"}/10</small>{candidate.selected && <em>Winner</em>}
+                  </button>
+                ))}
+              </div>
+            )}
+            </>
           )}
           {tab === "workflow" && (
-            <>
+            <RunDetailTabPanel description={l.workflowDescription}>
               <div className="run-tabs phase-tabs">
                 {phases.map((phase) => (
                   <button
@@ -1233,23 +960,41 @@ export function EvaluationsPage({
                   </button>
                 ))}
               </div>
-              <WorkflowLogOutput
+              <WorkflowLogPanel
                 locale={locale}
                 steps={selectedSteps.filter(
                   (step) => (step.phase ?? step.step_id) === phaseTab,
                 )}
+                empty={l.noCommandsForPhase}
               />
-            </>
+            </RunDetailTabPanel>
           )}
           {tab === "logs" && (
-            <CombinedLogOutput
-              steps={selectedSteps}
-              locale={locale}
-              empty={l.noLogs}
-            />
-          )}{" "}
+            <RunDetailTabPanel description={l.logsDescription}>
+              <CombinedLogPanel
+                steps={selectedSteps}
+                locale={locale}
+                empty={l.noLogs}
+              />
+            </RunDetailTabPanel>
+          )}
+          {tab === "prompt" && (
+            <RunDetailTabPanel description={l.promptChangesDescription}>
+              <PromptChangesPanel
+                key={selected.id}
+                revisions={promptRevisions}
+                l={l}
+                renderLineOutput={(value) => <LineNumberedOutput value={value} />}
+              />
+            </RunDetailTabPanel>
+          )}
+          {tab === "commits" && (
+            <RunDetailTabPanel description={l.commitChangesDescription}>
+              <CommitChangesPanel changes={commitChanges} l={l} />
+            </RunDetailTabPanel>
+          )}
           {tab === "supervisor" && (
-            <>
+            <RunDetailTabPanel description={l.supervisorDescription}>
               {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
@@ -1272,16 +1017,18 @@ export function EvaluationsPage({
                 </div>
               )}
               {supervisorTranslations.error && <small className="hint">{translationCopy.failed}</small>}
-              <SupervisorOutput
+              <SupervisorPanel
                 record={translateSupervisorRecord(supervision)}
                 l={l}
                 telemetry={telemetry}
                 iteration={iterationTab}
+                renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
-            </>
-          )}{" "}
+            </RunDetailTabPanel>
+          )}
           {tab === "result" && (
-            <div className="run-result">
+            <RunDetailTabPanel description={l.resultDescription}>
+              <div className="run-result">
               <div className="result-filter-trigger" ref={resultFilterMenu}>
                 <button
                   className="ghost run-filter-button"
@@ -1460,55 +1207,18 @@ export function EvaluationsPage({
                   </div>
                 )}
               </div>
-              {resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
-              {resultRecords.length ? (
-                <>
-                  {resultBehaviorSummaries.length > 0 && (
-                    <section className="result-behavior-summaries">
-                      <h3>{l.observedBehavior}</h3>
-                      <div className="result-items">
-                        {resultBehaviorSummaries.map((item) => (
-                          <article className="result-row" key={item.iteration}>
-                            <time className="result-row__time">{time(locale, item.recordedAt)}</time>
-                            <div className="result-row__body">
-                              <p>{item.summary}</p>
-                            </div>
-                            <div className="result-row__metrics">
-                              <span>
-                                <small>Iteration</small>
-                                <b>#{item.iteration}</b>
-                              </span>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  )}
-                  <section>
-                    <h3>{l.proposals}</h3>
-                    <ResultList
-                      locale={locale}
-                      kind="improvement"
-                      items={resultImprovements}
-                      empty={l.noResults}
-                      showIteration
-                    />
-                  </section>
-                  <section>
-                    <h3>{l.issues}</h3>
-                    <ResultList
-                      locale={locale}
-                      kind="issue"
-                      items={resultIssues}
-                      empty={l.noResults}
-                      showIteration
-                    />
-                  </section>
-                </>
-              ) : (
-                <p className="hint result-empty">{l.noMatchingResults}</p>
-              )}
-            </div>
+{/* Result presentation is isolated from the filter controls above. */}
+              <EvaluationResultPanel
+                error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
+                records={resultRecords}
+                summaries={resultBehaviorSummaries}
+                improvements={resultImprovements}
+                issues={resultIssues}
+                l={l}
+                locale={locale}
+              />
+              </div>
+            </RunDetailTabPanel>
           )}
         </Modal>
       )}

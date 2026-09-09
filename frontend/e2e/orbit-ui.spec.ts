@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test'
 
+test.use({ baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001' })
+
 test('shows the configured repositories and safely runs the approval-gated evaluation', async ({ page }) => {
-  await page.goto('http://127.0.0.1:3001')
+  await page.goto('/')
 
   await page.getByRole('button', { name: 'Evaluation builds' }).click()
   await expect(page).toHaveURL(/#builds/)
@@ -25,7 +27,7 @@ test('shows the configured repositories and safely runs the approval-gated evalu
 })
 
 test('collapses the sidebar and preserves the preference after reload', async ({ page }) => {
-  await page.goto('http://127.0.0.1:3001/#dashboard')
+  await page.goto('/#dashboard')
   const toggle = page.getByRole('button', { name: 'Collapse navigation' })
   await toggle.click()
   await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
@@ -36,7 +38,7 @@ test('collapses the sidebar and preserves the preference after reload', async ({
 })
 
 test('opens the build and profile editors with editable lifecycle fields', async ({ page }) => {
-  await page.goto('http://127.0.0.1:3001/#builds')
+  await page.goto('/#builds')
   await expect(page.getByRole('heading', { name: 'Evaluation builds' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create', exact: true }).click()
@@ -59,11 +61,24 @@ test('opens the build and profile editors with editable lifecycle fields', async
   await profileDialog.getByRole('button', { name: 'Close dialog' }).click()
 })
 
+test('shows the score-based iteration strategy in the Jgent build editor', async ({ page }) => {
+  await page.goto('/#builds')
+  const jgent = page.locator('.tr:not(.th)').filter({ hasText: 'Jgent paired evaluation quality' })
+  await jgent.click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Next' }).click()
+  const strategy = dialog.getByRole('combobox', { name: /Iteration strategy/ })
+  await expect(strategy).toHaveValue('score_select')
+  await expect(strategy).toContainText('Linear')
+  await expect(strategy).toContainText('Score-based selection')
+  await expect(dialog.getByRole('spinbutton', { name: /Candidates per iteration/ })).toBeVisible()
+})
+
 test('creates a safe task in the UI, then completes Test and Run', async ({ page }) => {
   const suffix = Date.now().toString().slice(-8)
   const buildId = `ui-smoke-${suffix}`
   const workflowId = `ui-workflow-${suffix}`
-  await page.goto('http://127.0.0.1:3001/#builds')
+  await page.goto('/#builds')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Create evaluation build' })
   const rowInput = (label: string) => dialog.getByText(label, { exact: true }).locator('..').getByRole('textbox')
@@ -93,13 +108,13 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
   await expect(buildRow).toBeVisible()
 
   await buildRow.getByRole('button', { name: 'Test' }).click()
-  await expect.poll(async () => (await page.request.get('http://127.0.0.1:3001/api/runs')).json().then((runs: { evaluation_build_id?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.status === 'succeeded')?.status)).toBe('succeeded')
+  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { evaluation_build_id?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.status === 'succeeded')?.status)).toBe('succeeded')
   await buildRow.getByRole('button', { name: 'Run' }).click()
-  await expect.poll(async () => (await page.request.get('http://127.0.0.1:3001/api/runs')).json().then((runs: { evaluation_build_id?: string; execution_mode?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.execution_mode === 'run' && run.status === 'succeeded')?.status)).toBe('succeeded')
+  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { evaluation_build_id?: string; execution_mode?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.execution_mode === 'run' && run.status === 'succeeded')?.status)).toBe('succeeded')
 })
 
 test('persists the selected interface language across pages and reloads', async ({ page }) => {
-  await page.goto('http://127.0.0.1:3001/#settings')
+  await page.goto('/#settings')
   const languageSelect = page.locator('select').first()
   await languageSelect.selectOption('ja')
   await page.getByRole('button', { name: '評価ビルド' }).click()
@@ -107,6 +122,6 @@ test('persists the selected interface language across pages and reloads', async 
   await expect(page.getByText('評価ビルド一覧')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: '評価ビルド' })).toBeVisible()
-  await page.goto('http://127.0.0.1:3001/#settings')
+  await page.goto('/#settings')
   await languageSelect.selectOption('en')
 })
