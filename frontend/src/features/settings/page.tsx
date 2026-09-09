@@ -4,10 +4,12 @@ import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
-import type { Settings } from "../../domain/models";
+import { SectionInfo } from "../../components/ui/section-info";
+import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { OrbitLogs } from "./orbit-logs";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
@@ -47,6 +49,7 @@ export function SettingsPage({
   test,
   save,
   tested,
+  logs,
   onDeleteProfile,
 }: {
   locale: Locale;
@@ -59,12 +62,14 @@ export function SettingsPage({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  logs: OrbitLog[];
   onDeleteProfile: (profileName: string) => void;
 }) {
   const t = locales[locale].common,
     settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
     l = settingsCopy.manager,
     p = settingsCopy.profiles,
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     evaluation = locales[locale].evaluation;
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
@@ -142,7 +147,8 @@ export function SettingsPage({
   return (
     <>
       <section className="panel app-settings">
-        <PanelHeader title={t.applicationSettings} />
+        <PanelHeader title={<SectionInfo title={t.applicationSettings} description={sectionDetails.applicationSettings} />} />
+        <p className="hint section-description">{t.applicationSettingsDescription}</p>
         <label className="setting-row">
           <span>
             <strong>{t.language}</strong>
@@ -170,7 +176,8 @@ export function SettingsPage({
         </label>
       </section>
       <section className="panel app-settings app-data-settings">
-        <PanelHeader title={settingsCopy.storage.title} description={settingsCopy.storage.description} />
+        <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
+        <p className="hint section-description">{settingsCopy.storage.description}</p>
         <label className="setting-row">
           <span>
             <strong>{settingsCopy.storage.location}</strong>
@@ -192,7 +199,10 @@ export function SettingsPage({
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader title={p.title} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={p.title} description={sectionDetails.assetProfiles} />} />
+            <p className="hint section-description">{p.description}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {
@@ -235,7 +245,8 @@ export function SettingsPage({
         </div>
       </section>
       <section className="panel app-settings">
-        <PanelHeader title={p.chatProfile} description={p.chatProfileHint} />
+        <PanelHeader title={<SectionInfo title={p.chatProfile} description={sectionDetails.systemAiModel} />} />
+        <p className="hint section-description">{p.chatProfileHint}</p>
         <label className="setting-row">
           <span>
             <strong>{p.selectChatProfile}</strong>
@@ -266,7 +277,10 @@ export function SettingsPage({
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader title={l.title} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={l.title} />
+            <p className="hint section-description">{l.description}</p>
+          </div>
           <button className="approve" onClick={() => setOpen(true)}>
             <Pencil size={14} />
             {l.edit}
@@ -278,6 +292,7 @@ export function SettingsPage({
         </p>
         <p className="setting-prompt-preview">{prompt || l.empty}</p>
       </section>
+      <OrbitLogs logs={logs} locale={locale} />
       <Modal open={open} title={l.title} onClose={() => setOpen(false)}>
         <div className="modal-form">
           <label className="modal-setting-row">

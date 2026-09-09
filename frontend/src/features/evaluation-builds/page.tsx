@@ -955,7 +955,10 @@ export function EvaluationBuildsPage(props: {
     <>
       <section className="panel evaluation-build-panel">
         <div className="panel-title-action">
-          <PanelHeader title={locales[locale].evaluation.evaluationBuildList} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={locales[locale].evaluation.evaluationBuildList} description={localeMessages<Record<string, string>>(locale, "sectionDetails").evaluationBuildList} />} />
+            <p className="hint section-description">{locales[locale].evaluation.evaluationBuildListDescription}</p>
+          </div>
           <div className="build-list-actions">
             <button
               className="ghost"

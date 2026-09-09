@@ -107,7 +107,7 @@
         "locationHint": "절대 로컬 경로를 입력하세요. 변경 전에는 실행 중인 평가를 중지해야 합니다.",
         "size": "사용 중인 저장소",
         "calculating": "저장소 용량 계산중...",
-        "save": "위치 적용",
+        "save": "적용",
         "saved": "앱 데이터 저장소 위치를 변경했습니다."
       },
       "profileForm": {
@@ -226,6 +226,10 @@
       "quickStarts": "빠른 시작",
       "quickStartsHint": "검증된 예시를 선택해 평가 빌드를 빠르게 시작하세요."
     },
+    "dashboardOverview": {
+      "title": "평가 개요",
+      "description": "모든 로컬 평가 빌드와 실행의 현재 집계를 확인합니다."
+    },
     "dashboardLinks": {
       "repository": "GitHub 저장소",
       "releases": "릴리스 노트",
@@ -234,7 +238,8 @@
     },
     "dashboardOperations": {
       "title": "평가 운영 상태",
-      "description": "보존된 감독관 증거를 기준으로 한 최근 24시간 운영 요약입니다.",
+      "description": "최근 24시간의 피드백, 수용된 변경, 문제, 점수를 확인합니다.",
+      "tooltip": "완료된 평가가 최근 24시간 동안 보존한 감독관 증거를 바탕으로 계산합니다. 대상 시스템의 실시간 가용성을 뜻하지는 않습니다.",
       "feedback": "피드백",
       "accepted": "수용",
       "issues": "보고된 문제",
@@ -243,11 +248,34 @@
       "none": "최근 24시간 감독관 피드백이 없습니다.",
       "previous": "이전 24시간 대비"
     },
+    "dashboardFeedbackTrends": {
+      "title": "평가 피드백 추이",
+      "description": "평가 빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.",
+      "range": "기간",
+      "feedbackVolume": "평가별 피드백",
+      "activeTrend": "실행 중 평가",
+      "feedbackStatus": "피드백 상태 분포",
+      "issueSeverity": "보고된 문제 심각도",
+      "runHealth": "평가 실행 건강도",
+      "activeCount": "실행 중 평가",
+      "feedbackCount": "피드백 수", "adopted": "적용됨", "rejected": "기각됨", "proposed": "제안됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
+    },
+    "improvementEvaluationTrends": {
+      "title": "반복 개선 추이",
+      "description": "선택한 평가 빌드의 반복별 수용된 개선 피드백과 감독관 점수 변화를 확인합니다.",
+      "range": "기간",
+      "iterationTrend": "반복별 수용 피드백 및 점수",
+      "accepted": "수용됨", "score": "점수", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다."
+    },
     "dashboardHelp": {
-      "trend": "시간대별 감독관 피드백과 같은 기간에 수용된 개선을 비교합니다.",
-      "logs": "운영 메시지와 오류를 포함한 Orbit 이벤트 기록을 확인합니다."
+      "trend": "시간대별 감독관 피드백과 같은 기간에 수용된 개선을 비교합니다."
     },
     "settings": "설정",
+    "settingsLogs": {
+      "title": "Orbit 운영 로그",
+      "description": "운영 메시지와 오류를 포함한 Orbit 이벤트 기록을 확인합니다.",
+      "empty": "아직 기록된 Orbit 이벤트가 없습니다."
+    },
     "improvements": "개선 현황",
     "dashboard": "대시보드",
     "assets": "자산",
@@ -261,6 +289,7 @@
       "editSelectedProfile": "선택한 프로필 편집",
       "createAiProfile": "AI 모델 프로필 생성",
       "evaluationBuildList": "평가 빌드 목록",
+      "evaluationBuildListDescription": "평가 대상, 워크플로, 감독관 자산을 연결한 평가 구성을 관리합니다.",
       "createEvaluationBuild": "평가 빌드 생성",
       "name": "이름",
       "repository": "저장소",
@@ -313,6 +342,7 @@
       "theme": "테마",
       "themeHint": "컨트롤 룸 색상 테마를 선택하세요.",
       "applicationSettings": "애플리케이션 설정",
+      "applicationSettingsDescription": "콘솔 전체에 적용되는 언어와 테마를 설정합니다.",
       "evaluationBuild": "평가 빌드",
       "started": "시작",
       "elapsed": "경과 시간",
@@ -327,6 +357,7 @@
       "stop": "정지",
       "emergencyStop": "긴급 정지",
       "runHistoryHint": "완료와 실패를 포함한 파이프라인 실행 이력이 유지됩니다.",
+      "runHistoryDescription": "진행 중이거나 완료된 평가 실행, 근거, 승인 결정을 확인합니다.",
       "noRuns": "평가 빌드 실행 이력이 없습니다."
     },
     "cycle": {
@@ -426,9 +457,7 @@
     },
     "dashboardUi": {
       "completed": "완료",
-      "created": "생성",
-      "operationalLogs": "Orbit 운영 로그",
-      "noEvents": "아직 기록된 Orbit 이벤트가 없습니다."
+      "created": "생성"
     },
     "templateTranslation": {
       "translate": "번역",
@@ -514,6 +543,10 @@
       "decisionReason": "결정 사유",
       "timeline": "타임라인",
       "noProposals": "제안 이력이 없습니다.",
+      "savedDataFiles": "저장된 데이터 파일",
+      "fileName": "파일 이름",
+      "copyFileName": "파일 이름 복사",
+      "copyPath": "경로 복사",
       "iteration": "반복",
       "run": "실행",
       "feedbackCount": "피드백 수",
@@ -528,6 +561,7 @@
       "failed": "실패",
       "cancelled": "취소됨",
       "running": "실행 중"
+      ,"selectBuild": "평가 빌드"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {
@@ -674,6 +708,7 @@
       "Runners": "Create reusable runners that execute project-specific automation.",
       "Evaluation feedback trends": "Review feedback volume, acceptance, issues, and run health across evaluation builds.",
       "평가 피드백 추이": "평가 빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.",
+      "반복 개선 추이": "선택한 평가 빌드의 각 반복에서 수용된 개선 피드백과 감독관 점수 변화를 확인합니다.",
       "評価フィードバックの推移": "評価ビルドごとのフィードバック、受容結果、課題、実行状態の推移を確認します。",
       "Proposal decision history": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",
       "제안 결정 히스토리": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",
@@ -685,6 +720,22 @@
       "챗봇 AI 모델": "Orbit 챗봇에서 사용할 저장된 AI 연결 프로필을 선택합니다.",
       "Chat assistant model": "Choose the saved AI connection profile used by the Orbit chat assistant.",
       "チャットボットAIモデル": "Orbit チャットボットで使用する保存済み AI 接続プロファイルを選択します。"
+    },
+    "sectionDetails": {
+      "dashboardOverview": "집계는 로컬 컨트롤 플레인 데이터를 기준으로 갱신되며, 모든 평가 빌드와 실행을 포함합니다.",
+      "dashboardFeedbackTrends": "기간을 바꾸면 모든 차트가 함께 갱신됩니다. 실행 상태에는 성공·실패·취소·실행 중인 평가가 포함됩니다.",
+      "iterationImprovementTrend": "선택한 평가 빌드의 기록된 반복별로 수용 피드백과 감독관 점수를 비교합니다.",
+      "evaluationBuildList": "빌드는 재사용 환경·러너·워크플로·프롬프트·테스트 케이스를 연결합니다. 자산을 수정해도 기존 실행의 근거는 바뀌지 않습니다.",
+      "assetProfiles": "프로필의 비밀값은 설정된 환경 변수에서 읽으며 브라우저에 저장하지 않습니다.",
+      "assetTemplates": "템플릿은 버전 관리되는 재사용 지시문입니다. 빌드에서 선택해도 저장된 원본은 수정되지 않습니다.",
+      "assetTests": "테스트 케이스 세트는 여러 빌드에서 재사용할 고정 프롬프트와 승인 근거를 제공합니다.",
+      "assetRunners": "러너에는 프로젝트별 자동화가 들어 있으며 여러 평가 빌드에서 공유할 수 있습니다.",
+      "executionEnvironment": "여기서 로컬 또는 원격 실행 방식을 정하며, 각 러너는 빌드에서 선택한 실행 환경을 사용합니다.",
+      "targetEnvironment": "저장소·브라우저 URL·관리 프롬프트 경로는 이 대상을 선택한 빌드에만 적용됩니다.",
+      "applicationSettings": "언어는 콘솔과 관리자 결과 표시 언어에 적용되고, 테마 변경은 이 브라우저에 로컬로 저장됩니다.",
+      "applicationData": "저장소 위치 변경은 이후의 로컬 상태와 근거에 적용됩니다. 기존 데이터는 자동으로 이동하지 않습니다.",
+      "systemAiModel": "이 프로필은 빌드의 감독관 프로필과 별도로 Orbit 챗봇과 사이클 분석 같은 시스템 기능에 사용됩니다.",
+      "orbitLogs": "항목은 로컬 운영 이벤트입니다. 콘솔과 러너 활동을 진단하는 용도이며 평가 근거에는 포함되지 않습니다."
     },
     "chartHints": {
       "Feedback by evaluation": "Compare the volume of supervisor feedback recorded for each evaluation build.",

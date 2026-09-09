@@ -106,6 +106,56 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
     assert all(entry["iteration"] == 3 and entry["phase"] == "run" for entry in step["target_logs"])
 
 
+def test_runner_data_files_are_retained_for_the_iteration(tmp_path, monkeypatch):
+    app_data = tmp_path / "orbit-data"
+    monkeypatch.setattr(store_module, "APP_DATA", app_data)
+    monkeypatch.setattr(store_module, "RUNS", app_data / "data" / "runs")
+    project = tmp_path / "target"
+    project.mkdir()
+    runner = project / "runner.py"
+    runner.write_text(
+        "from orbit_sdk import runner\n"
+        "@runner.phase('run')\n"
+        "def run(ctx):\n"
+        "    ctx.save_data_file('evidence/first.json', '{}', label='First result')\n"
+        "    ctx.save_data_file('evidence/second.json', '{}', label='Second result')\n"
+        "if __name__ == '__main__': runner.main()\n",
+        encoding="utf-8",
+    )
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="data-file-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+
+    store._execute_step(
+        "data-file-run",
+        Step(
+            id="run",
+            phase="run",
+            name="Run",
+            command=[sys.executable, str(runner), "--phase", "run"],
+            working_directory=str(project),
+        ),
+        loop_index=3,
+    )
+
+    files = store._load("data-file-run").step_results[-1]["data_files"]
+    assert [(item["label"], item["filename"]) for item in files] == [
+        ("First result", "first.json"),
+        ("Second result", "second.json"),
+    ]
+    assert all(item["path"].startswith(str(app_data)) for item in files)
+
+
 def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
     app_data = tmp_path / "orbit-data"
     project = tmp_path / "project"
@@ -288,6 +338,59 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
     store._execute(run.id)
 
     assert calls == [("setup", 1, False), ("teardown", 1, True)]
+
+
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
+    tmp_path, monkeypatch, terminal_status
+):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id=f"finalize-{terminal_status}",
+        workflow_id="recovery-workflow",
+        workflow_name="Recovery workflow",
+        execution_mode="test",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="recovery-workflow",
+        name="Recovery workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[
+            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
+            Step(id="finalize", phase="finalize", name="Finalize", command=[], working_directory="."),
+        ],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    calls = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
+        calls.append((step.phase, loop_index, allow_terminal))
+        if step.phase == "setup":
+            current = store._load(run_id)
+            current.status = terminal_status
+            store._save(current)
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+
+    store._execute(run.id)
+
+    assert calls == [("setup", 1, False), ("finalize", 2, True)]
+
+
+def test_native_improvement_template_uses_repository_snapshot_lifecycle():
+    source = store_module.NATIVE_IMPROVEMENT_CYCLE_TEMPLATE
+
+    assert "ctx.save_setup_snapshot()" in source
+    assert "ctx.save_first_teardown_snapshot()" in source
+    assert "ctx.restore_setup_snapshot()" in source
 
 
 def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tmp_path, monkeypatch):
@@ -489,6 +592,7 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
         "/api/v1/dashboard",
         "/api/v1/logs",
         "/api/v1/improvements/analytics",
+        "/api/v1/improvements/iterations",
         "/api/v1/improvements/proposals",
         "/api/v1/template-translations",
     }
@@ -871,6 +975,19 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
             status="succeeded",
             created_at=timestamp,
             updated_at=timestamp,
+            step_results=[
+                {
+                    "loop_index": 2,
+                    "data_files": [
+                        {
+                            "label": "Iteration evidence",
+                            "filename": "evidence.json",
+                            "path": "/tmp/orbit/evidence.json",
+                            "relative_path": "evidence.json",
+                        }
+                    ],
+                }
+            ],
             supervisor_results=[
                 {
                     "iteration": 2,
@@ -889,6 +1006,31 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
     lifecycle = store.proposal_lifecycles("build-1")
     assert [item["status"] for item in lifecycle] == ["accepted", "proposed"]
     assert {item["title"] for item in lifecycle} == {"Keep evidence", "Remove noise"}
+    assert lifecycle[0]["data_files"] == [
+        {
+            "label": "Iteration evidence",
+            "filename": "evidence.json",
+            "path": "/tmp/orbit/evidence.json",
+            "relative_path": "evidence.json",
+        }
+    ]
+    assert store.improvement_iteration_data("build-1") == [
+        {
+            "evaluation_build_id": "build-1",
+            "evaluation_build_name": "Build 1",
+            "run_id": "run-1",
+            "iteration": 2,
+            "recorded_at": timestamp.isoformat(),
+            "data_files": [
+                {
+                    "label": "Iteration evidence",
+                    "filename": "evidence.json",
+                    "path": "/tmp/orbit/evidence.json",
+                    "relative_path": "evidence.json",
+                }
+            ],
+        }
+    ]
 
 
 def test_hello_accepts_unsaved_profile_settings():

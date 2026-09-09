@@ -1196,6 +1196,16 @@ def list_proposal_lifecycles_v1(
     return store.proposal_lifecycles(evaluation_build_id, status)
 
 
+@app.get(
+    "/api/v1/improvements/iterations",
+    tags=["Improvements"],
+    operation_id="listImprovementIterationData",
+    summary="List SDK-saved data files by evaluation iteration",
+)
+def list_improvement_iteration_data_v1(evaluation_build_id: str | None = None):
+    return store.improvement_iteration_data(evaluation_build_id)
+
+
 @app.get("/api/v1/improvements/analytics", tags=["Improvements"], operation_id="getImprovementAnalytics")
 def improvement_analytics_v1(hours: int = Query(default=24, ge=1, le=720)):
     return store.improvement_analytics(hours)
