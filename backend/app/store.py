@@ -287,7 +287,12 @@ def run(ctx):
                 "model": turn["model"],
             }
         )
-    artifact = ctx.write_artifact("target-ai-responses.json", json.dumps(responses, ensure_ascii=False, indent=2), content_type="application/json")
+    artifact = ctx.save_data_file(
+        "target-ai-responses.json",
+        json.dumps(responses, ensure_ascii=False, indent=2),
+        label="Target AI responses",
+        content_type="application/json",
+    )
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -2772,6 +2777,25 @@ if __name__ == "__main__":
             for record in records:
                 if not isinstance(record, dict):
                     continue
+                iteration = record.get("iteration")
+                data_files: list[dict[str, Any]] = []
+                for step in run.step_results:
+                    if not isinstance(step, dict) or step.get("loop_index") != iteration:
+                        continue
+                    for data_file in step.get("data_files", []):
+                        if not isinstance(data_file, dict):
+                            continue
+                        path, filename = data_file.get("path"), data_file.get("filename")
+                        if not isinstance(path, str) or not isinstance(filename, str):
+                            continue
+                        data_files.append(
+                            {
+                                "label": str(data_file.get("label") or "")[:256],
+                                "filename": filename,
+                                "path": path,
+                                "relative_path": str(data_file.get("relative_path") or ""),
+                            }
+                        )
                 response = record.get("response")
                 if not isinstance(response, dict):
                     continue
@@ -2808,8 +2832,9 @@ if __name__ == "__main__":
                             "evaluation_build_id": run.evaluation_build_id,
                             "evaluation_build_name": run.evaluation_build_name,
                             "run_id": run.id,
-                            "iteration": record.get("iteration"),
+                            "iteration": iteration,
                             "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                            "data_files": data_files,
                             "prompt_version": None,
                             "events": [
                                 {
@@ -2829,6 +2854,52 @@ if __name__ == "__main__":
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
+
+    def improvement_iteration_data(self, evaluation_build_id: str | None = None) -> list[dict[str, Any]]:
+        """List SDK-saved data files by persisted evaluation run and iteration.
+
+        These entries intentionally exist even when a supervisor did not make a
+        proposal. The proposal-decision history uses them to expose the full
+        iteration record rather than hiding developer-retained evidence behind
+        a proposal requirement.
+        """
+        values: list[dict[str, Any]] = []
+        for run in self.runs():
+            if evaluation_build_id and run.evaluation_build_id != evaluation_build_id:
+                continue
+            grouped: dict[int, list[dict[str, Any]]] = {}
+            timestamps: dict[int, str] = {}
+            for step in run.step_results:
+                if not isinstance(step, dict) or not isinstance(step.get("loop_index"), int):
+                    continue
+                iteration = step["loop_index"]
+                for data_file in step.get("data_files", []):
+                    if not isinstance(data_file, dict):
+                        continue
+                    path, filename = data_file.get("path"), data_file.get("filename")
+                    if not isinstance(path, str) or not isinstance(filename, str):
+                        continue
+                    grouped.setdefault(iteration, []).append(
+                        {
+                            "label": str(data_file.get("label") or "")[:256],
+                            "filename": filename,
+                            "path": path,
+                            "relative_path": str(data_file.get("relative_path") or ""),
+                        }
+                    )
+                    timestamps.setdefault(iteration, str(step.get("ended_at") or run.updated_at.isoformat()))
+            for iteration, data_files in grouped.items():
+                values.append(
+                    {
+                        "evaluation_build_id": run.evaluation_build_id,
+                        "evaluation_build_name": run.evaluation_build_name,
+                        "run_id": run.id,
+                        "iteration": iteration,
+                        "recorded_at": timestamps[iteration],
+                        "data_files": data_files,
+                    }
+                )
+        return sorted(values, key=lambda item: str(item["recorded_at"]), reverse=True)
 
     def _save_cycle_interventions(self, values: list[dict[str, Any]]) -> None:
         temporary = CYCLE_INTERVENTIONS.with_suffix(".tmp")
@@ -4465,6 +4536,7 @@ if __name__ == "__main__":
                 persist_live_output()
                 structured_result: dict[str, Any] | None = None
                 target_logs: list[dict[str, Any]] = []
+                data_files: list[dict[str, Any]] = []
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
                     if line.startswith("__ORBIT_RESULT__"):
@@ -4493,6 +4565,30 @@ if __name__ == "__main__":
                                             "phase": step.phase,
                                         }
                                     )
+                            emitted_data_files = emitted.pop("data_files", [])
+                            if isinstance(emitted_data_files, list):
+                                for entry in emitted_data_files:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    path = entry.get("path")
+                                    relative_path = entry.get("relative_path")
+                                    if not isinstance(path, str) or not isinstance(relative_path, str):
+                                        continue
+                                    data_files.append(
+                                        {
+                                            "label": str(entry.get("label") or "")[:256],
+                                            "filename": str(
+                                                entry.get("filename") or Path(relative_path).name
+                                            ),
+                                            "path": path,
+                                            "relative_path": relative_path,
+                                            "sha256": str(entry.get("sha256") or ""),
+                                            "size": entry.get("size")
+                                            if isinstance(entry.get("size"), int)
+                                            else 0,
+                                            "content_type": str(entry.get("content_type") or ""),
+                                        }
+                                    )
                             structured_result = {**(structured_result or {}), **emitted}
                         except json.JSONDecodeError:
                             visible_lines.append((timestamp, line))
@@ -4519,6 +4615,8 @@ if __name__ == "__main__":
                     result["result"] = structured_result
                 if target_logs:
                     result["target_logs"] = target_logs[-200:]
+                if data_files:
+                    result["data_files"] = data_files
                 run = self._load(run_id)
                 live_index = next(
                     (

@@ -213,6 +213,42 @@ class RunnerContext:
         self.emit_result({"artifact": result})
         return result
 
+    def save_data_file(
+        self,
+        relative_path: str | Path,
+        content: str | bytes,
+        *,
+        label: str = "",
+        content_type: str = "application/octet-stream",
+    ) -> dict[str, object]:
+        """Save a developer-named data file for the current evaluation iteration.
+
+        Call this from any lifecycle phase where the data becomes meaningful.
+        The label is display metadata for the evaluation UI, not a filesystem
+        name; it can describe why this file was retained. The UI exposes both
+        the actual filename and the full AppData path for copying.
+
+        Args:
+            relative_path: Relative file path within this run and iteration.
+            content: Text or bytes to retain.
+            label: Optional human-readable display name for this data file.
+            content_type: MIME type used when the file is presented.
+
+        Returns:
+            File metadata, including the label, actual filename, and path.
+        """
+        normalized_label = str(label).strip()
+        if len(normalized_label) > 256:
+            raise ValueError("data file label must be 256 characters or fewer")
+        artifact = self.write_artifact(relative_path, content, content_type=content_type)
+        result = {
+            **artifact,
+            "label": normalized_label,
+            "filename": Path(str(artifact["relative_path"])).name,
+        }
+        self.emit_result({"data_files": [result]})
+        return result
+
     def git_candidate(
         self, paths: list[str] | None = None, *, retain_patch: bool = False
     ) -> dict[str, object]:

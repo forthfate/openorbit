@@ -107,7 +107,7 @@
         "locationHint": "絶対ローカルパスを入力してください。変更前に実行中の評価を停止してください。",
         "size": "使用中の保存領域",
         "calculating": "保存領域を計算中...",
-        "save": "場所を適用",
+        "save": "適用",
         "saved": "アプリデータの保存先を更新しました。"
       },
       "profileForm": {
@@ -514,6 +514,10 @@
       "decisionReason": "決定理由",
       "timeline": "タイムライン",
       "noProposals": "提案履歴はありません。",
+      "savedDataFiles": "保存済みデータファイル",
+      "fileName": "ファイル名",
+      "copyFileName": "ファイル名をコピー",
+      "copyPath": "パスをコピー",
       "iteration": "反復",
       "run": "実行",
       "feedbackCount": "フィードバック数",

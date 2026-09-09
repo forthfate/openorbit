@@ -146,6 +146,12 @@ def test_managed_assets_and_artifacts_stay_outside_the_target(tmp_path, monkeypa
 
     assets = ctx.materialize_assets("paired-gate", {"scripts/gate.ps1": "Write-Output ok"})
     artifact = ctx.write_artifact("evidence/report.json", "{}", content_type="application/json")
+    data_file = ctx.save_data_file(
+        "evidence/summary.json",
+        "{}",
+        label="Iteration summary",
+        content_type="application/json",
+    )
 
     assert (sdk.ORBIT_APP_DATA / "runner-assets").exists()
     assert (
@@ -153,6 +159,9 @@ def test_managed_assets_and_artifacts_stay_outside_the_target(tmp_path, monkeypa
     ).read_text() == "{}"
     assert assets["files"]["scripts/gate.ps1"] == sdk._sha256(b"Write-Output ok")
     assert artifact["content_type"] == "application/json"
+    assert data_file["label"] == "Iteration summary"
+    assert data_file["filename"] == "summary.json"
+    assert data_file["path"].endswith("evidence/summary.json")
     assert not any(project.rglob("gate.ps1"))
 
 

@@ -67,6 +67,22 @@ Use `ctx.snapshot_repository(label)` and
 named checkpoints. Snapshot metadata includes the run ID, iteration, phase,
 and tree hashes; `ctx.repository_snapshots()` lists retained checkpoints.
 
+## Save an iteration data file
+
+Call `save_data_file` at any point a runner wants to retain and expose data for
+the currently selected iteration. `label` is a display name, not the actual
+filename; the Cycle Improvement AI proposal-decision history shows it beside
+independently copyable file name and AppData path.
+
+```python
+ctx.save_data_file(
+    "reports/verification.json",
+    json.dumps(report),
+    label="Verification report after retry",
+    content_type="application/json",
+)
+```
+
 ## Local preview and build
 
 Start a local documentation site:

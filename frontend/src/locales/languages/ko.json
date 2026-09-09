@@ -107,7 +107,7 @@
         "locationHint": "절대 로컬 경로를 입력하세요. 변경 전에는 실행 중인 평가를 중지해야 합니다.",
         "size": "사용 중인 저장소",
         "calculating": "저장소 용량 계산중...",
-        "save": "위치 적용",
+        "save": "적용",
         "saved": "앱 데이터 저장소 위치를 변경했습니다."
       },
       "profileForm": {
@@ -514,6 +514,10 @@
       "decisionReason": "결정 사유",
       "timeline": "타임라인",
       "noProposals": "제안 이력이 없습니다.",
+      "savedDataFiles": "저장된 데이터 파일",
+      "fileName": "파일 이름",
+      "copyFileName": "파일 이름 복사",
+      "copyPath": "경로 복사",
       "iteration": "반복",
       "run": "실행",
       "feedbackCount": "피드백 수",

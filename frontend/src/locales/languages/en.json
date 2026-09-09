@@ -108,7 +108,7 @@
         "locationHint": "Use an absolute local path. Stop active evaluations before changing it.",
         "size": "Storage used",
         "calculating": "Calculating storage size...",
-        "save": "Apply location",
+        "save": "Apply",
         "saved": "Application data location updated."
       },
       "profileForm": {
@@ -515,6 +515,10 @@
       "decisionReason": "Decision reason",
       "timeline": "Timeline",
       "noProposals": "No proposal history.",
+      "savedDataFiles": "Saved data files",
+      "fileName": "File name",
+      "copyFileName": "Copy file name",
+      "copyPath": "Copy path",
       "iteration": "Iteration",
       "run": "Run",
       "feedbackCount": "Feedback count",
