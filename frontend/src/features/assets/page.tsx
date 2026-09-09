@@ -545,8 +545,8 @@ function AssetRow({
       <button className="catalog-row" onClick={onClick}>
         <strong>{name}</strong>
         <span>{detail}</span>
-        {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       </button>
+      {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       <button
         className="icon-button danger"
         aria-label={deleteLabel}
