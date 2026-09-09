@@ -243,11 +243,28 @@
       "none": "直近24時間の監督者フィードバックはありません。",
       "previous": "前の24時間比"
     },
+    "dashboardFeedbackTrends": {
+      "title": "評価フィードバックの推移",
+      "range": "期間",
+      "evaluation": "評価",
+      "feedbackVolume": "評価別フィードバック",
+      "iterationTrend": "反復別の採用フィードバックとスコア",
+      "activeTrend": "実行中の評価",
+      "feedbackStatus": "フィードバック状態の分布",
+      "issueSeverity": "報告された問題の重要度",
+      "runHealth": "評価実行の健全性",
+      "accepted": "採用", "score": "スコア", "feedbackCount": "フィードバック数", "activeCount": "実行中の評価", "noIterationFeedback": "この期間に反復フィードバックはありません。",
+      "adopted": "適用済み", "rejected": "却下", "proposed": "提案済み", "low": "低", "medium": "中", "high": "高", "critical": "重大", "succeeded": "成功", "failed": "失敗", "cancelled": "キャンセル", "running": "実行中"
+    },
     "dashboardHelp": {
-      "trend": "時間帯ごとの監督者フィードバックと、同じ期間に受容された改善を比較します。",
-      "logs": "運用メッセージとエラーを含む Orbit イベントの記録を確認します。"
+      "trend": "時間帯ごとの監督者フィードバックと、同じ期間に受容された改善を比較します。"
     },
     "settings": "設定",
+    "settingsLogs": {
+      "title": "Orbit 運用ログ",
+      "description": "運用メッセージとエラーを含む Orbit イベントの記録を確認します。",
+      "empty": "記録された Orbit イベントはまだありません。"
+    },
     "improvements": "改善結果",
     "dashboard": "ダッシュボード",
     "assets": "アセット",
@@ -426,9 +443,7 @@
     },
     "dashboardUi": {
       "completed": "完了",
-      "created": "作成",
-      "operationalLogs": "Orbit 運用ログ",
-      "noEvents": "Orbit イベントはまだ記録されていません。"
+      "created": "作成"
     },
     "templateTranslation": {
       "translate": "翻訳",
@@ -532,6 +547,7 @@
       "failed": "失敗",
       "cancelled": "キャンセル",
       "running": "実行中"
+      ,"selectBuild": "評価ビルド"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

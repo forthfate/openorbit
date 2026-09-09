@@ -13,7 +13,6 @@ import { Sparkles } from "lucide-react";
 import type {
   Dashboard,
   ImprovementAnalytics,
-  OrbitLog,
   QuickStart,
 } from "../../domain/models";
 import { MetricCard } from "../../components/ui/page-header";
@@ -26,6 +25,7 @@ import {
   type Locale,
 } from "../../locales";
 import { api } from "../../services/api";
+import { FeedbackTrends } from "./feedback-trends";
 
 type HeroCopy = {
   title: string;
@@ -46,7 +46,7 @@ type OperationsCopy = {
   none: string;
   previous: string;
 };
-type DashboardHelp = { trend: string; logs: string };
+type DashboardHelp = { trend: string };
 
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
@@ -169,14 +169,12 @@ function OperationalHealth({ locale }: { locale: Locale }) {
 
 export function DashboardPage({
   data,
-  logs,
   onOpenBuild,
   onOpenQuickStart,
   onOpenRun,
   locale,
 }: {
   data: Dashboard | null;
-  logs: OrbitLog[];
   onOpenBuild: (id?: string) => void;
   onOpenQuickStart: (id?: string) => void;
   onOpenRun: () => void;
@@ -185,7 +183,6 @@ export function DashboardPage({
   const t = locales[locale].common,
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
     dashboard = locales[locale].dashboardUi,
-    help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
     quickStartLabels = localeMessages<
       Record<string, { name: string; description: string }>
     >(locale, "quickStartLabels"),
@@ -285,37 +282,7 @@ export function DashboardPage({
         })}
       </section>
       <OperationalHealth locale={locale} />
-      <section className="panel orbit-log-panel">
-        <div className="panel-head">
-          <div>
-            <p className="eyebrow">ORBIT</p>
-            <h2>
-              <SectionInfo
-                title={dashboard.operationalLogs}
-                description={help.logs}
-              />
-            </h2>
-          </div>
-        </div>
-        <div className="orbit-log-output">
-          {logs.length ? (
-            logs.map((log, index) => (
-              <div
-                key={`${log.time}-${index}`}
-                className={log.status === "ERROR" ? "error-log" : ""}
-              >
-                <time>
-                  {log.time ? new Date(log.time).toLocaleTimeString() : "—"}
-                </time>
-                <strong>{log.name}</strong>
-                <span>{log.message || log.status}</span>
-              </div>
-            ))
-          ) : (
-            <p className="hint">{dashboard.noEvents}</p>
-          )}
-        </div>
-      </section>
+      <FeedbackTrends locale={locale} />
     </>
   );
 }

@@ -4,10 +4,11 @@ import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
-import type { Settings } from "../../domain/models";
+import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { OrbitLogs } from "./orbit-logs";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
@@ -47,6 +48,7 @@ export function SettingsPage({
   test,
   save,
   tested,
+  logs,
   onDeleteProfile,
 }: {
   locale: Locale;
@@ -59,6 +61,7 @@ export function SettingsPage({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  logs: OrbitLog[];
   onDeleteProfile: (profileName: string) => void;
 }) {
   const t = locales[locale].common,
@@ -278,6 +281,7 @@ export function SettingsPage({
         </p>
         <p className="setting-prompt-preview">{prompt || l.empty}</p>
       </section>
+      <OrbitLogs logs={logs} locale={locale} />
       <Modal open={open} title={l.title} onClose={() => setOpen(false)}>
         <div className="modal-form">
           <label className="modal-setting-row">

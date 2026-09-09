@@ -19,6 +19,7 @@ import remarkGfm from "remark-gfm";
 import type {
   ImprovementAnalytics,
   ImprovementIterationData,
+  Build,
   ProposalLifecycle,
   SavedDataFile,
 } from "../../domain/models";
@@ -76,6 +77,7 @@ type ImprovementCopy = {
   failed: string;
   cancelled: string;
   running: string;
+  selectBuild: string;
 };
 const copy = localeMessageMap<ImprovementCopy>("improvementPage");
 const tick = (value: string) =>
@@ -103,7 +105,7 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Trends({ t }: { t: (typeof copy)["en"] }) {
+export function Trends({ t }: { t: (typeof copy)["en"] }) {
   const [hours, setHours] = useState(24),
     [build, setBuild] = useState(""),
     [data, setData] = useState<ImprovementAnalytics>();
@@ -639,10 +641,14 @@ function ProposalHistory({
   );
 }
 
-function CycleImprovementAI({ locale }: { locale: Locale }) {
+function CycleImprovementAI({
+  locale,
+  build,
+}: {
+  locale: Locale;
+  build: string;
+}) {
   const [data, setData] = useState<ImprovementAnalytics>(),
-    [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
-    [build, setBuild] = useState(""),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
     t = locales[locale].cycle;
@@ -650,37 +656,10 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
     api<ImprovementAnalytics>("/api/improvement-analytics?hours=720")
       .then((next) => {
         setData(next);
-        setBuild(
-          (current) =>
-            current ||
-            next.iteration_trends.find((item) => item.points.length)
-              ?.build_id ||
-            next.iteration_trends[0]?.build_id ||
-            "",
-        );
       })
       .catch(() => setData(undefined));
   }, []);
-  useEffect(() => {
-    api<ImprovementIterationData[]>("/api/v1/improvements/iterations")
-      .then((next) => {
-        setIterationData(next);
-        setBuild((current) => current || next[0]?.evaluation_build_id || "");
-      })
-      .catch(() => setIterationData([]));
-  }, []);
-  const buildOptions = [
-    ...new Map(
-      [
-        ...(data?.iteration_trends ?? []).map((item) => [item.build_id, item.name] as const),
-        ...iterationData.map((item) => [
-          item.evaluation_build_id || "unassigned",
-          item.evaluation_build_name || item.evaluation_build_id || "unassigned",
-        ] as const),
-      ],
-    ).entries(),
-  ].map(([id, name]) => ({ id, name })),
-  trend = data?.iteration_trends.find((item) => item.build_id === build),
+  const trend = data?.iteration_trends.find((item) => item.build_id === build),
     scores = (trend?.points ?? [])
       .map((item) => item.score)
       .filter((score): score is number => score !== null),
@@ -708,22 +687,6 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
-        <label>
-          {t.build}
-          <select
-            value={build}
-            onChange={(event) => {
-              setBuild(event.target.value);
-              setAnalysis("");
-            }}
-          >
-            {buildOptions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (
@@ -771,11 +734,28 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
 }
 export function ImprovementsPage() {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
-    t = copy[locale];
+    t = copy[locale],
+    [build, setBuild] = useState(""),
+    [builds, setBuilds] = useState<Build[]>([]);
+  useEffect(() => {
+    api<Build[]>("/api/evaluation-builds")
+      .then((next) => {
+        setBuilds(next);
+        setBuild((current) => current || next[0]?.id || "");
+      })
+      .catch(() => setBuilds([]));
+  }, []);
   return (
     <>
-      <Trends t={t} />
-      <CycleImprovementAI locale={locale} />
+      <section className="improvements-build-selector">
+        <label>
+          {t.selectBuild}
+          <select value={build} onChange={(event) => setBuild(event.target.value)}>
+            {builds.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+      </section>
+      <CycleImprovementAI locale={locale} build={build} />
     </>
   );
 }

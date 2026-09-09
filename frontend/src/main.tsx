@@ -235,7 +235,6 @@ export default function App() {
     dashboard: (
       <DashboardPage
         data={room.data}
-        logs={room.orbitLogs}
         locale={locale}
         onOpenRun={() => setPage("runs")}
         onOpenBuild={() => setPage("builds")}
@@ -313,6 +312,7 @@ export default function App() {
         test={test}
         save={save}
         tested={room.settingsTested}
+        logs={room.orbitLogs}
         onDeleteProfile={(id) => deleteAsset("profile", id)}
       />
     ),

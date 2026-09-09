@@ -244,11 +244,28 @@
       "none": "No supervisor feedback in the last 24 hours.",
       "previous": "vs previous 24h"
     },
+    "dashboardFeedbackTrends": {
+      "title": "Evaluation feedback trends",
+      "range": "Range",
+      "evaluation": "Evaluation",
+      "feedbackVolume": "Feedback by evaluation",
+      "iterationTrend": "Accepted feedback & score by iteration",
+      "activeTrend": "Active evaluations over time",
+      "feedbackStatus": "Feedback status distribution",
+      "issueSeverity": "Reported issue severity",
+      "runHealth": "Evaluation run health",
+      "accepted": "Accepted", "score": "Score", "feedbackCount": "Feedback count", "activeCount": "Active evaluations", "noIterationFeedback": "No iteration feedback in this period.",
+      "adopted": "Adopted", "rejected": "Rejected", "proposed": "Proposed", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+    },
     "dashboardHelp": {
-      "trend": "Compare hourly supervisor feedback with the improvements accepted during the same period.",
-      "logs": "Review recorded Orbit events, including operational messages and errors."
+      "trend": "Compare hourly supervisor feedback with the improvements accepted during the same period."
     },
     "settings": "Settings",
+    "settingsLogs": {
+      "title": "Orbit operational logs",
+      "description": "Review recorded Orbit events, including operational messages and errors.",
+      "empty": "No Orbit events recorded yet."
+    },
     "improvements": "Improvement results",
     "dashboard": "Dashboard",
     "assets": "Assets",
@@ -427,9 +444,7 @@
     },
     "dashboardUi": {
       "completed": "Completed",
-      "created": "Created",
-      "operationalLogs": "Orbit operational logs",
-      "noEvents": "No Orbit events recorded yet."
+      "created": "Created"
     },
     "templateTranslation": {
       "translate": "Translate",
@@ -533,6 +548,7 @@
       "failed": "Failed",
       "cancelled": "Cancelled",
       "running": "Running"
+      ,"selectBuild": "Evaluation build"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {
