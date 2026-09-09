@@ -24,6 +24,7 @@ import {
   localeMessageMap,
   localeMessages,
   locales,
+  intlLocales,
   type Locale,
 } from "../../locales";
 import { Modal } from "../../components/ui/modal";
@@ -525,12 +526,16 @@ function RunnerTemplateCard({
 function AssetRow({
   name,
   detail,
+  createdAt,
+  locale,
   onClick,
   onDelete,
   deleteLabel = "Delete",
 }: {
   name: string;
   detail: string;
+  createdAt?: string;
+  locale?: Locale;
   onClick: () => void;
   onDelete: () => void;
   deleteLabel?: string;
@@ -540,6 +545,7 @@ function AssetRow({
       <button className="catalog-row" onClick={onClick}>
         <strong>{name}</strong>
         <span>{detail}</span>
+        {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       </button>
       <button
         className="icon-button danger"
@@ -622,6 +628,8 @@ function ProfileCatalog({
               key={profile.profile_name}
               name={profile.profile_name}
               detail={`${profile.provider} · ${profile.model || "—"}`}
+              createdAt={profile.created_at}
+              locale={locale}
               onClick={() => {
                 setSettings(profile);
                 setOpen(true);
@@ -698,6 +706,8 @@ function RunnerCatalog({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.description}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setEditing(item);
                 setOpen(true);
@@ -939,6 +949,8 @@ function LegacyAssetsPage({
             key={item.id}
             name={item.name}
             detail={`${item.id} · v${item.version}`}
+            createdAt={item.created_at}
+            locale={locale}
             onClick={() => setTemplate(item)}
             onDelete={() => onDelete("template", item.id)}
           />
@@ -960,6 +972,8 @@ function LegacyAssetsPage({
             key={item.id}
             name={item.name}
             detail={`${item.id} · ${item.cases.length}`}
+            createdAt={item.created_at}
+            locale={locale}
             onClick={() => setTestSet(item)}
             onDelete={() => onDelete("test-set", item.id)}
           />
@@ -1247,6 +1261,7 @@ function EnvironmentAssets({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.executor.type}`}
+              createdAt={item.created_at}
               onClick={() => {
                 setExecution({
                   id: item.id,
@@ -1296,6 +1311,7 @@ function EnvironmentAssets({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
+              createdAt={item.created_at}
               onClick={() => {
                 setTarget({
                   id: item.id,
@@ -1521,6 +1537,8 @@ function EnvironmentCatalog({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.executor.type}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setExecution({
                   id: item.id,
@@ -1569,6 +1587,8 @@ function EnvironmentCatalog({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setTarget({
                   id: item.id,

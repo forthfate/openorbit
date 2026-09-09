@@ -57,10 +57,22 @@ class Run(BaseModel):
     execution_mode: Literal["run", "test"] = "run"
     execution_type: Literal["pipeline", "invoke"] = "pipeline"
     loop_limit: int = 1
+    timezone: str = "UTC"
+    schedule_enabled: bool = False
+    schedule_weekdays: list[int] = Field(default_factory=list)
+    schedule_start_time: str = "00:00"
+    schedule_end_time: str = "23:59"
+    start_iteration: int = 1
+    retry_of_run_id: str | None = None
+    retry_mode: Literal["restart", "resume"] | None = None
     iteration_strategy: Literal["linear", "score_select"] = "linear"
     candidates_per_iteration: int = 1
     iteration_candidates: list[dict[str, Any]] = Field(default_factory=list)
     repeat_interval_minutes: int = 0
+    cadence_mode: Literal["after_completion", "fixed"] = "after_completion"
+    overrun_policy: Literal["wait", "interrupt_eval"] = "wait"
+    iteration_deadline_at: datetime | None = None
+    advance_requested: bool = False
     approval_score: int | None = None
     status: Literal["queued", "awaiting_approval", "running", "succeeded", "failed", "cancelled"]
     created_at: datetime

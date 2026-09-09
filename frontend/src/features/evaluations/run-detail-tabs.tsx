@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { TooltipBox } from "../../components/ui/tooltip-box";
 
 export type RunDetailTab =
   | "workflow"
@@ -39,14 +40,17 @@ export function RunDetailTabs({
 
 export function RunDetailTabPanel({
   description,
+  hint,
   children,
 }: {
   description: string;
+  hint?: string;
   children: ReactNode;
 }) {
   return (
     <section className="run-detail-tab-panel" role="tabpanel">
       <p className="run-detail-tab-panel__description">{description}</p>
+      {hint && <TooltipBox>{hint}</TooltipBox>}
       {children}
     </section>
   );

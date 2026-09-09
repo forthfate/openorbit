@@ -691,6 +691,43 @@ class RunnerContext:
     def log(self, message: str) -> None:
         print(f"[orbit:{self.phase}] {message}", flush=True)
 
+    def target_log(
+        self,
+        message: str,
+        *,
+        level: str = "info",
+        source: str = "",
+        timestamp: str | None = None,
+    ) -> None:
+        """Attach one bounded log line produced by the evaluation target.
+
+        Target logs are kept separately from Orbit's runner and workflow output.
+        Call this from an adapter after it has collected a relevant target-side
+        event; it is not intended to mirror the runner's own stdout.
+        """
+        if not isinstance(message, str) or not message.strip():
+            raise ValueError("target log message must be a non-empty string")
+        normalized_level = str(level).strip().lower()
+        if normalized_level not in {"debug", "info", "warn", "warning", "error"}:
+            raise ValueError("target log level must be debug, info, warn, warning, or error")
+        if timestamp is not None and not isinstance(timestamp, str):
+            raise ValueError("target log timestamp must be a string")
+        self.emit_result(
+            {
+                "target_logs": [
+                    {
+                        "timestamp": timestamp or datetime.now(UTC).isoformat(),
+                        "level": normalized_level,
+                        "source": str(source).strip()[:256],
+                        "message": message.strip()[:4000],
+                        "run_id": self.environment.get("ORBIT_RUN_ID", ""),
+                        "iteration": self.loop_index,
+                        "phase": self.phase,
+                    }
+                ]
+            }
+        )
+
     def emit_result(self, values: dict[str, object]) -> None:
         """Attach structured, JSON-safe evidence to the current Orbit step."""
         print("__ORBIT_RESULT__" + json.dumps(values, ensure_ascii=False), flush=True)

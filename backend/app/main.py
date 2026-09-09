@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from . import store as store_module
 from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
@@ -377,7 +378,13 @@ class EvaluationBuildCreate(BaseModel):
     browser_library_path: str = Field(default="", max_length=4_000)
     timezone: str = Field(min_length=1, max_length=64)
     repeat_interval_minutes: int = Field(ge=1, le=10080)
+    cadence_mode: Literal["after_completion", "fixed"] = "after_completion"
+    overrun_policy: Literal["wait", "interrupt_eval"] = "wait"
     run_limit: int = Field(ge=1, le=10000)
+    schedule_enabled: bool = False
+    schedule_weekdays: list[int] = Field(default_factory=list)
+    schedule_start_time: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    schedule_end_time: str = Field(default="18:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     iteration_strategy: Literal["linear", "score_select"] = "linear"
     candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
@@ -851,8 +858,47 @@ def application_settings():
 
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
+    manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
     assistant_tools: dict | None = None
+
+
+class ApplicationDataLocationUpdate(BaseModel):
+    path: str = Field(min_length=1, max_length=4_096)
+
+
+class RetryRunRequest(BaseModel):
+    restart_from_first: bool = False
+
+
+def application_data_summary() -> dict[str, object]:
+    root = store_module.APP_DATA
+    total = 0
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return {"path": str(root), "size_bytes": total}
+
+
+@app.get("/api/application-data")
+def application_data():
+    return application_data_summary()
+
+
+@app.put("/api/application-data")
+def update_application_data(values: ApplicationDataLocationUpdate):
+    global store
+    if any(run.status in {"queued", "running", "awaiting_approval"} for run in store.runs()):
+        raise ValueError("Stop active evaluation runs before changing the app data location")
+    store_module.configure_application_data(values.path)
+    store = ConsoleStore()
+    return application_data_summary()
 
 
 @app.put("/api/application-settings")
@@ -1202,6 +1248,11 @@ def reject(run_id: str):
 @app.post("/api/runs/{run_id}/cancel")
 def cancel(run_id: str):
     return safely(lambda: store.cancel(run_id))
+
+
+@app.post("/api/runs/{run_id}/retry")
+def retry(run_id: str, values: RetryRunRequest):
+    return safely(lambda: store.retry(run_id, values.restart_from_first))
 
 
 @app.post("/api/runs/emergency-stop")

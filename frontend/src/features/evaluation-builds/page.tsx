@@ -53,6 +53,12 @@ type Draft = {
   timezone: string;
   repeat_interval_minutes: number;
   run_limit: number;
+  cadence_mode: "after_completion" | "fixed";
+  overrun_policy: "wait" | "interrupt_eval";
+  schedule_enabled: boolean;
+  schedule_weekdays: number[];
+  schedule_start_time: string;
+  schedule_end_time: string;
   iteration_strategy: "linear" | "score_select";
   candidates_per_iteration: number;
   approval_score: number;
@@ -141,6 +147,12 @@ const empty: Draft = {
   timezone: "Asia/Tokyo",
   repeat_interval_minutes: 30,
   run_limit: 1,
+  cadence_mode: "after_completion",
+  overrun_policy: "wait",
+  schedule_enabled: false,
+  schedule_weekdays: [0, 1, 2, 3, 4],
+  schedule_start_time: "09:00",
+  schedule_end_time: "18:00",
   iteration_strategy: "linear",
   candidates_per_iteration: 2,
   approval_score: 8,
@@ -163,6 +175,12 @@ const draftOf = (b: Build, copy = false): Draft => ({
   timezone: b.timezone,
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
+  cadence_mode: b.cadence_mode ?? "after_completion",
+  overrun_policy: b.overrun_policy ?? "wait",
+  schedule_enabled: b.schedule_enabled ?? false,
+  schedule_weekdays: b.schedule_weekdays ?? [0, 1, 2, 3, 4],
+  schedule_start_time: b.schedule_start_time ?? "09:00",
+  schedule_end_time: b.schedule_end_time ?? "18:00",
   iteration_strategy: b.iteration_strategy ?? "linear",
   candidates_per_iteration: b.candidates_per_iteration ?? 2,
   approval_score: b.approval_score,
@@ -323,6 +341,7 @@ function Direct({
 }) {
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
   return (
     <div className="build-wizard">
@@ -474,6 +493,10 @@ function Direct({
               }
             />
           </Field>
+          <Field label="Iteration timing" description="Choose whether the interval begins after completion or stays on a fixed clock.">
+            <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">Wait after completion</option><option value="fixed">Fixed interval</option></select>
+            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">Start as soon as the current work finishes</option><option value="interrupt_eval">End evaluation and continue with teardown</option></select>}
+          </Field>
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
@@ -482,6 +505,10 @@ function Direct({
                 setD({ ...d, run_limit: Number(e.target.value) })
               }
             />
+          </Field>
+          <Field label={scheduleCopy.label} description={scheduleCopy.hint}>
+            <label className="build-schedule-toggle"><input type="checkbox" checked={d.schedule_enabled} onChange={(e) => setD({ ...d, schedule_enabled: e.target.checked })} /> {scheduleCopy.enable}</label>
+            {d.schedule_enabled && <div className="build-schedule-fields"><div className="build-schedule-days">{scheduleCopy.days.map((day, index) => <label key={day}><input type="checkbox" checked={d.schedule_weekdays.includes(index)} onChange={() => setD({ ...d, schedule_weekdays: d.schedule_weekdays.includes(index) ? d.schedule_weekdays.filter((value) => value !== index) : [...d.schedule_weekdays, index] })} />{day}</label>)}</div><label>{scheduleCopy.start}<input type="time" value={d.schedule_start_time} onChange={(e) => setD({ ...d, schedule_start_time: e.target.value })} /></label><label>{scheduleCopy.end}<input type="time" value={d.schedule_end_time} onChange={(e) => setD({ ...d, schedule_end_time: e.target.value })} /></label></div>}
           </Field>
           <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
             <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
@@ -986,6 +1013,7 @@ export function EvaluationBuildsPage(props: {
           initialSelectedRun={testRun}
           onSelectedRunClose={closeTest}
           onStop={() => undefined}
+          onRetry={() => undefined}
           onApprove={() => undefined}
           onReject={() => undefined}
           onEmergencyStop={() => undefined}

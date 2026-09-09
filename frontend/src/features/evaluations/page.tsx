@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
@@ -76,7 +76,7 @@ const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { behavior_summary?: string; summary?: string };
+    evaluation: { behavior_summary?: string; behavior_trace?: { purpose: string; rationale: string; observation: string; decision: string; next_action: string }; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };
@@ -96,6 +96,7 @@ function LineNumberedOutput({ value }: { value: string }) {
 export function EvaluationsPage({
   runs,
   onStop,
+  onRetry,
   onApprove,
   onReject,
   onEmergencyStop,
@@ -106,6 +107,7 @@ export function EvaluationsPage({
 }: {
   runs: Run[];
   onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onEmergencyStop: () => void;
@@ -129,6 +131,7 @@ export function EvaluationsPage({
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
     [phaseFilter, setPhaseFilter] = useState(""),
+    [keywordFilter, setKeywordFilter] = useState(""),
     [activeOnly, setActiveOnly] = useState(false),
     [filtersOpen, setFiltersOpen] = useState(false),
     [draftStatuses, setDraftStatuses] = useState<Set<string>>(
@@ -139,6 +142,7 @@ export function EvaluationsPage({
       "all",
     ),
     [draftPhaseFilter, setDraftPhaseFilter] = useState(""),
+    [draftKeywordFilter, setDraftKeywordFilter] = useState(""),
     [draftActiveOnly, setDraftActiveOnly] = useState(false),
     [resultFiltersOpen, setResultFiltersOpen] = useState(false),
     [resultIterationFilter, setResultIterationFilter] = useState<"all" | "latest" | "range">("all"),
@@ -168,7 +172,9 @@ export function EvaluationsPage({
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
-    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
+  const retryCopy = locale === "ko" ? { title: "평가 실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "評価実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry evaluation run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
   const selected = initialSelectedRun ?? selectedInternal;
   const supervisorTranslationIds = useMemo(
     () =>
@@ -295,6 +301,7 @@ export function EvaluationsPage({
         (run.evaluation_build_id ?? run.workflow_id) === buildFilter) &&
       (modeFilter === "all" || run.execution_mode === modeFilter) &&
       (!phaseFilter || run.current_phase === phaseFilter) &&
+      (!keywordFilter || [run.id, run.evaluation_build_name, run.evaluation_build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
       (!activeOnly || activeStatuses.has(run.status)),
   );
   const toggleStatus = (status: string) =>
@@ -309,6 +316,7 @@ export function EvaluationsPage({
     setDraftBuildFilter("");
     setDraftModeFilter("all");
     setDraftPhaseFilter("");
+    setDraftKeywordFilter("");
     setDraftActiveOnly(false);
   };
   const closeFilters = () => setFiltersOpen(false);
@@ -317,6 +325,7 @@ export function EvaluationsPage({
     setDraftBuildFilter(buildFilter);
     setDraftModeFilter(modeFilter);
     setDraftPhaseFilter(phaseFilter);
+    setDraftKeywordFilter(keywordFilter);
     setDraftActiveOnly(activeOnly);
     setFiltersOpen(true);
   };
@@ -325,6 +334,7 @@ export function EvaluationsPage({
     setBuildFilter(draftBuildFilter);
     setModeFilter(draftModeFilter);
     setPhaseFilter(draftPhaseFilter);
+    setKeywordFilter(draftKeywordFilter);
     setActiveOnly(draftActiveOnly);
     setPage(1);
     closeFilters();
@@ -379,7 +389,17 @@ export function EvaluationsPage({
     Number(Boolean(buildFilter)) +
     Number(modeFilter !== "all") +
     Number(Boolean(phaseFilter)) +
+    Number(Boolean(keywordFilter)) +
     Number(activeOnly);
+  const resultAppliedFilterCount =
+    Number(resultIterationFilter !== "all") +
+    Number(resultDecisions.size !== 4) +
+    Number(resultScoreBucket !== "all") +
+    Number(resultContent !== "all") +
+    Number(resultAttemptFilter !== "all") +
+    Number(resultImprovementStatus !== "all") +
+    Number(resultIssueSeverity !== "all") +
+    Number(resultIssueStatus !== "all");
   const totalPages = Math.max(1, Math.ceil(filteredRuns.length / pageSize)),
     currentPage = Math.min(page, totalPages),
     pagedRuns = filteredRuns.slice((currentPage - 1) * pageSize, currentPage * pageSize),
@@ -490,6 +510,11 @@ export function EvaluationsPage({
               </button>
             </>
           )}
+          {["failed", "cancelled"].includes(r.status) && r.execution_type === "pipeline" && (
+            <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} onClick={(event) => { event.stopPropagation(); setRetryingRun(r); }}>
+              <RotateCcw size={16} />
+            </button>
+          )}
           <button
             className="icon-button danger"
             title={t.stop}
@@ -509,11 +534,13 @@ export function EvaluationsPage({
   columns.splice(4, 0, {
     id: "iteration",
     header: l.iteration,
-    render: (r) =>
-      Math.max(
+    render: (r) => {
+      const current = Math.max(
         0,
         ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
-      ) || "—",
+      );
+      return current ? `${current}/${r.loop_limit ?? current}` : "—";
+    },
   });
   const steps = selected?.step_results ?? [],
     // `finalize` is bookkeeping after the last evaluation loop.  It must not
@@ -665,16 +692,15 @@ export function EvaluationsPage({
         __iteration: record.iteration,
       })),
     );
-  const resultBehaviorSummaries = resultRecords
-    .map((record) => ({
+  const resultBehaviorTraces = resultRecords.flatMap((record) => {
+      const item = {
       iteration: record.iteration,
       recordedAt: record.recorded_at,
+      trace: translateResultResponse(record)?.evaluation?.behavior_trace,
       summary: translateResultResponse(record)?.evaluation?.behavior_summary,
-    }))
-    .filter(
-      (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
-        Boolean(item.summary),
-    );
+      };
+      return item.trace || item.summary ? [item] : [];
+    });
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
@@ -704,7 +730,7 @@ export function EvaluationsPage({
         >
           <ListFilter size={15} />
           {ui.filter}
-          {appliedFilterCount > 0 && <span>{appliedFilterCount}</span>}
+          {appliedFilterCount > 0 && <span className="nav-run-count">{appliedFilterCount}</span>}
         </button>
         <PageSizeSelect locale={locale} value={pageSize} onChange={value=>{setPageSize(value);setPage(1)}}/>
         {filtersOpen && (
@@ -732,6 +758,10 @@ export function EvaluationsPage({
                 ))}
               </div>
             </fieldset>
+            <label>
+              {ui.keyword}
+              <input value={draftKeywordFilter} onChange={(event) => setDraftKeywordFilter(event.target.value)} placeholder={ui.keywordHint} />
+            </label>
             <label>
               {ui.evaluationBuild}
               <select
@@ -948,7 +978,7 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription}>
+            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint}>
               <div className="run-tabs phase-tabs">
                 {phases.map((phase) => (
                   <button
@@ -970,16 +1000,18 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "logs" && (
-            <RunDetailTabPanel description={l.logsDescription}>
+            <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint}>
               <CombinedLogPanel
                 steps={selectedSteps}
                 locale={locale}
                 empty={l.noLogs}
+                orbitLogs={l.orbitLogs}
+                targetLogs={l.targetLogs}
               />
             </RunDetailTabPanel>
           )}
           {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription}>
+            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
               <PromptChangesPanel
                 key={selected.id}
                 revisions={promptRevisions}
@@ -989,12 +1021,12 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription}>
+            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint}>
               <CommitChangesPanel changes={commitChanges} l={l} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
-            <RunDetailTabPanel description={l.supervisorDescription}>
+            <RunDetailTabPanel description={l.supervisorDescription} hint={l.supervisorDataHint}>
               {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
@@ -1027,7 +1059,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "result" && (
-            <RunDetailTabPanel description={l.resultDescription}>
+            <RunDetailTabPanel description={l.resultDescription} hint={l.resultDataHint}>
               <div className="run-result">
               <div className="result-filter-trigger" ref={resultFilterMenu}>
                 <button
@@ -1039,6 +1071,7 @@ export function EvaluationsPage({
                 >
                   <ListFilter size={15} />
                   {l.filter}
+                  {resultAppliedFilterCount > 0 && <span className="nav-run-count">{resultAppliedFilterCount}</span>}
                 </button>
                 {resultTranslationIds.length > 0 && (
                   <button
@@ -1211,7 +1244,7 @@ export function EvaluationsPage({
               <EvaluationResultPanel
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
-                summaries={resultBehaviorSummaries}
+                summaries={resultBehaviorTraces}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}
@@ -1222,6 +1255,16 @@ export function EvaluationsPage({
           )}
         </Modal>
       )}
+      <Modal open={Boolean(retryingRun)} title={retryCopy.title} onClose={() => setRetryingRun(null)} className="modal--confirm">
+        <div className="modal-form retry-confirmation">
+          <p className="confirm-description">{retryCopy.warning}</p>
+          <div className="modal-actions">
+            <button className="ghost" onClick={() => setRetryingRun(null)}>{retryCopy.cancel}</button>
+            <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{retryCopy.resume}</button>
+            <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{retryCopy.restart}</button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

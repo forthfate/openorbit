@@ -16,6 +16,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import yaml
@@ -31,11 +32,29 @@ from .remote import RemoteInvocation
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _application_data_pointer() -> Path:
+    """Keep an operator-selected data location outside the data it points to."""
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Preferences" / "Orbit"
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "orbit"
+    return root / "app-data-path"
+
+
 def _application_data_dir() -> Path:
     """Return Orbit's writable per-user state directory on every platform."""
     override = os.environ.get("ORBIT_APP_DATA")
     if override:
         return Path(override).expanduser()
+    pointer = _application_data_pointer()
+    try:
+        selected = pointer.read_text(encoding="utf-8").strip()
+    except OSError:
+        selected = ""
+    if selected:
+        return Path(selected).expanduser()
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
     if sys.platform == "darwin":
@@ -56,6 +75,22 @@ and stop immediately when an emergency stop is requested.
 
 __ORBIT_MANAGER_AI_PROMPT__
 
+__ORBIT_MANAGER_OUTPUT_LANGUAGE__
+
+Your final response must be exactly one JSON object:
+{
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"purpose\":\"string\",\"rationale\":\"string\",\"observation\":\"string\",\"decision\":\"string\",\"next_action\":\"string\"}, \"behavior_summary\":\"legacy string, only when the evaluated target is an AI\"},
+  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+}
+For an evaluated AI, include behavior_trace and fill every field. It is an evidence-backed activity record for a person reviewing the run: purpose explains why this check or action matters now; rationale names only the observable evidence or declared plan behind it; observation records the material change or finding in this iteration; decision records what the target AI did or deliberately did not do; next_action states the specific next check or hypothesis. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics (navigation, waits, screenshots, or generic control inspection). When there is no material change, say so briefly and make next_action explain how the next check will differ or escalate. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is optional legacy compatibility only; prefer behavior_trace. Always include both array keys, using empty arrays when there are no items."""
+LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
+Preserve the task safety boundary, collect observable evidence, and never
+claim success without stated acceptance evidence. Escalate required approvals
+and stop immediately when an emergency stop is requested.
+
+__ORBIT_MANAGER_AI_PROMPT__
+
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
@@ -68,6 +103,7 @@ Decide each improvement status independently from the evaluation approval score.
 Use `adopted` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `adopted` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
 Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
+MANAGER_OUTPUT_LANGUAGE_SLOT = "__ORBIT_MANAGER_OUTPUT_LANGUAGE__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
 # - The evaluation build selects fixed target-AI prompts and a configured model
@@ -611,6 +647,42 @@ QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
 TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
 
 
+def configure_application_data(path: str) -> Path:
+    """Switch the local state root and retain it for later application starts."""
+    requested = Path(path.strip()).expanduser()
+    if not requested.is_absolute():
+        raise ValueError("app data location must be an absolute path")
+    target = requested.resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    pointer = _application_data_pointer()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    temporary = pointer.with_suffix(".tmp")
+    temporary.write_text(str(target), encoding="utf-8")
+    temporary.replace(pointer)
+    os.environ["ORBIT_APP_DATA"] = str(target)
+
+    global APP_DATA, CONFIG, TARGET_TEST_CASE_SETS, EXECUTION_ENVIRONMENTS, TARGET_ENVIRONMENTS
+    global CYCLE_INTERVENTIONS, DATA, RUNS, TELEMETRY, SETTINGS, TOOL_TIMES, RUNNERS
+    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS
+    APP_DATA = target
+    CONFIG = APP_DATA / "config"
+    TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
+    EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
+    TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+    CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
+    DATA = APP_DATA / "data"
+    RUNS = DATA / "runs"
+    TELEMETRY = DATA / "telemetry.jsonl"
+    SETTINGS = DATA / "settings.json"
+    TOOL_TIMES = DATA / "tool-times.json"
+    RUNNERS = APP_DATA / "runners"
+    RUNNER_TEMPLATES = APP_DATA / "runner-templates"
+    QUICK_STARTS = APP_DATA / "quick-starts"
+    QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
+    TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
+    return APP_DATA
+
+
 def now() -> datetime:
     return datetime.now(UTC)
 
@@ -673,10 +745,12 @@ class ConsoleStore:
             if isinstance(document.get("application_settings"), dict)
             else {}
         )
-        if not str(application.get("manager_prompt_template", "")).strip():
+        current_prompt = str(application.get("manager_prompt_template", "")).strip()
+        if not current_prompt or current_prompt == LEGACY_OPERATIONAL_MANAGER_PROMPT:
             document["application_settings"] = {
                 **application,
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": str(application.get("manager_output_locale", "en")).strip(),
                 "chat_model_profile_name": str(application.get("chat_model_profile_name", "")).strip(),
             }
             SETTINGS.write_text(json.dumps(document, indent=2), encoding="utf-8")
@@ -913,6 +987,7 @@ if __name__ == "__main__": runner.main()
                 }
 
             evaluation = response.get("evaluation")
+            behavior_trace = evaluation.get("behavior_trace") if isinstance(evaluation, dict) else None
             return {
                 **(
                     {"prompt": record["prompt"]}
@@ -920,9 +995,23 @@ if __name__ == "__main__": runner.main()
                     else {}
                 ),
                 "response": {
-                    "evaluation": display_fields(evaluation, ("behavior_summary", "summary"))
-                    if isinstance(evaluation, dict)
-                    else {},
+                    "evaluation": {
+                        **(
+                            display_fields(evaluation, ("behavior_summary", "summary"))
+                            if isinstance(evaluation, dict)
+                            else {}
+                        ),
+                        **(
+                            {
+                                "behavior_trace": display_fields(
+                                    behavior_trace,
+                                    ("purpose", "rationale", "observation", "decision", "next_action"),
+                                )
+                            }
+                            if isinstance(behavior_trace, dict)
+                            else {}
+                        ),
+                    },
                     "improvements": [
                         display_fields(
                             item,
@@ -1866,6 +1955,7 @@ if __name__ == "__main__":
             "name": str(values["name"]).strip(),
             "description": str(values["description"]).strip(),
             "template_id": str(values.get("template_id", "custom")),
+            "created_at": str(values.get("created_at") or now().isoformat()),
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
@@ -2104,6 +2194,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2119,6 +2210,7 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
@@ -2136,6 +2228,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2152,6 +2245,7 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
@@ -2275,6 +2369,7 @@ if __name__ == "__main__":
             raise ValueError("target-AI test case set ID is required and must be unique")
         sets = self.target_test_case_sets()
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = now().isoformat()
         sets.append(test_set)
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2287,6 +2382,7 @@ if __name__ == "__main__":
         if index is None:
             raise KeyError(set_id)
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = sets[index].get("created_at", now().isoformat())
         sets[index] = test_set
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2329,12 +2425,15 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": versions,
+            "created_at": current.get("created_at", now().isoformat()),
         }
         templates[index] = template
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
         temporary.replace(CONFIG / "prompt-templates.yaml")
-        return template
+        # Preserve the established update response shape; the persisted value
+        # is exposed by the subsequent catalog refresh.
+        return {key: value for key, value in template.items() if key != "created_at"}
 
     def create_prompt_template(self, values: dict[str, Any]) -> dict[str, Any]:
         template_id = str(values["id"])
@@ -2373,6 +2472,7 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": [{"version": version, "content": content}],
+            "created_at": now().isoformat(),
         }
         templates.append(template)
         temporary = CONFIG / "prompt-templates.tmp"
@@ -2389,6 +2489,8 @@ if __name__ == "__main__":
         operational = self.application_settings()["manager_prompt_template"]
         if MANAGER_PROMPT_SLOT not in operational:
             raise ValueError(f"operational manager prompt must include {MANAGER_PROMPT_SLOT}")
+        if MANAGER_OUTPUT_LANGUAGE_SLOT not in operational:
+            raise ValueError(f"operational manager prompt must include {MANAGER_OUTPUT_LANGUAGE_SLOT}")
         selected_set = next(
             (
                 item
@@ -2427,7 +2529,13 @@ if __name__ == "__main__":
         assembled = "\n\n".join(
             part
             for part in (
-                operational.replace(MANAGER_PROMPT_SLOT, manager_policy),
+                operational.replace(MANAGER_PROMPT_SLOT, manager_policy).replace(
+                    MANAGER_OUTPUT_LANGUAGE_SLOT,
+                    "# Output language\n"
+                    "Write all human-readable string values in the configured application language "
+                    f"({self.application_settings()['manager_output_locale']}). "
+                    "Keep JSON keys, field names, and required enum values exactly as specified.",
+                ),
                 f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
                 PROPOSAL_DECISION_POLICY,
@@ -2510,7 +2618,15 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
             "iteration_strategy": values.get("iteration_strategy", "linear"),
             "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
@@ -2582,7 +2698,15 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
             "iteration_strategy": values.get("iteration_strategy", "linear"),
             "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
@@ -3398,7 +3522,17 @@ if __name__ == "__main__":
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
         loop_limit: int = 1,
+        timezone: str = "UTC",
+        schedule_enabled: bool = False,
+        schedule_weekdays: list[int] | None = None,
+        schedule_start_time: str = "09:00",
+        schedule_end_time: str = "18:00",
+        start_iteration: int = 1,
+        retry_of_run_id: str | None = None,
+        retry_mode: str | None = None,
         repeat_interval_minutes: int = 0,
+        cadence_mode: str = "after_completion",
+        overrun_policy: str = "wait",
         approval_score: int | None = None,
         iteration_strategy: str = "linear",
         candidates_per_iteration: int = 1,
@@ -3422,7 +3556,17 @@ if __name__ == "__main__":
             execution_mode=execution_mode,
             execution_type="pipeline",
             loop_limit=max(1, loop_limit),
+            timezone=timezone,
+            schedule_enabled=schedule_enabled,
+            schedule_weekdays=schedule_weekdays or [],
+            schedule_start_time=schedule_start_time,
+            schedule_end_time=schedule_end_time,
+            start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
+            retry_of_run_id=retry_of_run_id,
+            retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
             repeat_interval_minutes=max(0, repeat_interval_minutes),
+            cadence_mode="fixed" if cadence_mode == "fixed" else "after_completion",
+            overrun_policy="interrupt_eval" if overrun_policy == "interrupt_eval" else "wait",
             approval_score=approval_score,
             iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
             candidates_per_iteration=max(1, candidates_per_iteration),
@@ -3467,6 +3611,8 @@ if __name__ == "__main__":
             if isinstance(item, dict) and item.get("profile_name", "").strip():
                 profile = dict(default)
                 profile.update({key: str(value) for key, value in item.items() if key in default})
+                if item.get("created_at"):
+                    profile["created_at"] = str(item["created_at"])
                 profiles.append(profile)
         return profiles or [default]
 
@@ -3484,6 +3630,7 @@ if __name__ == "__main__":
         if not SETTINGS.exists():
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": "en",
                 "chat_model_profile_name": "",
                 "assistant_tools": normalize_assistant_tools(None),
             }
@@ -3492,14 +3639,19 @@ if __name__ == "__main__":
         if not isinstance(values, dict):
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": "en",
                 "chat_model_profile_name": "",
                 "assistant_tools": normalize_assistant_tools(None),
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
         if MANAGER_PROMPT_SLOT not in prompt:
             prompt = f"{prompt}\n\n{MANAGER_PROMPT_SLOT}".strip()
+        if MANAGER_OUTPUT_LANGUAGE_SLOT not in prompt:
+            prompt = f"{prompt}\n\n{MANAGER_OUTPUT_LANGUAGE_SLOT}".strip()
+        output_locale = str(values.get("manager_output_locale", "en")).strip() or "en"
         return {
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+            "manager_output_locale": output_locale,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),
             "assistant_tools": normalize_assistant_tools(values.get("assistant_tools")),
         }
@@ -3509,6 +3661,10 @@ if __name__ == "__main__":
         chat_profile_name = str(
             values.get("chat_model_profile_name", current["chat_model_profile_name"])
         ).strip()
+        output_locale = (
+            str(values.get("manager_output_locale", current["manager_output_locale"])).strip()
+            or current["manager_output_locale"]
+        )
         if chat_profile_name and not any(
             item["profile_name"] == chat_profile_name for item in self.profiles()
         ):
@@ -3519,6 +3675,7 @@ if __name__ == "__main__":
             "manager_prompt_template": str(
                 values.get("manager_prompt_template", current["manager_prompt_template"])
             ).strip(),
+            "manager_output_locale": output_locale,
             "chat_model_profile_name": chat_profile_name,
             "assistant_tools": normalize_assistant_tools(
                 values.get("assistant_tools", current["assistant_tools"])
@@ -3535,8 +3692,12 @@ if __name__ == "__main__":
         stored["profile_name"] = stored.get("profile_name", "").strip()
         if not stored["profile_name"]:
             raise ValueError("프로필 이름을 입력해야 합니다.")
+        existing_profile = next(
+            (item for item in self.profiles() if item["profile_name"] == stored["profile_name"]), None
+        )
         profile = dict(self._default_settings())
         profile.update(stored)
+        profile["created_at"] = (existing_profile or {}).get("created_at", now().isoformat())
         profiles = self.profiles() if SETTINGS.exists() else []
         profiles = [item for item in profiles if item["profile_name"] != profile["profile_name"]]
         profiles.append(profile)
@@ -3656,12 +3817,22 @@ if __name__ == "__main__":
             loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval"}]
             teardown_steps = [step for step in steps if step.phase == "teardown"]
             finalize = [step for step in steps if step.phase == "finalize"]
-            for step in init:
-                self._execute_step(run_id, step, 0, resources)
-                if self._load(run_id).status in {"failed", "cancelled"}:
+            if not self._wait_for_schedule(run_id):
+                return
+            if run.start_iteration == 1 and run.retry_mode != "resume":
+                for step in init:
+                    self._execute_step(run_id, step, 0, resources)
+                    if self._load(run_id).status in {"failed", "cancelled"}:
+                        break
+            for loop_index in range(run.start_iteration, run.loop_limit + 1):
+                if not self._wait_for_schedule(run_id):
                     break
-            for loop_index in range(1, run.loop_limit + 1):
                 run = self._load(run_id)
+                if run.cadence_mode == "fixed" and run.repeat_interval_minutes:
+                    run.iteration_deadline_at = run.created_at + timedelta(
+                        minutes=run.repeat_interval_minutes * loop_index
+                    )
+                    self._save(run)
                 candidate_ids = (
                     (
                         [str(loop_index)]
@@ -3763,7 +3934,13 @@ if __name__ == "__main__":
                     run = self._load(run_id)
                     run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
                     self._save(run)
-                    for _ in range(run.repeat_interval_minutes * 60):
+                    wait_seconds = run.repeat_interval_minutes * 60
+                    if run.cadence_mode == "fixed":
+                        next_start = run.created_at + timedelta(
+                            minutes=run.repeat_interval_minutes * loop_index
+                        )
+                        wait_seconds = max(0, int((next_start - now()).total_seconds()))
+                    for _ in range(wait_seconds):
                         if self._load(run_id).status != "running":
                             break
                         time.sleep(1)
@@ -3841,9 +4018,12 @@ if __name__ == "__main__":
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
         if evaluation is not None:
-            if not isinstance(evaluation, dict) or set(evaluation) not in (
-                {"score", "approval", "summary"},
-                {"score", "approval", "behavior_summary", "summary"},
+            if (
+                not isinstance(evaluation, dict)
+                or not {"score", "approval", "summary"}.issubset(evaluation)
+                or not set(evaluation).issubset(
+                    {"score", "approval", "summary", "behavior_summary", "behavior_trace"}
+                )
             ):
                 raise ValueError(
                     "supervisor evaluation must contain score, approval, summary, and behavior_summary"
@@ -3864,6 +4044,17 @@ if __name__ == "__main__":
                 raise ValueError("supervisor evaluation approval or summary is invalid")
             if "behavior_summary" in evaluation and not isinstance(evaluation["behavior_summary"], str):
                 raise ValueError("supervisor evaluation behavior_summary is invalid")
+            if "behavior_trace" in evaluation:
+                trace = evaluation["behavior_trace"]
+                trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
+                if (
+                    not isinstance(trace, dict)
+                    or set(trace) != trace_fields
+                    or not all(
+                        isinstance(trace[field], str) and trace[field].strip() for field in trace_fields
+                    )
+                ):
+                    raise ValueError("supervisor evaluation behavior_trace is invalid")
         return result
 
     def _complete_supervision(self, run_id: str) -> None:
@@ -4168,6 +4359,30 @@ if __name__ == "__main__":
                     creationflags=creation_flags,
                     env=environment,
                 )
+                interruption_timer: threading.Timer | None = None
+                if (
+                    step.phase == "eval"
+                    and run.overrun_policy == "interrupt_eval"
+                    and run.iteration_deadline_at
+                ):
+                    delay = (run.iteration_deadline_at - now()).total_seconds()
+                    if delay <= 0:
+                        delay = 0.01
+
+                    def interrupt_overdue_evaluation() -> None:
+                        current = self._load(run_id)
+                        if current.current_phase != "eval" or process.poll() is not None:
+                            return
+                        current.advance_requested, current.updated_at = True, now()
+                        self._save(current)
+                        if os.name == "nt":
+                            process.terminate()
+                        else:
+                            os.killpg(process.pid, signal.SIGTERM)
+
+                    interruption_timer = threading.Timer(delay, interrupt_overdue_evaluation)
+                    interruption_timer.daemon = True
+                    interruption_timer.start()
                 captured_lines: list[tuple[str, str]] = []
                 live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
 
@@ -4236,9 +4451,12 @@ if __name__ == "__main__":
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
+                if interruption_timer:
+                    interruption_timer.cancel()
                 output_reader.join()
                 persist_live_output()
                 structured_result: dict[str, Any] | None = None
+                target_logs: list[dict[str, Any]] = []
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
                     if line.startswith("__ORBIT_RESULT__"):
@@ -4246,6 +4464,27 @@ if __name__ == "__main__":
                             emitted = json.loads(line.removeprefix("__ORBIT_RESULT__"))
                             if not isinstance(emitted, dict):
                                 raise ValueError("structured runner result must be an object")
+                            emitted_target_logs = emitted.pop("target_logs", [])
+                            if isinstance(emitted_target_logs, list):
+                                for entry in emitted_target_logs:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    message = entry.get("message")
+                                    if not isinstance(message, str) or not message.strip():
+                                        continue
+                                    target_logs.append(
+                                        {
+                                            "timestamp": entry.get("timestamp")
+                                            if isinstance(entry.get("timestamp"), str)
+                                            else timestamp,
+                                            "level": str(entry.get("level") or "info")[:32],
+                                            "source": str(entry.get("source") or "")[:256],
+                                            "message": message.strip()[:4000],
+                                            "run_id": run_id,
+                                            "iteration": loop_index,
+                                            "phase": step.phase,
+                                        }
+                                    )
                             structured_result = {**(structured_result or {}), **emitted}
                         except json.JSONDecodeError:
                             visible_lines.append((timestamp, line))
@@ -4270,6 +4509,8 @@ if __name__ == "__main__":
                 }
                 if structured_result is not None:
                     result["result"] = structured_result
+                if target_logs:
+                    result["target_logs"] = target_logs[-200:]
                 run = self._load(run_id)
                 live_index = next(
                     (
@@ -4287,6 +4528,10 @@ if __name__ == "__main__":
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    if step.phase == "eval" and run.advance_requested:
+                        run.advance_requested = False
+                        self._save(run)
+                        return
                     # A stop request intentionally terminates the subprocess.
                     # Preserve cancellation while still letting the caller run
                     # the terminal teardown path.
@@ -4334,6 +4579,66 @@ if __name__ == "__main__":
         self._save(run)
         return run
 
+    def _wait_for_schedule(self, run_id: str) -> bool:
+        while True:
+            run = self._load(run_id)
+            if run.status in {"failed", "cancelled"}:
+                return False
+            if not run.schedule_enabled or run.execution_mode != "run":
+                return True
+            try:
+                current = datetime.now(ZoneInfo(run.timezone))
+            except ZoneInfoNotFoundError:
+                current = datetime.now(UTC)
+            now_time = current.strftime("%H:%M")
+            weekdays = set(run.schedule_weekdays)
+            start, end = run.schedule_start_time, run.schedule_end_time
+            in_day = not weekdays or current.weekday() in weekdays
+            in_time = start <= now_time <= end if start <= end else now_time >= start or now_time <= end
+            if in_day and in_time:
+                return True
+            run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
+            self._save(run)
+            time.sleep(30)
+
+    def retry(self, run_id: str, restart_from_first: bool) -> Run:
+        run = self._load(run_id)
+        if run.execution_type != "pipeline" or run.status not in {"failed", "cancelled"}:
+            raise ValueError("Only failed or cancelled pipeline runs can be retried")
+        latest_iteration = max(
+            (
+                int(item.get("loop_index", 0))
+                for item in run.step_results
+                if int(item.get("loop_index", 0)) > 0
+            ),
+            default=1,
+        )
+        return self.create_run(
+            run.workflow_id,
+            execution_mode=run.execution_mode,
+            evaluation_build_id=run.evaluation_build_id,
+            evaluation_build_name=run.evaluation_build_name,
+            supervisor_profile_name=run.supervisor_profile_name,
+            prompt_source=run.prompt_source,
+            prompt_snapshot=run.prompt_snapshot,
+            loop_limit=run.loop_limit,
+            timezone=run.timezone,
+            schedule_enabled=run.schedule_enabled,
+            schedule_weekdays=run.schedule_weekdays,
+            schedule_start_time=run.schedule_start_time,
+            schedule_end_time=run.schedule_end_time,
+            start_iteration=1 if restart_from_first else min(latest_iteration, run.loop_limit),
+            repeat_interval_minutes=run.repeat_interval_minutes,
+            cadence_mode=run.cadence_mode,
+            overrun_policy=run.overrun_policy,
+            approval_score=run.approval_score,
+            iteration_strategy=run.iteration_strategy,
+            candidates_per_iteration=run.candidates_per_iteration,
+            repository=run.repository,
+            retry_of_run_id=run.id,
+            retry_mode="restart" if restart_from_first else "resume",
+        )
+
     def emergency_stop(self) -> list[Run]:
         stopped = []
         for run in self.runs():
@@ -4359,9 +4664,16 @@ if __name__ == "__main__":
                 prompt_source=prompt_source,
                 prompt_snapshot=prompt_snapshot,
                 loop_limit=1 if execution_mode == "test" else int(build.get("run_limit", 1)),
+                timezone=str(build.get("timezone", "UTC")),
+                schedule_enabled=execution_mode == "run" and bool(build.get("schedule_enabled", False)),
+                schedule_weekdays=list(build.get("schedule_weekdays", [])),
+                schedule_start_time=str(build.get("schedule_start_time", "09:00")),
+                schedule_end_time=str(build.get("schedule_end_time", "18:00")),
                 repeat_interval_minutes=0
                 if execution_mode == "test"
                 else int(build.get("repeat_interval_minutes", 0)),
+                cadence_mode=str(build.get("cadence_mode", "after_completion")),
+                overrun_policy=str(build.get("overrun_policy", "wait")),
                 approval_score=int(build.get("approval_score", 0)),
                 iteration_strategy=str(build.get("iteration_strategy", "linear")),
                 candidates_per_iteration=int(build.get("candidates_per_iteration", 2)),
