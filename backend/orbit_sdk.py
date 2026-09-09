@@ -23,7 +23,17 @@ ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / 
 
 
 def ORBIT_PROJECT_PATH(*parts: str) -> Path:
-    """Resolve a safe path relative to the evaluation target repository."""
+    """Resolve a safe path relative to the evaluation target repository.
+
+    Args:
+        *parts: Path components below the target repository.
+
+    Returns:
+        An absolute path inside the target repository.
+
+    Raises:
+        ValueError: If the resolved path would escape the target repository.
+    """
     candidate = PROJECT_ROOT.joinpath(*parts).resolve()
     if candidate != PROJECT_ROOT and PROJECT_ROOT not in candidate.parents:
         raise ValueError("project path must stay within PROJECT_ROOT")
@@ -60,6 +70,20 @@ def _proposal_history_path(project_root: Path) -> Path:
 
 @dataclass
 class RunnerContext:
+    """Per-phase SDK interface supplied to a runner handler.
+
+    Do not construct this class in a normal runner. Decorate a function with
+    ``@runner.phase(...)`` and Orbit creates the context when it invokes that
+    phase. The context is scoped to one process invocation and one iteration.
+
+    Attributes:
+        phase: The lifecycle phase currently being invoked.
+        target_repository: Root directory of the evaluated target.
+        mode: Execution mode, normally ``"run"`` or ``"test"``.
+        loop_index: One-based evaluation iteration number.
+        environment: Environment snapshot passed to the runner process.
+    """
+
     phase: str
     target_repository: Path
     mode: str
@@ -68,6 +92,12 @@ class RunnerContext:
 
     @property
     def resources(self) -> dict[str, object]:
+        """Return the immutable resource snapshot provided for this invocation.
+
+        The snapshot can contain the workflow, evaluation build, fixed test
+        cases, model profile, and execution-environment settings. Prefer the
+        typed convenience properties when one is available.
+        """
         encoded = self.environment.get("ORBIT_RUNNER_RESOURCES", "")
         if not encoded:
             return {}
@@ -84,7 +114,17 @@ class RunnerContext:
         return ORBIT_APP_DATA
 
     def project_path(self, *parts: str) -> Path:
-        """Resolve a path relative to PROJECT_ROOT without escaping it."""
+        """Resolve a target-repository path without allowing path traversal.
+
+        Args:
+            *parts: Relative path components inside :attr:`project_root`.
+
+        Returns:
+            An absolute target-repository path.
+
+        Raises:
+            ValueError: If the path escapes the target repository.
+        """
         return ORBIT_PROJECT_PATH(*parts)
 
     def managed_asset_dir(self, name: str) -> Path:
@@ -96,7 +136,19 @@ class RunnerContext:
         return directory
 
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
-        """Atomically materialize runner-owned files outside the target repository."""
+        """Atomically materialize runner-owned files outside the target repository.
+
+        Use this for temporary scripts, fixtures, or adapter configuration that
+        belongs to the runner rather than the evaluated project. Orbit emits a
+        manifest with content hashes as step evidence.
+
+        Args:
+            name: Stable relative name for this runner-managed asset set.
+            files: Relative paths and their UTF-8 text or byte content.
+
+        Returns:
+            The asset directory, manifest SHA-256, and hashes by file path.
+        """
         directory = self.managed_asset_dir(name)
         manifest: dict[str, str] = {}
         for relative, value in files.items():
@@ -119,7 +171,16 @@ class RunnerContext:
         *,
         content_type: str = "application/octet-stream",
     ) -> dict[str, object]:
-        """Persist immutable run evidence in AppData and attach its metadata to the step."""
+        """Persist immutable run evidence in AppData and attach its metadata to the step.
+
+        Args:
+            relative_path: Relative evidence path within the current run and iteration.
+            content: Text or bytes to retain.
+            content_type: MIME type used when the artifact is presented.
+
+        Returns:
+            Artifact path, SHA-256, size, content type, and relative path.
+        """
         relative = Path(relative_path)
         if (
             not relative.parts
@@ -147,7 +208,15 @@ class RunnerContext:
     def git_candidate(
         self, paths: list[str] | None = None, *, retain_patch: bool = False
     ) -> dict[str, object]:
-        """Summarize the current Git candidate without flooding runner output with its diff."""
+        """Summarize the current Git candidate without flooding runner output with its diff.
+
+        Args:
+            paths: Optional target-relative paths to limit the Git diff.
+            retain_patch: Store the binary diff as an artifact when it is non-empty.
+
+        Returns:
+            A candidate fingerprint, changed paths, and optionally patch metadata.
+        """
         suffix = ["--", *(paths or [])]
         patch = subprocess.run(
             ["git", "diff", "--binary", *suffix],
@@ -599,18 +668,26 @@ class RunnerContext:
 
     @property
     def workflow(self) -> dict[str, object]:
+        """Return the workflow snapshot supplied by Orbit for this invocation."""
         return dict(self.resources.get("workflow", {}))
 
     @property
     def evaluation_build(self) -> dict[str, object]:
+        """Return the evaluation-build snapshot supplied by Orbit."""
         return dict(self.resources.get("evaluation_build", {}))
 
     @property
     def test_cases(self) -> list[dict[str, object]]:
+        """Return the fixed target test cases selected for this evaluation build."""
         return list(self.resources.get("test_cases", []))
 
     def resource(self, name: str, default: object = None) -> object:
-        """Read an Orbit resource snapshot supplied for this execution."""
+        """Read a named value from Orbit's immutable resource snapshot.
+
+        Args:
+            name: Resource name, such as ``"model_profile"``.
+            default: Value returned when the resource is absent.
+        """
         return self.resources.get(name, default)
 
     def complete_model(self, prompt: str) -> dict[str, str]:
@@ -689,6 +766,12 @@ class RunnerContext:
         return {}
 
     def log(self, message: str) -> None:
+        """Write an Orbit runner-progress message to the workflow log.
+
+        This is for runner lifecycle and adapter progress. It is intentionally
+        different from :meth:`target_log`, which records events emitted by the
+        evaluated target and appears separately in the run's Logs tab.
+        """
         print(f"[orbit:{self.phase}] {message}", flush=True)
 
     def target_log(
@@ -703,7 +786,18 @@ class RunnerContext:
 
         Target logs are kept separately from Orbit's runner and workflow output.
         Call this from an adapter after it has collected a relevant target-side
-        event; it is not intended to mirror the runner's own stdout.
+        event; it is not intended to mirror the runner's own stdout. Orbit adds
+        the run ID, iteration, and lifecycle phase before retaining the entry.
+
+        Args:
+            message: Non-empty target event text. It is trimmed to 4,000 characters.
+            level: One of ``debug``, ``info``, ``warn``, ``warning``, or ``error``.
+            source: Optional stable target-service name, trimmed to 256 characters.
+            timestamp: Optional ISO-8601 timestamp. UTC time is used when omitted.
+
+        Raises:
+            ValueError: If the message is empty, level is unsupported, or timestamp
+                is not a string.
         """
         if not isinstance(message, str) or not message.strip():
             raise ValueError("target log message must be a non-empty string")
@@ -729,7 +823,13 @@ class RunnerContext:
         )
 
     def emit_result(self, values: dict[str, object]) -> None:
-        """Attach structured, JSON-safe evidence to the current Orbit step."""
+        """Attach JSON-safe structured evidence to the current Orbit step.
+
+        Use this for machine-consumed evidence such as scores, metrics, or
+        proposal records. Values must be JSON serializable. Repeated result
+        objects are merged by key, so prefer a single object for related data;
+        use :meth:`target_log` for append-only target logging.
+        """
         print("__ORBIT_RESULT__" + json.dumps(values, ensure_ascii=False), flush=True)
 
     def playwright_journey(self, cases: list[dict[str, object]] | None = None) -> dict[str, object]:
@@ -805,6 +905,19 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         A runner phase is deliberately not a scheduler.  Returning the output
         lets a phase turn its one-shot result into Orbit-owned structured
         evidence without starting a persistent child daemon.
+
+        Args:
+            command: Executable and arguments, passed without a shell.
+            cwd: Child working directory; defaults to the target repository.
+            timeout: Maximum duration in seconds; no timeout when omitted.
+            env: Environment values that supplement the runner environment.
+
+        Returns:
+            Combined standard output and standard error from the child.
+
+        Raises:
+            subprocess.TimeoutExpired: If the child exceeds ``timeout``.
+            SystemExit: If the child exits with a non-zero status.
         """
         self.log(f"exec: {' '.join(command)}")
         process = subprocess.Popen(
@@ -840,12 +953,24 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
 
 
 class Runner:
+    """Register lifecycle handlers and dispatch the phase requested by Orbit."""
+
     def __init__(self) -> None:
         self._handlers: dict[str, Callable[[RunnerContext], None]] = {}
 
     def phase(
         self, name: str
     ) -> Callable[[Callable[[RunnerContext], None]], Callable[[RunnerContext], None]]:
+        """Register a function as a handler for one runner lifecycle phase.
+
+        Args:
+            name: Lifecycle phase name, normally one of ``init``, ``setup``,
+                ``run``, ``eval``, ``teardown``, or ``finalize``.
+
+        Returns:
+            A decorator that leaves the registered handler unchanged.
+        """
+
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
             self._handlers[name] = handler
             return handler
@@ -853,6 +978,12 @@ class Runner:
         return register
 
     def main(self) -> None:
+        """Dispatch the phase passed by Orbit and retain any commit-range evidence.
+
+        Place ``runner.main()`` behind an ``if __name__ == "__main__"`` guard
+        in every runner asset. Orbit supplies the ``--phase`` argument and
+        process environment; callers should not invoke this method directly.
+        """
         parser = argparse.ArgumentParser(description="Orbit runner phase")
         parser.add_argument("--phase", required=True)
         args = parser.parse_args()

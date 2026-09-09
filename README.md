@@ -138,6 +138,18 @@ name already configured in the selected model profile.
 | Git | 2.40+ recommended | Install from Git and repository-backed evaluation cycles |
 | Node.js | 24+ | Installing from Git and frontend development |
 
+### Runner SDK documentation
+
+The runner SDK reference is generated from the Python module and its
+docstrings. Preview it locally with:
+
+```bash
+pnpm run docs:serve
+```
+
+Build a static documentation site with `pnpm run docs:build`, or
+run `pnpm run build` to generate both the SDK docs and the control-room UI.
+
 ### Run the packaged app
 
 Install the packaged release:

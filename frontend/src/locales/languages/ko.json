@@ -221,7 +221,8 @@
     "dashboardLinks": {
       "repository": "GitHub 저장소",
       "releases": "릴리스 노트",
-      "openApi": "OpenAPI"
+      "openApi": "OpenAPI",
+      "sdkDocs": "SDK 문서"
     },
     "dashboardOperations": {
       "title": "평가 운영 상태",

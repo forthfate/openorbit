@@ -4,6 +4,7 @@ import sys
 
 import orbit_sdk as sdk
 import pytest
+from app import main as main_module
 from app import providers
 from app import store as store_module
 from app.main import app
@@ -16,6 +17,18 @@ def test_health_is_available():
     response = TestClient(app).get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_generated_sdk_docs_are_served_from_the_local_app(tmp_path, monkeypatch):
+    docs = tmp_path / "site" / "sdk"
+    docs.mkdir(parents=True)
+    (docs / "index.html").write_text("<h1>SDK reference</h1>", encoding="utf-8")
+    monkeypatch.setattr(main_module, "SDK_DOCS_DIST", docs.parent)
+
+    response = TestClient(app).get("/sdk-docs/sdk/")
+
+    assert response.status_code == 200
+    assert "SDK reference" in response.text
 
 
 def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch):

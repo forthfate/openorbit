@@ -52,6 +52,7 @@ export function AppShell({
     repository: string;
     releases: string;
     openApi: string;
+    sdkDocs: string;
   }>(locale, "dashboardLinks");
   const navigation: [Page, ReactNode, string][] = [
     ["dashboard", <Activity size={17} />, t.dashboard],
@@ -89,6 +90,15 @@ export function AppShell({
       >
         <Braces size={16} />
         {dashboardLinks.openApi}
+      </a>
+      <a
+        className="dashboard-repository-link"
+        href="/sdk-docs/sdk/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <BookOpen size={16} />
+        {dashboardLinks.sdkDocs}
       </a>
     </>
   );
