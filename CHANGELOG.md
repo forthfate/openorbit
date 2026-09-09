@@ -5,6 +5,32 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-09-10
+
+### Added
+
+- The Orbit Assistant can use workspace tools and an optional terminal mode, with configurable tool availability for local operation.
+- Evaluation runs now retain structured supervisor behavior traces, target logs, live phase output, retry controls, scheduled execution settings, prompt revision history, and commit-change evidence.
+- Evaluation result, workflow, log, and supervisor views now expose contextual data hints, line-numbered output, richer filtering, and independent display-only translation state.
+- Runner SDK documentation is bundled with the release, and SDK helpers can restore evaluation targets from retained Git snapshots and surface saved data files in proposal history.
+- Assets now show loading skeletons, reusable execution and target environments, and clearer catalog metadata and actions.
+- Improvement results include separate dashboard feedback trends and per-build iteration improvement trends, proposal history data files, and localized operational analytics.
+- The control room now provides detailed section descriptions and contextual tooltips across dashboard, evaluation, assets, and settings pages.
+
+### Changed
+
+- Evaluation-build scheduling, timing controls, and date/time displays consistently follow the selected Orbit locale.
+- Operational logs now format timestamps with the selected Orbit language rather than the browser default.
+- The operational manager prompt, application-data settings, model-profile settings, and asset catalogs have clearer descriptions, warnings, and aligned layout spacing.
+- The bundled frontend release label is verified against the package version during CI, and generated SDK documentation is included in release build artifacts.
+- UI accessibility and static copy are localized consistently across English, Korean, and Japanese.
+
+### Fixed
+
+- Evaluation detail hints remain visible in the run-detail modal, and asset metadata aligns with catalog-row actions.
+- Model profiles can be saved without a connection test when the profile configuration is otherwise valid.
+- Evaluation-build timing controls and retained evaluation detail data are localized correctly.
+
 ## [0.6.0] - 2026-09-08
 
 ### Added
