@@ -51,6 +51,7 @@ export function RunDetailTabPanel({
     <section className="run-detail-tab-panel" role="tabpanel">
       {hint && <TooltipBox>{hint}</TooltipBox>}
       <p className="run-detail-tab-panel__description">{description}</p>
+      {hint && <TooltipBox>{hint}</TooltipBox>}
       {children}
     </section>
   );
