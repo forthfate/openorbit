@@ -222,7 +222,8 @@
     "dashboardLinks": {
       "repository": "GitHub repository",
       "releases": "Release notes",
-      "openApi": "OpenAPI"
+      "openApi": "OpenAPI",
+      "sdkDocs": "SDK docs"
     },
     "dashboardOperations": {
       "title": "Evaluation health",

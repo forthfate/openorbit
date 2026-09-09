@@ -139,11 +139,6 @@ export default function App() {
       })
       .catch((e) => room.setNotice(e.message));
   const save = () => {
-    if (!room.settingsTested) {
-      const error = new Error(ui.settingsTestRequired);
-      room.setNotice(error.message, "warning");
-      return Promise.reject(error);
-    }
     return api("/api/settings", "PUT", room.settings).then(() => {
       room.setSettingsTested(false);
       room.setNotice(ui.aiSettingsSaved, "success");
@@ -257,6 +252,7 @@ export default function App() {
         executionEnvironments={room.executionEnvironments}
         targetEnvironments={room.targetEnvironments}
         profiles={room.profiles}
+        loading={room.loading}
         settings={room.settings}
         setSettings={room.setSettings}
         test={test}

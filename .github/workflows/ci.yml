@@ -19,6 +19,10 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-docs
+          path: site
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -40,7 +44,9 @@ jobs:
           node-version: 24
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v6
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run docs:build
       - run: pnpm --filter agent-improvement-console-ui run build
       - name: Verify bundled release version
         run: |
@@ -50,4 +56,9 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-docs
+          path: site
           if-no-files-found: error

@@ -36,6 +36,7 @@ import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { Skeleton } from "../../components/ui/skeleton";
 
 const text = localeMessageMap<Record<string, string>>("assetsText");
 const testBlank: TargetTestCaseSet = {
@@ -44,6 +45,10 @@ const testBlank: TargetTestCaseSet = {
   description: "",
   cases: [{ id: "case-1", name: "", prompt: "", acceptance: "" }],
 };
+
+function CatalogSkeleton() {
+  return <div className="catalog-skeleton" role="status" aria-label="Loading assets"><Skeleton className="catalog-skeleton__title"/><Skeleton className="catalog-skeleton__detail"/><Skeleton className="catalog-skeleton__title"/><Skeleton className="catalog-skeleton__detail"/></div>;
+}
 const fieldHelp = localeMessageMap<Record<string, string>>("assetsHelp");
 const runnerLabels = localeMessageMap<Record<string, string>>("runnerLabels");
 const phases: WorkflowStep["phase"][] = [
@@ -79,6 +84,7 @@ function Catalog({
   showRunners = false,
   runners,
   onRefresh,
+  loading = false,
   locale,
 }: {
   title: string;
@@ -88,13 +94,14 @@ function Catalog({
   showRunners?: boolean;
   runners?: RunnerAsset[];
   onRefresh?: () => Promise<unknown>;
+  loading?: boolean;
   locale: Locale;
 }) {
   const isLegacyWorkflowSection = title === text[locale].flows;
   return (
     <>
       {showRunners && runners && onRefresh && (
-        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} />
+        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} />
       )}{" "}
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
@@ -105,7 +112,7 @@ function Catalog({
             {button}
           </div>
           <div className="catalog-list">
-            {Children.count(children) ? (
+            {loading ? <CatalogSkeleton /> : Children.count(children) ? (
               children
             ) : (
               <p className="catalog-empty">{emptyHint}</p>
@@ -547,6 +554,7 @@ function AssetRow({
         <span>{detail}</span>
         {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       </button>
+      {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       <button
         className="icon-button danger"
         aria-label={deleteLabel}
@@ -582,6 +590,7 @@ function ProfileCatalog({
   test,
   save,
   tested,
+  loading,
   onDelete,
 }: {
   locale: Locale;
@@ -591,6 +600,7 @@ function ProfileCatalog({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  loading: boolean;
   onDelete: (id: string) => void;
 }) {
   const copy = localeMessages<{
@@ -622,7 +632,7 @@ function ProfileCatalog({
         </button>
       </div>
       <div className="catalog-list">
-        {profiles.length ? (
+        {loading ? <CatalogSkeleton /> : profiles.length ? (
           profiles.map((profile) => (
             <AssetRow
               key={profile.profile_name}
@@ -667,10 +677,12 @@ function RunnerCatalog({
   locale,
   items,
   onRefresh,
+  loading,
 }: {
   locale: Locale;
   items: RunnerAsset[];
   onRefresh: () => Promise<unknown>;
+  loading: boolean;
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
@@ -700,7 +712,7 @@ function RunnerCatalog({
         </button>
       </div>
       <div className="catalog-list">
-        {items.length ? (
+        {loading ? <CatalogSkeleton /> : items.length ? (
           items.map((item) => (
             <AssetRow
               key={item.id}
@@ -866,6 +878,7 @@ function LegacyAssetsPage({
   runners,
   promptTemplates,
   testCaseSets,
+  loading,
   onRefresh,
   onCreateWorkflow,
   onUpdateWorkflow,
@@ -876,6 +889,7 @@ function LegacyAssetsPage({
   runners: RunnerAsset[];
   promptTemplates: PromptTemplate[];
   testCaseSets: TargetTestCaseSet[];
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
@@ -925,6 +939,7 @@ function LegacyAssetsPage({
     <>
       <Catalog
         locale={locale}
+        loading={loading}
         emptyHint={l.emptyTemplates}
         title={l.templates}
         button={
@@ -958,6 +973,7 @@ function LegacyAssetsPage({
       </Catalog>
       <Catalog
         locale={locale}
+        loading={loading}
         emptyHint={l.emptyTests}
         title={l.tests}
         button={
@@ -981,6 +997,7 @@ function LegacyAssetsPage({
       </Catalog>
       <Catalog
         locale={locale}
+        loading={loading}
         showRunners
         runners={runners}
         onRefresh={onRefresh}
@@ -1440,12 +1457,14 @@ function EnvironmentCatalog({
   locale,
   executionEnvironments,
   targetEnvironments,
+  loading,
   onRefresh,
   onDelete,
 }: {
   locale: Locale;
   executionEnvironments: ExecutionEnvironment[];
   targetEnvironments: TargetEnvironment[];
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onDelete: (
     kind: "execution-environment" | "target-environment",
@@ -1532,7 +1551,7 @@ function EnvironmentCatalog({
           </button>
         </div>
         <div className="catalog-list">
-          {executionEnvironments.map((item) => (
+          {loading ? <CatalogSkeleton /> : executionEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
@@ -1582,7 +1601,7 @@ function EnvironmentCatalog({
           </button>
         </div>
         <div className="catalog-list">
-          {targetEnvironments.map((item) => (
+          {loading ? <CatalogSkeleton /> : targetEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
@@ -1710,6 +1729,7 @@ export function AssetsPage({
   test,
   save,
   tested,
+  loading,
   onDelete,
   ...legacy
 }: {
@@ -1726,6 +1746,7 @@ export function AssetsPage({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
@@ -1750,16 +1771,18 @@ export function AssetsPage({
         test={test}
         save={save}
         tested={tested}
+        loading={loading}
         onDelete={(id) => onDelete("profile", id)}
       />
       <EnvironmentCatalog
         locale={locale}
         executionEnvironments={executionEnvironments}
         targetEnvironments={targetEnvironments}
+        loading={loading}
         onRefresh={legacy.onRefresh}
         onDelete={onDelete}
       />
-      <LegacyAssetsPage {...legacy} locale={locale} onDelete={onDelete} />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} />
     </>
   );
 }

@@ -306,7 +306,7 @@ export function ProfileForm({
           <Bot size={15} />
           {t.test}
         </button>
-        <button className="approve" disabled={!tested} onClick={save}>
+        <button className="approve" title={tested ? undefined : t.test} onClick={save}>
           {t.saveProfile}
         </button>
       </div>

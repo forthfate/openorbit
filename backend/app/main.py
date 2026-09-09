@@ -62,6 +62,7 @@ app.add_middleware(
 )
 store = ConsoleStore()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
 
 
 def safely(action):
@@ -1258,6 +1259,26 @@ def retry(run_id: str, values: RetryRunRequest):
 @app.post("/api/runs/emergency-stop")
 def emergency_stop():
     return store.emergency_stop()
+
+
+@app.get("/sdk-docs/{path:path}", include_in_schema=False)
+def sdk_docs(path: str):
+    """Serve the generated MkDocs runner-SDK reference site."""
+    if not SDK_DOCS_DIST.exists():
+        raise HTTPException(404, "SDK documentation is not built. Run `pnpm run docs:build`.")
+    candidate = (SDK_DOCS_DIST / path).resolve()
+    if path and SDK_DOCS_DIST not in candidate.parents:
+        raise HTTPException(404, "Not found.")
+    if candidate.is_file():
+        return FileResponse(candidate)
+    if path and not path.endswith("/"):
+        directory_index = candidate / "index.html"
+        if directory_index.is_file():
+            return FileResponse(directory_index)
+    index = candidate / "index.html" if path else SDK_DOCS_DIST / "sdk" / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    raise HTTPException(404, "SDK documentation page was not found.")
 
 
 @app.get("/{path:path}", include_in_schema=False)
