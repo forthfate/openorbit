@@ -171,6 +171,14 @@
         "label": "Repeat interval",
         "hint": "Minutes between recurring runs."
       },
+      "iterationTiming": {
+        "label": "Iteration timing",
+        "hint": "Choose whether the interval begins after completion or stays on a fixed clock."
+      },
+      "iterationTimingAfterCompletion": "Wait after completion",
+      "iterationTimingFixed": "Fixed interval",
+      "iterationTimingWait": "Start as soon as the current work finishes",
+      "iterationTimingInterrupt": "End evaluation and continue with teardown",
       "runLimit": {
         "label": "Run limit",
         "hint": "Maximum number of runs to retain or schedule for this build."
