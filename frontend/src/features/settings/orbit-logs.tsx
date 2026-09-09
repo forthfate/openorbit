@@ -1,5 +1,6 @@
 import type { OrbitLog } from "../../domain/models";
-import { localeMessages, type Locale } from "../../locales";
+import { intlLocales, localeMessages, type Locale } from "../../locales";
+import { SectionInfo } from "../../components/ui/section-info";
 
 type OrbitLogsCopy = { title: string; description: string; empty: string };
 
@@ -16,7 +17,7 @@ export function OrbitLogs({ logs, locale }: { logs: OrbitLog[]; locale: Locale }
       <div className="orbit-log-output">
         {logs.length ? logs.map((log, index) => (
           <div key={`${log.time}-${index}`} className={log.status === "ERROR" ? "error-log" : ""}>
-            <time>{log.time ? new Date(log.time).toLocaleTimeString() : "—"}</time>
+            <time>{log.time ? new Date(log.time).toLocaleTimeString(intlLocales[locale]) : "—"}</time>
             <strong>{log.name}</strong>
             <span>{log.message || log.status}</span>
           </div>
@@ -25,4 +26,3 @@ export function OrbitLogs({ logs, locale }: { logs: OrbitLog[]; locale: Locale }
     </section>
   );
 }
-import { SectionInfo } from "../../components/ui/section-info";
