@@ -290,6 +290,59 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
     assert calls == [("setup", 1, False), ("teardown", 1, True)]
 
 
+@pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
+def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
+    tmp_path, monkeypatch, terminal_status
+):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id=f"finalize-{terminal_status}",
+        workflow_id="recovery-workflow",
+        workflow_name="Recovery workflow",
+        execution_mode="test",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="recovery-workflow",
+        name="Recovery workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[
+            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
+            Step(id="finalize", phase="finalize", name="Finalize", command=[], working_directory="."),
+        ],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    calls = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
+        calls.append((step.phase, loop_index, allow_terminal))
+        if step.phase == "setup":
+            current = store._load(run_id)
+            current.status = terminal_status
+            store._save(current)
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+
+    store._execute(run.id)
+
+    assert calls == [("setup", 1, False), ("finalize", 2, True)]
+
+
+def test_native_improvement_template_uses_repository_snapshot_lifecycle():
+    source = store_module.NATIVE_IMPROVEMENT_CYCLE_TEMPLATE
+
+    assert "ctx.save_setup_snapshot()" in source
+    assert "ctx.save_first_teardown_snapshot()" in source
+    assert "ctx.restore_setup_snapshot()" in source
+
+
 def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()

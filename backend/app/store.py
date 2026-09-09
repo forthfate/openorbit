@@ -217,6 +217,9 @@ def init(ctx):
 
 @runner.phase("setup")
 def setup(ctx):
+    # Keep the target's complete pre-evaluation state outside commit history.
+    # The call is idempotent because setup runs for every iteration.
+    ctx.save_setup_snapshot()
     # Apply the latest accepted supervisor feedback before the next validation.
     feedback = ctx.previous_supervisor_feedback
     accepted = [
@@ -334,14 +337,17 @@ def evaluate(ctx):
 
 @runner.phase("teardown")
 def teardown(ctx):
+    # Preserve the first evaluated state as a named recovery checkpoint.
+    ctx.save_first_teardown_snapshot()
     # Per-iteration evidence remains available for supervisor review.
     ctx.log("Retained prompt versions, decisions, and validation evidence")
 
 
 @runner.phase("finalize")
 def finalize(ctx):
-    # Process-level finalization intentionally leaves the target repository uncommitted.
-    ctx.log("Finalized the native improvement cycle without committing changes")
+    # Return the target to its exact baseline without creating a Git commit.
+    ctx.restore_setup_snapshot()
+    ctx.log("Restored the native improvement target without committing changes")
 
 
 if __name__ == "__main__":
@@ -3945,8 +3951,10 @@ if __name__ == "__main__":
                             break
                         time.sleep(1)
             for step in finalize:
-                if self._load(run_id).status != "cancelled":
-                    self._execute_step(run_id, step, run.loop_limit + 1, resources)
+                # Finalization owns process-level recovery. It must still run
+                # after a failed or cancelled iteration so a runner can restore
+                # the repository baseline it captured during setup.
+                self._execute_step(run_id, step, run.loop_limit + 1, resources, allow_terminal=True)
             run = self._load(run_id)
             if run.status == "running":
                 run.status = "succeeded"

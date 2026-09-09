@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tempfile
 import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -66,6 +67,13 @@ def _file_history_paths(project_root: Path, relative_path: str) -> tuple[Path, P
 def _proposal_history_path(project_root: Path) -> Path:
     project_key = _sha256(str(project_root).encode("utf-8"))
     return ORBIT_APP_DATA / "proposal-history" / project_key / "decisions.json"
+
+
+def _repository_snapshot_paths(project_root: Path) -> tuple[Path, Path]:
+    """Return the private manifest location for Git-object repository snapshots."""
+    project_key = _sha256(str(project_root).encode("utf-8"))
+    directory = ORBIT_APP_DATA / "repository-snapshots" / project_key
+    return directory, directory / "manifest.json"
 
 
 @dataclass
@@ -255,6 +263,303 @@ class RunnerContext:
             stderr=subprocess.DEVNULL,
         )
         return result.stdout.strip() if result.returncode == 0 else None
+
+    def _git(
+        self,
+        arguments: list[str],
+        *,
+        environment: dict[str, str] | None = None,
+        input: bytes | None = None,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Run one Git plumbing command in the target repository."""
+        return subprocess.run(
+            ["git", *arguments],
+            cwd=self.project_root,
+            env=environment or self.environment,
+            input=input,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+
+    def _git_repository_root(self) -> Path:
+        try:
+            root = self._git(["rev-parse", "--show-toplevel"]).stdout.decode().strip()
+        except subprocess.CalledProcessError as error:
+            raise ValueError("repository snapshots require a Git worktree") from error
+        if Path(root).resolve() != self.project_root:
+            raise ValueError("target_repository must be the Git worktree root for repository snapshots")
+        return self.project_root
+
+    def _snapshot_manifest(self) -> tuple[Path, Path, dict[str, object]]:
+        directory, path = _repository_snapshot_paths(self.project_root)
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            manifest = {
+                "schema_version": 1,
+                "project_root": str(self.project_root),
+                "snapshots": [],
+            }
+        except json.JSONDecodeError as error:
+            raise RuntimeError("Orbit repository snapshot history is invalid") from error
+        snapshots = manifest.get("snapshots") if isinstance(manifest, dict) else None
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema_version") != 1
+            or manifest.get("project_root") != str(self.project_root)
+            or not isinstance(snapshots, list)
+        ):
+            raise RuntimeError("Orbit repository snapshot history does not match this repository")
+        return directory, path, manifest
+
+    def _temporary_index_environment(self) -> tuple[dict[str, str], Path]:
+        descriptor, name = tempfile.mkstemp(prefix="orbit-git-index-")
+        os.close(descriptor)
+        index_path = Path(name)
+        index_path.unlink()
+        return {**self.environment, "GIT_INDEX_FILE": str(index_path)}, index_path
+
+    def _empty_directories(self) -> list[str]:
+        """Record empty directories, which Git trees deliberately cannot represent."""
+        empty: list[str] = []
+        for current, directory_names, file_names in os.walk(self.project_root, topdown=False):
+            directory = Path(current)
+            relative = directory.relative_to(self.project_root)
+            if not relative.parts:
+                directory_names[:] = [name for name in directory_names if name != ".git"]
+                continue
+            if ".git" in relative.parts or directory.is_symlink():
+                continue
+            entries = [*directory_names, *file_names]
+            if not entries:
+                empty.append(relative.as_posix())
+        return sorted(empty)
+
+    def _tree_paths(self, tree: str) -> set[str]:
+        output = self._git(["ls-tree", "-r", "-z", tree]).stdout
+        paths: set[str] = set()
+        for entry in output.split(b"\0"):
+            if not entry:
+                continue
+            try:
+                _, encoded_path = entry.split(b"\t", 1)
+            except ValueError as error:
+                raise RuntimeError("Git returned an invalid tree entry") from error
+            paths.add(os.fsdecode(encoded_path))
+        return paths
+
+    def snapshot_repository(self, label: str, *, once: bool = False) -> dict[str, object]:
+        """Store the complete target worktree as Git objects without creating a commit.
+
+        The snapshot includes tracked, staged, untracked, and ignored files,
+        together with the original index tree and HEAD reference. Git's object
+        database deduplicates unchanged file blobs; Orbit keeps a private ref
+        only so these otherwise-uncommitted objects survive Git garbage
+        collection. The ref is not a branch, tag, or commit-history entry.
+
+        Args:
+            label: Stable checkpoint name such as ``"baseline"`` or
+                ``"iteration-1"``.
+            once: Return the existing checkpoint with this label for the run,
+                rather than recording another one.
+
+        Returns:
+            Immutable snapshot metadata, including its worktree tree hash.
+        """
+        if not label or any(
+            character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+            for character in label
+        ):
+            raise ValueError("snapshot label may contain only letters, numbers, underscores, and hyphens")
+        self._git_repository_root()
+        run_id = self.environment.get("ORBIT_RUN_ID", "manual")
+        directory, manifest_path, manifest = self._snapshot_manifest()
+        snapshots = manifest["snapshots"]
+        assert isinstance(snapshots, list)
+        if once:
+            existing = next(
+                (
+                    item
+                    for item in reversed(snapshots)
+                    if isinstance(item, dict) and item.get("run_id") == run_id and item.get("label") == label
+                ),
+                None,
+            )
+            if existing is not None:
+                return dict(existing)
+        head = self.git_head()
+        if not head:
+            raise ValueError("repository snapshots require a checked-out HEAD commit")
+        symbolic_head = subprocess.run(
+            ["git", "symbolic-ref", "-q", "HEAD"],
+            cwd=self.project_root,
+            env=self.environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        head_ref = symbolic_head.stdout.decode().strip() if symbolic_head.returncode == 0 else None
+        index_tree = self._git(["write-tree"]).stdout.decode().strip()
+        temporary_environment, temporary_index = self._temporary_index_environment()
+        try:
+            self._git(["add", "--all", "--force", "--", "."], environment=temporary_environment)
+            worktree_tree = (
+                self._git(["write-tree"], environment=temporary_environment).stdout.decode().strip()
+            )
+        finally:
+            temporary_index.unlink(missing_ok=True)
+            temporary_index.with_name(f"{temporary_index.name}.lock").unlink(missing_ok=True)
+        sequence = len(snapshots) + 1
+        snapshot_id = f"s{sequence:06d}-{worktree_tree[:12]}"
+        project_key = _sha256(str(self.project_root).encode("utf-8"))
+        retention_ref = f"refs/orbit/snapshots/{project_key}/{snapshot_id}"
+        self._git(["update-ref", retention_ref, worktree_tree])
+        record: dict[str, object] = {
+            "id": snapshot_id,
+            "label": label,
+            "recorded_at": datetime.now(UTC).isoformat(),
+            "run_id": run_id,
+            "iteration": self.loop_index,
+            "phase": self.phase,
+            "head": {"oid": head, "ref": head_ref},
+            "index_tree": index_tree,
+            "worktree_tree": worktree_tree,
+            "retention_ref": retention_ref,
+            "empty_directories": self._empty_directories(),
+        }
+        snapshots.append(record)
+        directory.mkdir(parents=True, exist_ok=True)
+        _atomic_write(
+            manifest_path,
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8"),
+        )
+        self.emit_result({"repository_snapshot": record})
+        return record
+
+    def repository_snapshots(self) -> list[dict[str, object]]:
+        """List retained repository snapshots, newest first."""
+        _, _, manifest = self._snapshot_manifest()
+        snapshots = manifest["snapshots"]
+        assert isinstance(snapshots, list)
+        return [dict(item) for item in reversed(snapshots) if isinstance(item, dict)]
+
+    def _restore_snapshot_head(self, head: dict[str, object]) -> None:
+        oid = str(head.get("oid") or "")
+        reference = head.get("ref")
+        if not oid:
+            raise RuntimeError("Orbit repository snapshot has no HEAD object")
+        if isinstance(reference, str) and reference:
+            self._git(["symbolic-ref", "HEAD", reference])
+            self._git(["update-ref", reference, oid])
+            return
+        self._git(["update-ref", "--no-deref", "HEAD", oid])
+
+    def _remove_paths_not_in_snapshot(self, expected_paths: set[str]) -> None:
+        """Remove worktree entries absent from the saved tree, never touching .git."""
+        for current, directory_names, file_names in os.walk(
+            self.project_root, topdown=False, followlinks=False
+        ):
+            directory = Path(current)
+            relative_directory = directory.relative_to(self.project_root)
+            if relative_directory.parts and ".git" in relative_directory.parts:
+                continue
+            for name in file_names:
+                target = directory / name
+                relative = target.relative_to(self.project_root).as_posix()
+                if relative not in expected_paths:
+                    target.unlink(missing_ok=True)
+            for name in directory_names:
+                target = directory / name
+                if target.name == ".git" and directory == self.project_root:
+                    continue
+                relative = target.relative_to(self.project_root).as_posix()
+                if target.is_symlink():
+                    if relative not in expected_paths:
+                        target.unlink(missing_ok=True)
+                elif relative not in expected_paths:
+                    try:
+                        target.rmdir()
+                    except OSError:
+                        pass
+
+    def restore_repository_snapshot(self, snapshot_id: str) -> dict[str, object]:
+        """Restore a repository snapshot without checking out or creating a commit.
+
+        Restoring returns the target worktree, index, and HEAD reference to the
+        recorded state. It also removes files created after the snapshot,
+        including ignored and untracked files inside the target repository.
+        Call this only while Orbit exclusively owns the target repository.
+        """
+        self._git_repository_root()
+        _, _, manifest = self._snapshot_manifest()
+        snapshots = manifest["snapshots"]
+        assert isinstance(snapshots, list)
+        snapshot = next(
+            (item for item in snapshots if isinstance(item, dict) and item.get("id") == snapshot_id), None
+        )
+        if snapshot is None:
+            raise KeyError(f"unknown repository snapshot: {snapshot_id}")
+        worktree_tree = str(snapshot.get("worktree_tree") or "")
+        index_tree = str(snapshot.get("index_tree") or "")
+        head = snapshot.get("head")
+        if not worktree_tree or not index_tree or not isinstance(head, dict):
+            raise RuntimeError(f"Orbit repository snapshot is incomplete: {snapshot_id}")
+        expected_paths = self._tree_paths(worktree_tree)
+        temporary_environment, temporary_index = self._temporary_index_environment()
+        try:
+            self._git(["read-tree", "--reset", "-u", worktree_tree], environment=temporary_environment)
+        finally:
+            temporary_index.unlink(missing_ok=True)
+            temporary_index.with_name(f"{temporary_index.name}.lock").unlink(missing_ok=True)
+        self._remove_paths_not_in_snapshot(expected_paths)
+        for relative in snapshot.get("empty_directories", []):
+            if not isinstance(relative, str) or not relative:
+                continue
+            target = (self.project_root / relative).resolve()
+            if target != self.project_root and self.project_root not in target.parents:
+                raise RuntimeError("Orbit repository snapshot contains an unsafe empty directory")
+            target.mkdir(parents=True, exist_ok=True)
+        self._restore_snapshot_head(head)
+        self._git(["read-tree", index_tree])
+        result = {
+            "id": snapshot_id,
+            "label": snapshot.get("label"),
+            "worktree_tree": worktree_tree,
+            "restored_at": datetime.now(UTC).isoformat(),
+        }
+        self.emit_result({"repository_restore": result})
+        return result
+
+    def save_setup_snapshot(self) -> dict[str, object]:
+        """Save this run's baseline once from a ``setup`` lifecycle handler."""
+        if self.phase != "setup":
+            raise ValueError("setup snapshots may only be saved during the setup phase")
+        return self.snapshot_repository("baseline", once=True)
+
+    def save_first_teardown_snapshot(self) -> dict[str, object] | None:
+        """Save the first completed iteration from a ``teardown`` handler."""
+        if self.phase != "teardown":
+            raise ValueError("iteration snapshots may only be saved during the teardown phase")
+        if self.loop_index != 1:
+            return None
+        return self.snapshot_repository("iteration-1", once=True)
+
+    def restore_setup_snapshot(self) -> dict[str, object]:
+        """Restore the baseline saved by :meth:`save_setup_snapshot` in ``finalize``."""
+        if self.phase != "finalize":
+            raise ValueError("baseline restoration may only be performed during the finalize phase")
+        baseline = next(
+            (
+                item
+                for item in self.repository_snapshots()
+                if item.get("run_id") == self.environment.get("ORBIT_RUN_ID", "manual")
+                and item.get("label") == "baseline"
+            ),
+            None,
+        )
+        if baseline is None:
+            raise KeyError("this run has no baseline repository snapshot")
+        return self.restore_repository_snapshot(str(baseline["id"]))
 
     def record_commit_change(self, before: str | None) -> dict[str, object] | None:
         """Retain commit-range evidence when a runner phase advances the target HEAD."""
