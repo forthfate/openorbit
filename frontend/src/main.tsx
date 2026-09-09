@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
@@ -6,11 +6,37 @@ import { ToastProvider } from "./components/ui/toast";
 import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
-import { AssetsPage } from "./features/assets/page";
-import { BuildsPage } from "./features/builds/page";
-import { EvaluationsPage } from "./features/evaluations/page";
-import { ImprovementsPage } from "./features/improvements/page";
-import { SettingsPage } from "./features/settings/page";
+
+const AssetsPage = lazy(() =>
+  import("./features/assets/page").then((module) => ({
+    default: module.AssetsPage,
+  })),
+);
+
+const BuildsPage = lazy(() =>
+  import("./features/builds/page").then((module) => ({
+    default: module.BuildsPage,
+  })),
+);
+
+const EvaluationsPage = lazy(() =>
+  import("./features/evaluations/page").then((module) => ({
+    default: module.EvaluationsPage,
+  })),
+);
+
+const ImprovementsPage = lazy(() =>
+  import("./features/improvements/page").then((module) => ({
+    default: module.ImprovementsPage,
+  })),
+);
+
+const SettingsPage = lazy(() =>
+  import("./features/settings/page").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+
 import { localeMessages, locales, resolveLocale, type Locale } from "./locales";
 import { api } from "./services/api";
 import { useControlRoom } from "./services/use-control-room";
@@ -344,7 +370,9 @@ export default function App() {
         ).length
       }
     >
-      <div className="page-stack">{content}</div>
+     <Suspense fallback={<div className="page-stack">Loading...</div>}>
+  <div className="page-stack">{content}</div>
+</Suspense>
       <ConfirmDialog
         open={deletingBuild !== null}
         title={confirmation.title}
