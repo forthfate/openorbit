@@ -728,22 +728,25 @@ export function EvaluationsPage({
     ) : undefined;
   return (
     <section className="panel active-evaluation-panel">
-      <PanelHeader
-        title={
-          <Tooltip content={t.runHistoryHint}>
-            <span className="panel-title-with-tooltip">
-              {l.title}
-              <Info size={15} />
-            </span>
-          </Tooltip>
-        }
-        action={
-          <button className="emergency" onClick={onEmergencyStop}>
-            <CircleStop size={15} />
-            {t.emergencyStop}
-          </button>
-        }
-      />
+      <div className="panel-title-action">
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={
+              <Tooltip content={t.runHistoryHint}>
+                <span className="panel-title-with-tooltip">
+                  {l.title}
+                  <Info size={15} />
+                </span>
+              </Tooltip>
+            }
+          />
+          <p className="hint section-description">{t.runHistoryDescription}</p>
+        </div>
+        <button className="emergency" onClick={onEmergencyStop}>
+          <CircleStop size={15} />
+          {t.emergencyStop}
+        </button>
+      </div>
       <div className="run-filter-trigger" ref={filterMenu}>
         <button
           className="ghost run-filter-button"

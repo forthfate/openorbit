@@ -1,18 +1,16 @@
 import type { OrbitLog } from "../../domain/models";
-import { SectionInfo } from "../../components/ui/section-info";
 import { localeMessages, type Locale } from "../../locales";
 
 type OrbitLogsCopy = { title: string; description: string; empty: string };
 
 export function OrbitLogs({ logs, locale }: { logs: OrbitLog[]; locale: Locale }) {
-  const t = localeMessages<OrbitLogsCopy>(locale, "settingsLogs");
+  const t = localeMessages<OrbitLogsCopy>(locale, "settingsLogs"), sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   return (
     <section className="panel orbit-log-panel">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">ORBIT</p>
-          <h2><SectionInfo title={t.title} description={t.description} /></h2>
-          <p className="hint">{t.description}</p>
+          <h2><SectionInfo title={t.title} description={sectionDetails.orbitLogs} /></h2>
+          <p className="hint section-description">{t.description}</p>
         </div>
       </div>
       <div className="orbit-log-output">
@@ -27,3 +25,4 @@ export function OrbitLogs({ logs, locale }: { logs: OrbitLog[]; locale: Locale }
     </section>
   );
 }
+import { SectionInfo } from "../../components/ui/section-info";

@@ -251,6 +251,7 @@
     },
     "dashboardFeedbackTrends": {
       "title": "Evaluation feedback trends",
+      "description": "Review feedback volume, acceptance, issues, and run health across evaluation builds.",
       "range": "Range",
       "feedbackVolume": "Feedback by evaluation",
       "activeTrend": "Active evaluations over time",
@@ -262,6 +263,7 @@
     },
     "improvementEvaluationTrends": {
       "title": "Iteration improvement trend",
+      "description": "Review accepted improvement feedback and supervisor-score changes in each iteration of the selected evaluation build.",
       "range": "Range",
       "iterationTrend": "Accepted feedback & score by iteration",
       "accepted": "Accepted", "score": "Score", "noIterationFeedback": "No iteration feedback in this period."
@@ -288,6 +290,7 @@
       "editSelectedProfile": "Edit selected profile",
       "createAiProfile": "Create AI model profile",
       "evaluationBuildList": "Evaluation build list",
+      "evaluationBuildListDescription": "Create and manage evaluation configurations that connect a target, workflow, and evaluation assets.",
       "createEvaluationBuild": "Create evaluation build",
       "name": "Name",
       "repository": "Repository",
@@ -340,6 +343,7 @@
       "theme": "Theme",
       "themeHint": "Choose the control room color theme.",
       "applicationSettings": "Application settings",
+      "applicationSettingsDescription": "Configure the language and theme used throughout the console.",
       "evaluationBuild": "Evaluation build",
       "started": "Started",
       "elapsed": "Elapsed",
@@ -354,6 +358,7 @@
       "stop": "Stop",
       "emergencyStop": "Emergency stop",
       "runHistoryHint": "Pipeline Run history is retained here, including completed and failed processes.",
+      "runHistoryDescription": "Review active and completed evaluation runs, their evidence, and approval decisions.",
       "noRuns": "No evaluation build runs yet."
     },
     "cycle": {
@@ -716,6 +721,22 @@
       "챗봇 AI 모델": "Orbit 챗봇에서 사용할 저장된 AI 연결 프로필을 선택합니다.",
       "Chat assistant model": "Choose the saved AI connection profile used by the Orbit chat assistant.",
       "チャットボットAIモデル": "Orbit チャットボットで使用する保存済み AI 接続プロファイルを選択します。"
+    },
+    "sectionDetails": {
+      "dashboardOverview": "Counts refresh from the local control-plane data and include every evaluation build and run.",
+      "dashboardFeedbackTrends": "Changing the range refreshes every chart; run status counts include succeeded, failed, cancelled, and running evaluations.",
+      "iterationImprovementTrend": "The chart uses the selected evaluation build and compares accepted feedback with the supervisor score for each recorded iteration.",
+      "evaluationBuildList": "A build links reusable environments, runners, workflows, prompts, and test cases; changing an asset does not alter existing run evidence.",
+      "assetProfiles": "Profile secrets are read from the configured environment variable and are not stored in the browser.",
+      "assetTemplates": "Templates are versioned reusable instructions; selecting one in a build does not modify its saved source.",
+      "assetTests": "A test-case set supplies fixed prompts and acceptance evidence that runners can reuse across builds.",
+      "assetRunners": "Runners contain project-specific automation and can be shared by multiple evaluation builds.",
+      "executionEnvironment": "Choose local or remote execution details here; each runner uses the environment selected by its build.",
+      "targetEnvironment": "Repository, browser URL, and managed prompt path are used only by builds that select this target.",
+      "applicationSettings": "Language affects the console and manager-result display; theme changes are saved locally in this browser.",
+      "applicationData": "Changing the location affects future local state and evidence; existing data is not moved automatically.",
+      "systemAiModel": "This profile powers Orbit system features such as chat and cycle analysis, independently of a build's supervisor profile.",
+      "orbitLogs": "Entries are local operational events. They help diagnose console and runner activity but are not evaluation evidence."
     },
     "chartHints": {
       "Feedback by evaluation": "Compare the volume of supervisor feedback recorded for each evaluation build.",

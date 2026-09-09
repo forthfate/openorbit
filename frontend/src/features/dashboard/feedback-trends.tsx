@@ -19,7 +19,7 @@ import { api } from "../../services/api";
 import { intlLocales, localeMessages, type Locale } from "../../locales";
 
 type FeedbackTrendsCopy = {
-  title: string; range: string; evaluation: string; feedbackVolume: string;
+  title: string; description?: string; range: string; evaluation: string; feedbackVolume: string;
   iterationTrend: string; activeTrend: string; feedbackStatus: string;
   issueSeverity: string; runHealth: string; accepted: string; score: string;
   feedbackCount: string; activeCount: string; noIterationFeedback: string;
@@ -41,7 +41,7 @@ function Card({ title, locale, children }: { title: string; locale: Locale; chil
 
 export function FeedbackTrends({ locale, buildId, scope = "dashboard" }: { locale: Locale; buildId?: string; scope?: "dashboard" | "improvements" }) {
   const t = localeMessages<FeedbackTrendsCopy>(locale, scope === "dashboard" ? "dashboardFeedbackTrends" : "improvementEvaluationTrends"),
-    hints = localeMessages<Record<string, string>>(locale, "sectionHints");
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   const [hours, setHours] = useState(24), [build, setBuild] = useState(""), [data, setData] = useState<ImprovementAnalytics>();
   useEffect(() => {
     api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`).then((next) => {
@@ -53,7 +53,7 @@ export function FeedbackTrends({ locale, buildId, scope = "dashboard" }: { local
     trend = data?.iteration_trends.find((item) => item.build_id === selectedBuild);
   const short = (value: string) => value.length > 18 ? `${value.slice(0, 18)}…` : value;
   return <section className={`panel improvement-trends ${scope === "dashboard" ? "dashboard-feedback-trends" : "evaluation-feedback-trends"}`}>
-    <div className="trend-head"><h2><SectionInfo title={t.title} description={hints[t.title]} /></h2><label>{t.range}<select value={hours} onChange={(event) => setHours(Number(event.target.value))}><option value={24}>24h</option><option value={72}>3d</option><option value={168}>7d</option><option value={720}>30d</option></select></label></div>
+    <div className="trend-head"><div><h2><SectionInfo title={t.title} description={scope === "dashboard" ? sectionDetails.dashboardFeedbackTrends : sectionDetails.iterationImprovementTrend} /></h2>{t.description && <p className="hint section-description">{t.description}</p>}</div><label>{t.range}<select value={hours} onChange={(event) => setHours(Number(event.target.value))}><option value={24}>24h</option><option value={72}>3d</option><option value={168}>7d</option><option value={720}>30d</option></select></label></div>
     <div className="analytics-grid">
       {scope === "dashboard" && <Card title={t.feedbackVolume} locale={locale}><ResponsiveContainer width="100%" height={250}><BarChart data={data?.feedback_by_build ?? []} margin={{ left: -18 }}><CartesianGrid vertical={false} /><XAxis dataKey="name" tickFormatter={short} /><YAxis allowDecimals={false} /><Tooltip /><Bar dataKey="feedback_count" name={t.feedbackCount} fill="var(--accent)" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></Card>}
       {scope === "dashboard" && <Card title={t.activeTrend} locale={locale}><ResponsiveContainer width="100%" height={250}><AreaChart data={data?.active_evaluations ?? []} margin={{ left: -18 }}><CartesianGrid vertical={false} /><XAxis dataKey="time" tickFormatter={(value) => tick(String(value), locale)} /><YAxis allowDecimals={false} /><Tooltip labelFormatter={(value) => new Date(String(value)).toLocaleString(intlLocales[locale])} /><Area type="monotone" dataKey="count" name={t.activeCount} stroke="var(--accent)" fill="var(--surface-raised)" dot={{ r: 3, fill: "var(--accent)", stroke: "var(--surface)" }} /></AreaChart></ResponsiveContainer></Card>}

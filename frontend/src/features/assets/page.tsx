@@ -78,6 +78,7 @@ const pipelineYaml = (workflow: Workflow | null | undefined) =>
 
 function Catalog({
   title,
+  tooltip,
   button,
   children,
   emptyHint,
@@ -88,6 +89,7 @@ function Catalog({
   locale,
 }: {
   title: string;
+  tooltip: string;
   button: React.ReactNode;
   children: React.ReactNode;
   emptyHint: string;
@@ -106,9 +108,12 @@ function Catalog({
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
           <div className="panel-title-action">
-            <PanelHeader
-              title={<SectionInfo title={title} description={emptyHint} />}
-            />
+            <div className="panel-title-action__copy">
+              <PanelHeader
+                title={<SectionInfo title={title} description={tooltip} />}
+              />
+              <p className="hint section-description">{emptyHint}</p>
+            </div>
             {button}
           </div>
           <div className="catalog-list">
@@ -606,19 +611,18 @@ function ProfileCatalog({
       profiles: ProfileCatalogCopy;
       profileForm: ProfileFormCopy;
     }>(locale, "settingsPage"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     [open, setOpen] = useState(false);
   const saveProfile = () => save().then(() => setOpen(false));
   return (
     <section className="panel app-settings">
       <div className="panel-title-action">
-        <PanelHeader
-          title={
-            <SectionInfo
-              title={copy.profiles.title}
-              description={copy.profiles.description}
-            />
-          }
-        />
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={<SectionInfo title={copy.profiles.title} description={sectionDetails.assetProfiles} />}
+          />
+          <p className="hint section-description">{copy.profiles.description}</p>
+        </div>
         <button
           className="approve"
           onClick={() => {
@@ -685,20 +689,18 @@ function RunnerCatalog({
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
-  const copy = runnerLabels[locale];
+  const copy = runnerLabels[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   const remove = (id: string) =>
     api(`/api/runners/${id}`, "DELETE").then(onRefresh);
   return (
     <section className="panel app-settings">
       <div className="panel-title-action">
-        <PanelHeader
-          title={
-            <SectionInfo
-              title={copy.title}
-              description={text[locale].emptyRunners}
-            />
-          }
-        />
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={<SectionInfo title={copy.title} description={sectionDetails.assetRunners} />}
+          />
+          <p className="hint section-description">{text[locale].emptyRunners}</p>
+        </div>
         <button
           className="approve"
           onClick={() => {
@@ -941,6 +943,7 @@ function LegacyAssetsPage({
         loading={loading}
         emptyHint={l.emptyTemplates}
         title={l.templates}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetTemplates}
         button={
           <button
             className="approve"
@@ -975,6 +978,7 @@ function LegacyAssetsPage({
         loading={loading}
         emptyHint={l.emptyTests}
         title={l.tests}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetTests}
         button={
           <button className="approve" onClick={() => setTestSet(testBlank)}>
             <Plus size={14} />
@@ -1002,6 +1006,7 @@ function LegacyAssetsPage({
         onRefresh={onRefresh}
         emptyHint={l.emptyFlows}
         title={l.flows}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetRunners}
         button={
           <button
             className="approve"
@@ -1517,16 +1522,17 @@ function EnvironmentCatalog({
       pushToast(error instanceof Error ? error.message : "Asset save failed");
     }
   };
-  const help = fieldHelp[locale];
+  const help = fieldHelp[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   return (
     <>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader
-            title={
-              <SectionInfo title={t.execution} description={t.executionHint} />
-            }
-          />
+          <div className="panel-title-action__copy">
+            <PanelHeader
+              title={<SectionInfo title={t.execution} description={sectionDetails.executionEnvironment} />}
+            />
+            <p className="hint section-description">{t.executionHint}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {
@@ -1579,9 +1585,12 @@ function EnvironmentCatalog({
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader
-            title={<SectionInfo title={t.target} description={t.targetHint} />}
-          />
+          <div className="panel-title-action__copy">
+            <PanelHeader
+              title={<SectionInfo title={t.target} description={sectionDetails.targetEnvironment} />}
+            />
+            <p className="hint section-description">{t.targetHint}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {

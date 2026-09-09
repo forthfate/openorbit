@@ -185,6 +185,7 @@ export function DashboardPage({
   const t = locales[locale].common,
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
     overview = localeMessages<OverviewCopy>(locale, "dashboardOverview"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     dashboard = locales[locale].dashboardUi,
     quickStartLabels = localeMessages<
       Record<string, { name: string; description: string }>
@@ -244,7 +245,7 @@ export function DashboardPage({
         </section>
       )}
       <section className="panel dashboard-overview">
-        <PanelHeader title={overview.title} description={overview.description} />
+        <PanelHeader title={overview.title} description={sectionDetails.dashboardOverview} />
         <p className="hint">{overview.description}</p>
         <div className="metrics">
         <MetricCard

@@ -250,6 +250,7 @@
     },
     "dashboardFeedbackTrends": {
       "title": "評価フィードバックの推移",
+      "description": "評価ビルドごとのフィードバック、受容結果、課題、実行状態の推移を確認します。",
       "range": "期間",
       "feedbackVolume": "評価別フィードバック",
       "activeTrend": "実行中の評価",
@@ -261,6 +262,7 @@
     },
     "improvementEvaluationTrends": {
       "title": "反復改善の推移",
+      "description": "選択した評価ビルドの反復ごとの受容された改善フィードバックと監督者スコアの変化を確認します。",
       "range": "期間",
       "iterationTrend": "反復別の採用フィードバックとスコア",
       "accepted": "採用", "score": "スコア", "noIterationFeedback": "この期間に反復フィードバックはありません。"
@@ -287,6 +289,7 @@
       "editSelectedProfile": "選択したプロファイルを編集",
       "createAiProfile": "AIモデルプロファイルを作成",
       "evaluationBuildList": "評価ビルド一覧",
+      "evaluationBuildListDescription": "評価対象、ワークフロー、評価アセットをつなぐ評価構成を管理します。",
       "createEvaluationBuild": "評価ビルドを作成",
       "name": "名前",
       "repository": "リポジトリ",
@@ -339,6 +342,7 @@
       "theme": "テーマ",
       "themeHint": "コントロールルームのテーマを選択します。",
       "applicationSettings": "アプリケーション設定",
+      "applicationSettingsDescription": "コンソール全体に適用される言語とテーマを設定します。",
       "evaluationBuild": "評価ビルド",
       "started": "開始",
       "elapsed": "経過時間",
@@ -353,6 +357,7 @@
       "stop": "停止",
       "emergencyStop": "緊急停止",
       "runHistoryHint": "完了と失敗を含むパイプライン実行履歴を保持します。",
+      "runHistoryDescription": "進行中・完了済みの評価実行、証跡、承認判断を確認します。",
       "noRuns": "評価ビルドの実行履歴はありません。"
     },
     "cycle": {
@@ -715,6 +720,22 @@
       "챗봇 AI 모델": "Orbit 챗봇에서 사용할 저장된 AI 연결 프로필을 선택합니다.",
       "Chat assistant model": "Choose the saved AI connection profile used by the Orbit chat assistant.",
       "チャットボットAIモデル": "Orbit チャットボットで使用する保存済み AI 接続プロファイルを選択します。"
+    },
+    "sectionDetails": {
+      "dashboardOverview": "集計はローカルのコントロールプレーンデータから更新され、すべての評価ビルドと実行を含みます。",
+      "dashboardFeedbackTrends": "期間を変更するとすべてのグラフが更新されます。実行状態には成功・失敗・キャンセル・実行中の評価が含まれます。",
+      "iterationImprovementTrend": "選択した評価ビルドで記録された反復ごとに、受容フィードバックと監督者スコアを比較します。",
+      "evaluationBuildList": "ビルドは再利用可能な環境・ランナー・ワークフロー・プロンプト・テストケースをつなぎます。アセットを変更しても既存実行の証跡は変わりません。",
+      "assetProfiles": "プロファイルのシークレットは設定済み環境変数から読み取り、ブラウザーには保存しません。",
+      "assetTemplates": "テンプレートはバージョン管理される再利用可能な指示です。ビルドで選択しても保存済みの元データは変更されません。",
+      "assetTests": "テストケースセットは、複数のビルドで再利用できる固定プロンプトと承認根拠を提供します。",
+      "assetRunners": "ランナーにはプロジェクト固有の自動化が含まれ、複数の評価ビルドで共有できます。",
+      "executionEnvironment": "ここでローカルまたはリモート実行を設定します。各ランナーはビルドで選択された実行環境を使用します。",
+      "targetEnvironment": "リポジトリ・ブラウザーURL・管理プロンプトパスは、この対象を選択したビルドにのみ適用されます。",
+      "applicationSettings": "言語はコンソールと管理者結果の表示に適用され、テーマ変更はこのブラウザーにローカル保存されます。",
+      "applicationData": "保存先の変更は今後のローカル状態と証跡に適用されます。既存データは自動移動されません。",
+      "systemAiModel": "このプロファイルはビルドの監督者プロファイルとは別に、Orbit チャットやサイクル分析などのシステム機能で使用されます。",
+      "orbitLogs": "項目はローカル運用イベントです。コンソールとランナー活動の診断用であり、評価の証跡には含まれません。"
     },
     "chartHints": {
       "Feedback by evaluation": "Compare the volume of supervisor feedback recorded for each evaluation build.",
