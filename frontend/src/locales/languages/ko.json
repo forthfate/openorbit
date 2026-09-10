@@ -588,7 +588,7 @@
       "detail": "평가 실행 상세",
       "workflow": "워크플로 로그",
       "workflowDescription": "단계별 실행 로그와 브라우저 근거를 검토합니다.",
-      "workflowDataHint": "init, setup, run, eval, teardown, finalize 단계가 실행되고 러너가 출력이나 근거를 남기면 표시됩니다.",
+      "workflowDataHint": "before_all, before_each, execute, verify, after_each, after_all 단계가 실행되고 러너가 출력이나 근거를 남기면 표시됩니다.",
       "logs": "로그",
       "logsDescription": "전체 실행 출력을 시간순으로 한 번에 확인합니다.",
       "logsDataHint": "Orbit 프로세스가 출력을 남기거나 러너가 ctx.target_log()로 대상 로그를 전송하면 표시됩니다.",

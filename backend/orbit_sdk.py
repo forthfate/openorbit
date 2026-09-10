@@ -22,6 +22,22 @@ from typing import Any, Callable, Literal
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
 
+# Accept pre-1.0 lifecycle names in existing runner files while emitting the
+# canonical names everywhere else.
+PHASE_ALIASES = {
+    "init": "before_all",
+    "setup": "before_each",
+    "run": "execute",
+    "eval": "verify",
+    "teardown": "after_each",
+    "finalize": "after_all",
+}
+
+
+def canonical_phase(name: str) -> str:
+    """Return the canonical lifecycle key for a current or legacy phase."""
+    return PHASE_ALIASES.get(name, name)
+
 
 @dataclass(frozen=True)
 class GraphNode:
@@ -213,6 +229,9 @@ class RunnerContext:
     mode: str
     loop_index: int
     environment: dict[str, str] = field(default_factory=lambda: dict(os.environ))
+
+    def __post_init__(self) -> None:
+        self.phase = canonical_phase(self.phase)
 
     @property
     def resources(self) -> dict[str, object]:
@@ -682,24 +701,24 @@ class RunnerContext:
         self.emit_result({"repository_restore": result})
         return result
 
-    def save_setup_snapshot(self) -> dict[str, object]:
-        """Save this run's baseline once from a ``setup`` lifecycle handler."""
-        if self.phase != "setup":
-            raise ValueError("setup snapshots may only be saved during the setup phase")
+    def save_before_each_snapshot(self) -> dict[str, object]:
+        """Save this run's baseline once from a ``before_each`` handler."""
+        if self.phase != "before_each":
+            raise ValueError("baseline snapshots may only be saved during before_each")
         return self.snapshot_repository("baseline", once=True)
 
-    def save_first_teardown_snapshot(self) -> dict[str, object] | None:
-        """Save the first completed iteration from a ``teardown`` handler."""
-        if self.phase != "teardown":
-            raise ValueError("iteration snapshots may only be saved during the teardown phase")
+    def save_first_after_each_snapshot(self) -> dict[str, object] | None:
+        """Save the first completed iteration from an ``after_each`` handler."""
+        if self.phase != "after_each":
+            raise ValueError("iteration snapshots may only be saved during after_each")
         if self.loop_index != 1:
             return None
         return self.snapshot_repository("iteration-1", once=True)
 
-    def restore_setup_snapshot(self) -> dict[str, object]:
-        """Restore the baseline saved by :meth:`save_setup_snapshot` in ``finalize``."""
-        if self.phase != "finalize":
-            raise ValueError("baseline restoration may only be performed during the finalize phase")
+    def restore_before_each_snapshot(self) -> dict[str, object]:
+        """Restore the baseline saved by :meth:`save_before_each_snapshot` in ``after_all``."""
+        if self.phase != "after_all":
+            raise ValueError("baseline restoration may only be performed during after_all")
         baseline = next(
             (
                 item
@@ -712,6 +731,12 @@ class RunnerContext:
         if baseline is None:
             raise KeyError("this run has no baseline repository snapshot")
         return self.restore_repository_snapshot(str(baseline["id"]))
+
+    # Compatibility aliases for runner assets created before the generic
+    # lifecycle vocabulary. New assets should use the methods above.
+    save_setup_snapshot = save_before_each_snapshot
+    save_first_teardown_snapshot = save_first_after_each_snapshot
+    restore_setup_snapshot = restore_before_each_snapshot
 
     def record_commit_change(self, before: str | None) -> dict[str, object] | None:
         """Retain commit-range evidence when a runner phase advances the target HEAD."""
@@ -1421,15 +1446,16 @@ class Runner:
         """Register a function as a handler for one runner lifecycle phase.
 
         Args:
-            name: Lifecycle phase name, normally one of ``init``, ``setup``,
-                ``run``, ``eval``, ``teardown``, or ``finalize``.
+            name: Lifecycle phase name, normally one of ``before_all``,
+                ``before_each``, ``execute``, ``verify``, ``after_each``, or
+                ``after_all``. Legacy names are accepted for compatibility.
 
         Returns:
             A decorator that leaves the registered handler unchanged.
         """
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
-            self._handlers[name] = handler
+            self._handlers[canonical_phase(name)] = handler
             return handler
 
         return register
@@ -1444,11 +1470,12 @@ class Runner:
         parser = argparse.ArgumentParser(description="Orbit runner phase")
         parser.add_argument("--phase", required=True)
         args = parser.parse_args()
-        handler = self._handlers.get(args.phase)
+        phase = canonical_phase(args.phase)
+        handler = self._handlers.get(phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
         context = RunnerContext(
-            args.phase,
+            phase,
             Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
             os.environ.get("ORBIT_EXECUTION_MODE", "run"),
             int(os.environ.get("ORBIT_LOOP_INDEX", "1")),

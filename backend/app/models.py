@@ -3,12 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Legacy keys remain accepted when reading stored workflows and integrations.
+# New assets and run records always use these canonical, task-agnostic names.
+PHASE_ALIASES = {
+    "init": "before_all",
+    "setup": "before_each",
+    "run": "execute",
+    "eval": "verify",
+    "teardown": "after_each",
+    "finalize": "after_all",
+}
+LIFECYCLE_PHASES = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
 
 
 class Step(BaseModel):
     id: str
-    phase: Literal["init", "setup", "run", "eval", "teardown", "finalize"]
+    phase: Literal["before_all", "before_each", "execute", "verify", "after_each", "after_all"]
     name: str
     command: list[str]
     working_directory: str
@@ -16,6 +28,11 @@ class Step(BaseModel):
     approval: Literal["not_required", "required"] = "not_required"
     on_failure: Literal["stop", "continue"] = "stop"
     minimum_interval_seconds: int = Field(default=0, ge=0, le=86_400)
+
+    @field_validator("phase", mode="before")
+    @classmethod
+    def normalize_legacy_phase(cls, value: object) -> object:
+        return PHASE_ALIASES.get(value, value) if isinstance(value, str) else value
 
 
 class Workflow(BaseModel):
@@ -39,8 +56,8 @@ class Workflow(BaseModel):
     def lifecycle_is_complete(self, execution_mode: Literal["run", "test"] = "run") -> bool:
         phases = [step.phase for step in self.steps_for(execution_mode)]
         return phases in (
-            ["init", "setup", "run", "eval", "teardown"],
-            ["init", "setup", "run", "eval", "teardown", "finalize"],
+            ["before_all", "before_each", "execute", "verify", "after_each"],
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         )
 
 

@@ -10,8 +10,8 @@ and retained run history; runner code reports evidence through `ctx`.
 from orbit_sdk import runner
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     ctx.log("Running one bounded target check")
 
 
@@ -19,13 +19,14 @@ if __name__ == "__main__":
     runner.main()
 ```
 
-Available phases are `init`, `setup`, `run`, `eval`, `teardown`, and
-`finalize`. A runner process receives exactly one phase invocation.
+Available phases are `before_all`, `before_each`, `execute`, `verify`,
+`after_each`, and `after_all`. A runner process receives exactly one phase
+invocation.
 
 ## Restore a Git-backed target after evaluation
 
 For an evaluation that changes its target repository, retain a baseline in
-`setup` and restore it in `finalize`. The SDK writes content-addressed Git
+`before_each` and restore it in `after_all`. The SDK writes content-addressed Git
 blob/tree objects through a temporary index; it does **not** create a commit,
 branch, tag, or entry in the target's history. A private `refs/orbit/snapshots`
 ref only keeps the otherwise-uncommitted objects alive for later restoration.
@@ -34,22 +35,22 @@ ref only keeps the otherwise-uncommitted objects alive for later restoration.
 from orbit_sdk import runner
 
 
-@runner.phase("setup")
-def setup(ctx):
-    # `setup` can run once per iteration; this records the run baseline once.
-    ctx.save_setup_snapshot()
+@runner.phase("before_each")
+def before_each(ctx):
+    # `before_each` can run once per iteration; this records the run baseline once.
+    ctx.save_before_each_snapshot()
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     # Retain the first evaluated state as an iteration-linked checkpoint.
-    ctx.save_first_teardown_snapshot()
+    ctx.save_first_after_each_snapshot()
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     # Restore the original worktree, staging area, and HEAD state.
-    ctx.restore_setup_snapshot()
+    ctx.restore_before_each_snapshot()
 
 
 if __name__ == "__main__":

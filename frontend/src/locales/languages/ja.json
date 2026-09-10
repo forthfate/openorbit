@@ -588,7 +588,7 @@
       "detail": "評価実行の詳細",
       "workflow": "ワークフローログ",
       "workflowDescription": "フェーズごとの実行ログとブラウザー証跡を確認します。",
-      "workflowDataHint": "init、setup、run、eval、teardown、finalize の各フェーズが出力または根拠を残すと表示されます。",
+      "workflowDataHint": "before_all、before_each、execute、verify、after_each、after_all の各フェーズが出力または根拠を残すと表示されます。",
       "logs": "ログ",
       "logsDescription": "すべての実行出力を時系列でまとめて確認します。",
       "logsDataHint": "Orbit がプロセス出力を残すか、ランナーが ctx.target_log() で対象ログを送信すると表示されます。",

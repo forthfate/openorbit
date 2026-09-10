@@ -4,7 +4,7 @@ Status: accepted
 
 ## Decision
 
-Run evaluation builds through runner-declared lifecycle phases. The standard order is `init → setup → run → eval → teardown`; runners may additionally declare `finalize` for process-level work after the loop.
+Run tasks through runner-declared lifecycle phases. The standard order is `before_all → before_each → execute → verify → after_each`; runners may additionally declare `after_all` for process-level work after the loop.
 
 ## Current implementation
 
@@ -12,7 +12,7 @@ Evaluation builds execute runner assets directly. Legacy workflow assets remain 
 
 ## Planned work
 
-Enforce a complete lifecycle for production runners and guarantee teardown after failure, timeout, cancellation and emergency stop.
+Enforce a complete lifecycle for production runners and guarantee after_each after failure, timeout, cancellation and emergency stop.
 
 ## Consequences
 
