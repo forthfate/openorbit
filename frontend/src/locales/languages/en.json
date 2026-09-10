@@ -277,7 +277,7 @@
       "description": "Review recorded Orbit events, including operational messages and errors.",
       "empty": "No Orbit events recorded yet."
     },
-    "improvements": "Improvement results",
+    "improvements": "Improvements",
     "dashboard": "Dashboard",
     "assets": "Assets",
     "builds": "Builds",

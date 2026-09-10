@@ -14,7 +14,7 @@ Provide one local web control room for configuring, running, observing and revie
 | Assets | reusable runners, prompts, test-case sets, execution environments and target environments | create, edit and delete assets |
 | Builds | repository, runner, prompt, model profile, test-case set, schedule and approval score | quick start, create, clone, edit, test, run and delete |
 | Runs | lifecycle phase, console output, supervisor findings, PID and trace ID | inspect, stop one run, emergency stop all |
-| Improvement results | retained supervisor feedback, scores, proposals and cycle analytics | inspect and filter evidence |
+| Improvements | retained supervisor feedback, scores, proposals and cycle analytics | inspect and filter evidence |
 | Settings | locale, theme, model profiles and application prompts | configure and test a model profile |
 
 The list-managed views are list-first. Detail is opened from a row and preserves a link back to the list state.
@@ -28,7 +28,7 @@ behavior, accessibility, and ownership rules.
 
 ## Planned work
 
-Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvement results.
+Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvements.
 
 ## Quick-start entry
 

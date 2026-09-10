@@ -45,7 +45,7 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | **Dashboard** | Is the AI system healthy right now? What changed recently? |
 | **Builds** | What exactly is being evaluated, with which assets and policy? |
 | **Run detail** | What happened in each phase, and what evidence supports the result? |
-| **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
+| **Improvements** | Are feedback, decisions, and scores actually improving over time? |
 
 The screenshots below follow a customer-support AI through its retained
 evaluation evidence and improvement cycle.
@@ -64,7 +64,7 @@ Compare feedback volume, accepted changes, scores, and run health across
 multiple builds. The history makes it clear whether the operating
 cycle is improving the AI system over time.
 
-![OpenOrbit improvement results with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
+![OpenOrbit improvements with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
 
 ### Ask an AI assistant what to do next
 
@@ -229,7 +229,7 @@ OpenOrbit, create assets, review runs, or use non-browser runners.
 3. Create a **Build** from those assets.
 4. Use **Test** to execute the build once and inspect its full run detail without adding it to the evaluation-run history.
 5. Start a regular run when ready, then review evidence and supervisor results in **Runs**.
-6. Use **Improvement results** to compare scores, feedback, decisions, and cycle health over time.
+6. Use **Improvements** to compare scores, feedback, decisions, and cycle health over time.
 
 ## Core concepts
 

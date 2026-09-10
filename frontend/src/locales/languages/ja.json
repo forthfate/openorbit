@@ -276,7 +276,7 @@
       "description": "運用メッセージとエラーを含む Orbit イベントの記録を確認します。",
       "empty": "記録された Orbit イベントはまだありません。"
     },
-    "improvements": "改善結果",
+    "improvements": "改善",
     "dashboard": "ダッシュボード",
     "assets": "アセット",
     "builds": "ビルド",

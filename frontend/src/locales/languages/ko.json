@@ -276,7 +276,7 @@
       "description": "운영 메시지와 오류를 포함한 Orbit 이벤트 기록을 확인합니다.",
       "empty": "아직 기록된 Orbit 이벤트가 없습니다."
     },
-    "improvements": "개선 현황",
+    "improvements": "향상",
     "dashboard": "대시보드",
     "assets": "자산",
     "builds": "빌드",
