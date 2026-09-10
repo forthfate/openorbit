@@ -1964,11 +1964,24 @@ if __name__ == "__main__":
     def runners(self) -> list[dict[str, str]]:
         assets = []
         for path in sorted(RUNNERS.glob("*.py")):
+            if (RUNNERS / path.stem / "runner.py").is_file():
+                continue
             metadata = path.with_suffix(".json")
             if metadata.exists():
                 values = json.loads(metadata.read_text(encoding="utf-8"))
                 assets.append({**values, "source": path.read_text(encoding="utf-8")})
+        for directory in sorted(path for path in RUNNERS.iterdir() if path.is_dir()):
+            entry, metadata = directory / "runner.py", directory / "runner.json"
+            if entry.exists() and metadata.exists():
+                values = json.loads(metadata.read_text(encoding="utf-8"))
+                assets.append({**values, "source": entry.read_text(encoding="utf-8"), "bundle": True})
         return assets
+
+    @staticmethod
+    def _runner_entry_path(runner_id: str) -> Path:
+        """Return a bundle entrypoint when present, otherwise the legacy runner file."""
+        bundled = RUNNERS / runner_id / "runner.py"
+        return bundled if bundled.is_file() else RUNNERS / f"{runner_id}.py"
 
     def _runner(self, runner_id: str) -> dict[str, str]:
         return next(item for item in self.runners() if item["id"] == runner_id)
@@ -1977,6 +1990,21 @@ if __name__ == "__main__":
         if any(item["id"] == values["id"] for item in self.runners()):
             raise ValueError("runner ID already exists")
         return self._write_runner(values["id"], values)
+
+    def migrate_runner_to_bundle(self, runner_id: str) -> dict[str, str]:
+        """Copy a legacy runner into a bundle entrypoint without deleting its rollback source."""
+        runner = self._runner(runner_id)
+        legacy = RUNNERS / f"{runner_id}.py"
+        if not legacy.is_file():
+            raise ValueError("only legacy single-file runners can be migrated")
+        bundle = RUNNERS / runner_id
+        bundle.mkdir(exist_ok=True)
+        shutil.copy2(legacy, bundle / "runner.py")
+        (bundle / "runner.json").write_text(
+            json.dumps({key: value for key, value in runner.items() if key != "source"}, indent=2),
+            encoding="utf-8",
+        )
+        return {**runner, "bundle": True}
 
     def update_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         existing = self._runner(runner_id)
@@ -2011,7 +2039,7 @@ if __name__ == "__main__":
 
     def open_runner_in_vscode(self, runner_id: str) -> dict[str, str]:
         self._runner(runner_id)
-        self._open_in_vscode(RUNNERS / f"{runner_id}.py")
+        self._open_in_vscode(self._runner_entry_path(runner_id))
         return {"status": "opened"}
 
     def delete_runner(self, runner_id: str) -> None:
@@ -2037,7 +2065,7 @@ if __name__ == "__main__":
                 id=phase,
                 phase=phase,
                 name=phase,
-                command=[sys.executable, str(RUNNERS / f"{runner_id}.py"), "--phase", phase],
+                command=[sys.executable, str(self._runner_entry_path(runner_id)), "--phase", phase],
                 working_directory=str(ROOT),
                 timeout_seconds=86_400 if phase == "execute" else 300,
                 approval="not_required",
@@ -2070,7 +2098,7 @@ if __name__ == "__main__":
         environment["ORBIT_APP_DATA"] = str(APP_DATA)
         try:
             result = subprocess.run(
-                [sys.executable, str(RUNNERS / f"{runner_id}.py"), "--graph"],
+                [sys.executable, str(self._runner_entry_path(runner_id)), "--graph"],
                 cwd=repository or ROOT,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -3940,7 +3968,7 @@ if __name__ == "__main__":
         # Insighta user simulator).  Keep each step's runner directory intact;
         # the build repository is still captured on the Run and in its prompt.
         if workflow.runner_id:
-            runner_path = RUNNERS / f"{workflow.runner_id}.py"
+            runner_path = self._runner_entry_path(workflow.runner_id)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
                 step.command = [sys.executable, str(runner_path), "--phase", step.phase]
                 step.working_directory = run.repository or str(ROOT)

@@ -95,10 +95,11 @@ class Graph:
             node_id = id or handler.__name__
             if not node_id or node_id in self._nodes:
                 raise ValueError(f"graph node ID must be unique: {node_id!r}")
+            node_phase = canonical_phase(phase or getattr(handler, "__orbit_phase__", "")) or None
             node = GraphNode(
                 id=node_id,
                 title=title or handler.__name__.replace("_", " ").title(),
-                phase=phase,
+                phase=node_phase,
                 inputs=tuple(inputs),
                 outputs=tuple(outputs),
                 description=description,
@@ -1455,7 +1456,9 @@ class Runner:
         """
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
-            self._handlers[canonical_phase(name)] = handler
+            phase = canonical_phase(name)
+            self._handlers[phase] = handler
+            setattr(handler, "__orbit_phase__", phase)
             return handler
 
         return register
