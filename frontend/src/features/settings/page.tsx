@@ -74,8 +74,10 @@ export function SettingsPage({
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
     [dataPath, setDataPath] = useState(""),
+    [dataPathDraft, setDataPathDraft] = useState(""),
     [dataSize, setDataSize] = useState<number | null>(null),
     [dataLoading, setDataLoading] = useState(true),
+    [dataEditing, setDataEditing] = useState(false),
     [open, setOpen] = useState(false),
     [profileOpen, setProfileOpen] = useState(false);
   const { pushToast } = useToast();
@@ -98,6 +100,7 @@ export function SettingsPage({
       .then((values) => {
         if (!mounted) return;
         setDataPath(values.path);
+        setDataPathDraft(values.path);
         setDataSize(values.size_bytes);
       })
       .catch((error) => mounted && pushToast(error.message))
@@ -129,11 +132,13 @@ export function SettingsPage({
   const saveProfile = () => save().then(() => setProfileOpen(false));
   const saveDataLocation = () => {
     setDataLoading(true);
-    api<ApplicationData>("/api/application-data", "PUT", { path: dataPath })
+    api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
       .then((values) => {
         setDataPath(values.path);
+        setDataPathDraft(values.path);
         setDataSize(values.size_bytes);
         pushToast(settingsCopy.storage.saved, "success");
+        setDataEditing(false);
       })
       .catch((error) => pushToast(error.message))
       .finally(() => setDataLoading(false));
@@ -178,19 +183,34 @@ export function SettingsPage({
       <section className="panel app-settings app-data-settings">
         <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
         <p className="hint section-description">{settingsCopy.storage.description}</p>
-        <label className="setting-row">
+        <div className="setting-row">
           <span>
             <strong>{settingsCopy.storage.location}</strong>
             <small>{settingsCopy.storage.locationHint}</small>
           </span>
-          <div className="setting-actions">
-            <input value={dataPath} onChange={(event) => setDataPath(event.target.value)} />
-            <button className="approve" disabled={!dataPath || dataLoading} onClick={saveDataLocation}>
-              <Save size={14} />
-              {settingsCopy.storage.save}
-            </button>
-          </div>
-        </label>
+          {dataEditing ? (
+            <div className="app-data-path-actions">
+              <input value={dataPathDraft} onChange={(event) => setDataPathDraft(event.target.value)} />
+              <div className="app-data-edit-actions">
+                <button className="ghost" onClick={() => { setDataPathDraft(dataPath); setDataEditing(false); }}>
+                  {l.cancel}
+                </button>
+                <button className="approve" disabled={!dataPathDraft || dataLoading} onClick={saveDataLocation}>
+                  <Save size={14} />
+                  {settingsCopy.storage.save}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="app-data-path-actions">
+              <p className="setting-prompt-preview app-data-path">{dataPath}</p>
+              <button className="approve" onClick={() => { setDataPathDraft(dataPath); setDataEditing(true); }}>
+                <Pencil size={14} />
+                {l.edit}
+              </button>
+            </div>
+          )}
+        </div>
         <div className="app-data-size" aria-live="polite">
           <Database size={16} />
           <span>{settingsCopy.storage.size}</span>
