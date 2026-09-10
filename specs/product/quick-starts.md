@@ -11,7 +11,7 @@ configuration.
 
 ## Operator flow
 
-1. From **Evaluation builds → Create**, choose **Start with Quick Start** or
+1. From **Builds → Create**, choose **Start with Quick Start** or
    **Configure manually**.
 2. Select a quick-start card.
 3. Supply the manifest-defined parameters. Each field may provide a type,
@@ -39,7 +39,7 @@ The manifest declares these required assets:
 - fixed target-AI test-case set;
 - execution environment;
 - target environment; and
-- evaluation build.
+- build.
 
 It may also declare a model-profile asset. When it does, the form collects the
 connection settings and creates a new reusable profile before the evaluation

@@ -351,7 +351,7 @@ function Direct({
   return (
     <div className="build-wizard">
       <ol className="wizard-steps">
-        {[t.common.evaluationBuild, t.evaluation.criteria, t.ui.review].map(
+        {[t.common.build, t.evaluation.criteria, t.ui.review].map(
           (x, i) => (
             <li key={x} className={step === i + 1 ? "current" : ""}>
               <button onClick={() => setStep(i + 1)}>
@@ -753,7 +753,7 @@ function QuickStartCard({
   );
 }
 
-export function EvaluationBuildsPage(props: {
+export function BuildsPage(props: {
   locale: Locale;
   builds: Build[];
   runners: RunnerAsset[];
@@ -820,7 +820,7 @@ export function EvaluationBuildsPage(props: {
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
-      api<Run>(`/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`)
+      api<Run>(`/api/build-tests/${encodeURIComponent(testRun.id)}`)
         .then(setTestRun)
         .catch(() => setTestRun(null));
     }, 750);
@@ -838,7 +838,7 @@ export function EvaluationBuildsPage(props: {
   const closeTest = () => {
     if (testRun && !testIsActive(testRun.status))
       api(
-        `/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`,
+        `/api/build-tests/${encodeURIComponent(testRun.id)}`,
         "DELETE",
       ).catch(() => undefined);
     setTestRun(null);
@@ -889,7 +889,7 @@ export function EvaluationBuildsPage(props: {
           <input
             aria-label={`Select ${b.name}`}
             checked={selected === b.id}
-            name="evaluation-build-selection"
+            name="build-selection"
             onChange={() => setSelected(b.id)}
             type="radio"
           />
@@ -957,11 +957,11 @@ export function EvaluationBuildsPage(props: {
     };
   return (
     <>
-      <section className="panel evaluation-build-panel">
+      <section className="panel build-panel">
         <div className="panel-title-action">
           <div className="panel-title-action__copy">
-            <PanelHeader title={<SectionInfo title={locales[locale].evaluation.evaluationBuildList} description={localeMessages<Record<string, string>>(locale, "sectionDetails").evaluationBuildList} />} />
-            <p className="hint section-description">{locales[locale].evaluation.evaluationBuildListDescription}</p>
+            <PanelHeader title={<SectionInfo title={locales[locale].evaluation.buildList} description={localeMessages<Record<string, string>>(locale, "sectionDetails").buildList} />} />
+            <p className="hint section-description">{locales[locale].evaluation.buildListDescription}</p>
           </div>
           <div className="build-list-actions">
             <button
@@ -1006,7 +1006,7 @@ export function EvaluationBuildsPage(props: {
             setMode("direct");
             setOpen(true);
           }}
-          className="evaluation-build-table"
+          className="build-table"
           gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
         />
         <Pagination
@@ -1036,8 +1036,8 @@ export function EvaluationBuildsPage(props: {
         open={open}
         title={
           edit
-            ? t.evaluation.createEvaluationBuild
-            : t.evaluation.createEvaluationBuild
+            ? t.evaluation.createBuild
+            : t.evaluation.createBuild
         }
         onClose={() => setOpen(false)}
       >

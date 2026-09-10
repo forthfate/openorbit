@@ -8,7 +8,7 @@ Run tasks through runner-declared lifecycle phases. The standard order is `befor
 
 ## Current implementation
 
-Evaluation builds execute runner assets directly. Legacy workflow assets remain editable, but they are not the execution source for evaluation builds. A runner may declare only the phases it needs.
+Builds execute runner assets directly. Legacy workflow assets remain editable, but they are not the execution source for builds. A runner may declare only the phases it needs.
 
 ## Planned work
 

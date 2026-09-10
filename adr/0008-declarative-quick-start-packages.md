@@ -4,14 +4,14 @@ Status: accepted
 
 ## Decision
 
-Use versioned, declarative quick-start manifests to create an evaluation build
+Use versioned, declarative quick-start manifests to create a build
 and its required assets. A manifest declares its input parameters, placeholders,
 asset templates and build template; it does not run an arbitrary installation
 hook.
 
 The control room validates all inputs first, shows the requested configuration
 for review, then creates the runner, prompt template, test-case set, execution
-environment, target environment, optional model profile and evaluation build as
+environment, target environment, optional model profile and build as
 one recoverable operation.
 
 ## Consequences

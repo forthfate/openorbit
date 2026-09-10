@@ -106,7 +106,7 @@ MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 MANAGER_OUTPUT_LANGUAGE_SLOT = "__ORBIT_MANAGER_OUTPUT_LANGUAGE__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
-# - The evaluation build selects fixed target-AI prompts and a configured model
+# - The build selects fixed target-AI prompts and a configured model
 #   profile, plus a readable managed_prompt_path on its Target Environment.
 # - Only supervisor feedback explicitly marked adopted is applied to the prompt.
 # This runner never commits target changes; ctx.update_file keeps rollback versions.
@@ -126,7 +126,7 @@ PROMPT_BLOCK_END = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_END -->"
 
 def state_path(ctx):
     '''Return the per-build state file outside the target repository.'''
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
+    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "improvement-cycles"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{build_id}.json"
@@ -160,7 +160,7 @@ def candidate(ctx):
 
 def update_prompt_from_accepted_proposals(ctx, proposals):
     '''Replace only OpenOrbit's managed prompt block and retain a rollback version.'''
-    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     target = ctx.project_path(prompt_path)
@@ -193,7 +193,7 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
 
 def managed_prompt_evidence(ctx):
     '''Expose the current managed prompt beside the target-AI response evidence.'''
-    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     content = ctx.project_path(prompt_path).read_text(encoding="utf-8")
@@ -227,7 +227,7 @@ def before_each(ctx):
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
     requires_human_approval = bool(
-        ctx.evaluation_build.get("require_human_approval_before_apply", False)
+        ctx.build.get("require_human_approval_before_apply", False)
     )
     if requires_human_approval and accepted:
         # A supervisor's adoption is a recommendation, not an operator
@@ -360,7 +360,7 @@ if __name__ == "__main__":
 """
 
 SITE_EXPLORATION_TEMPLATE = r"""# Requirements
-# - The target application is running at the evaluation build's browser base URL.
+# - The target application is running at the build's browser base URL.
 # - Playwright Chromium and LangGraph are available.
 # This runner follows only same-site links and excludes destructive-looking routes.
 
@@ -423,13 +423,13 @@ def graph(ctx):
 
 @runner.phase("before_all")
 def before_all(ctx):
-    if not ctx.evaluation_build.get("browser_base_url"):
+    if not ctx.build.get("browser_base_url"):
         raise ValueError("Set a browser base URL before exploring a site")
 
 
 @runner.phase("execute")
 def execute(ctx):
-    result = graph(ctx).invoke({"base_url": ctx.evaluation_build["browser_base_url"], "max_clicks": 3})
+    result = graph(ctx).invoke({"base_url": ctx.build["browser_base_url"], "max_clicks": 3})
     ctx.emit_result({"site_exploration": {"opinion": result["opinion"], "evidence": result["evidence"]}})
 
 
@@ -471,7 +471,7 @@ def cycle_input(ctx, action):
         {
             "action": action,
             "iteration": ctx.loop_index,
-            "evaluation_build": ctx.evaluation_build,
+            "build": ctx.build,
             "test_cases": ctx.test_cases,
         },
         ensure_ascii=False,
@@ -579,7 +579,7 @@ def cycle_input(ctx, action):
         {
             "action": action,
             "iteration": ctx.loop_index,
-            "evaluation_build": ctx.evaluation_build,
+            "build": ctx.build,
             "probes": ctx.test_cases,
         },
         ensure_ascii=False,
@@ -707,7 +707,7 @@ class ConsoleStore:
         RUNNERS.mkdir(parents=True, exist_ok=True)
         RUNNER_TEMPLATES.mkdir(parents=True, exist_ok=True)
         QUICK_STARTS.mkdir(parents=True, exist_ok=True)
-        self._migrate_evaluation_environments()
+        self._migrate_build_environments()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         # Test runs are deliberately process-local: they support the build-page
         # test dialog without becoming an evaluation-run record or surviving a
@@ -774,8 +774,8 @@ class ConsoleStore:
                 "name": "Browser journey validation",
                 "description": "Validates fixed browser journeys and retains page evidence. Requires a running app and Playwright browser.",
                 "source": """# Requirements
-# - The target application is running at the evaluation build's browser base URL.
-# - The evaluation build selects at least one fixed test case.
+# - The target application is running at the build's browser base URL.
+# - The build selects at least one fixed test case.
 # - Playwright Chromium and its operating-system libraries are available.
 # No external runner script, adapter repository, or background program is required.
 
@@ -787,16 +787,16 @@ from orbit_sdk import runner
 # Validate only configuration that the runner cannot safely infer. This runs
 # once when an evaluation process starts, before its iteration loop.
 def validate(ctx):
-    build = ctx.evaluation_build
+    build = ctx.build
     if not build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL on the evaluation build")
+        raise ValueError("Set a browser base URL on the build")
     if not ctx.test_cases:
         raise ValueError("Select a fixed test case set before running a user journey")
 
 def state_path(ctx):
     # Keep state in OpenOrbit AppData, keyed by build, so a later iteration can
     # resume its focused journey without writing into the target repository.
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
+    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "user-journey-state"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{build_id}.json"
@@ -894,7 +894,7 @@ if __name__ == "__main__": runner.main()
                 "id": "native-improvement-cycle",
                 "name": "Native improvement cycle",
                 "description": "Tracks a Git change candidate, validates fixed browser journeys, and promotes only repeatedly sufficient evidence. OpenOrbit owns all cycle state and never runs an external improvement script.",
-                "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The evaluation build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.evaluation_build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("execute")\ndef execute(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("verify")\ndef verify(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("after_each")\ndef after_each(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("after_all")\ndef after_all(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
+                "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("execute")\ndef execute(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("verify")\ndef verify(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("after_each")\ndef after_each(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("after_all")\ndef after_all(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
             },
         ]
         templates[-1] = {
@@ -1108,7 +1108,7 @@ if __name__ == "__main__": runner.main()
 
 @runner.phase("before_all")
 def before_all(ctx):
-    if not ctx.evaluation_build.get("browser_base_url"):
+    if not ctx.build.get("browser_base_url"):
         raise ValueError("Quick start browser evaluation requires a browser base URL")
 
 @runner.phase("execute")
@@ -1869,7 +1869,7 @@ if __name__ == "__main__":
                 TARGET_ENVIRONMENTS,
                 TARGET_TEST_CASE_SETS,
                 CONFIG / "prompt-templates.yaml",
-                CONFIG / "evaluation-builds.yaml",
+                CONFIG / "builds.yaml",
                 QUICK_START_INSTANCES,
                 SETTINGS,
             )
@@ -1894,7 +1894,7 @@ if __name__ == "__main__":
                 if any(item["profile_name"] == profile_name for item in self.profiles()):
                     raise ValueError("AI model profile name already exists")
                 self.save_settings(assets["model_profile"])
-            created = self.create_evaluation_build(
+            created = self.create_build(
                 {
                     "id": generated["build_id"],
                     "runner_id": runner["id"],
@@ -2016,8 +2016,8 @@ if __name__ == "__main__":
 
     def delete_runner(self, runner_id: str) -> None:
         self._runner(runner_id)
-        if any(build.get("runner_id") == runner_id for build in self.evaluation_builds()):
-            raise ValueError("runner is used by an evaluation build")
+        if any(build.get("runner_id") == runner_id for build in self.builds()):
+            raise ValueError("runner is used by a build")
         (RUNNERS / f"{runner_id}.py").unlink(missing_ok=True)
         (RUNNERS / f"{runner_id}.json").unlink(missing_ok=True)
 
@@ -2060,8 +2060,8 @@ if __name__ == "__main__":
             test_steps=deepcopy(steps),
         )
 
-    def evaluation_builds(self) -> list[dict[str, Any]]:
-        path = CONFIG / "evaluation-builds.yaml"
+    def builds(self) -> list[dict[str, Any]]:
+        path = CONFIG / "builds.yaml"
         builds = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
         builds = builds if isinstance(builds, list) else []
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
@@ -2073,7 +2073,7 @@ if __name__ == "__main__":
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
-            dates = [run.created_at for run in runs if run.evaluation_build_id == build["id"]]
+            dates = [run.created_at for run in runs if run.build_id == build["id"]]
             build["last_run_at"] = max(dates).isoformat() if dates else None
         return builds
 
@@ -2292,8 +2292,8 @@ if __name__ == "__main__":
         return item
 
     def _delete_environment(self, environment_id: str, path: Path, reference_key: str, label: str) -> None:
-        if any(build.get(reference_key) == environment_id for build in self.evaluation_builds()):
-            raise ValueError(f"{label} is used by an evaluation build")
+        if any(build.get(reference_key) == environment_id for build in self.builds()):
+            raise ValueError(f"{label} is used by a build")
         items = self._asset_list(path)
         remaining = [item for item in items if item.get("id") != environment_id]
         if len(remaining) == len(items):
@@ -2310,8 +2310,8 @@ if __name__ == "__main__":
             environment_id, TARGET_ENVIRONMENTS, "target_environment_id", "target environment"
         )
 
-    def _migrate_evaluation_environments(self) -> None:
-        path = CONFIG / "evaluation-builds.yaml"
+    def _migrate_build_environments(self) -> None:
+        path = CONFIG / "builds.yaml"
         builds = self._asset_list(path)
         if not builds:
             return
@@ -2433,8 +2433,8 @@ if __name__ == "__main__":
         sets = self.target_test_case_sets()
         if not any(item.get("id") == set_id for item in sets):
             raise KeyError(set_id)
-        if any(build.get("test_case_set_id") == set_id for build in self.evaluation_builds()):
-            raise ValueError("test case set is used by an evaluation build")
+        if any(build.get("test_case_set_id") == set_id for build in self.builds()):
+            raise ValueError("test case set is used by a build")
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(
             yaml.safe_dump(
@@ -2486,8 +2486,8 @@ if __name__ == "__main__":
         templates = self.prompt_templates()
         if not any(item.get("id") == template_id for item in templates):
             raise KeyError(template_id)
-        if any(build.get("manager_template_id") == template_id for build in self.evaluation_builds()):
-            raise ValueError("prompt template is used by an evaluation build")
+        if any(build.get("manager_template_id") == template_id for build in self.builds()):
+            raise ValueError("prompt template is used by a build")
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(
             yaml.safe_dump(
@@ -2584,8 +2584,8 @@ if __name__ == "__main__":
         )
         return f"application-settings + manager-template:{template_id}", assembled[:100_000]
 
-    def evaluation_build(self, build_id: str) -> dict[str, Any]:
-        for build in self.evaluation_builds():
+    def build(self, build_id: str) -> dict[str, Any]:
+        for build in self.builds():
             if build["id"] == build_id:
                 return build
         raise KeyError(build_id)
@@ -2606,10 +2606,10 @@ if __name__ == "__main__":
             "directories": [{"name": entry.name, "path": str(entry)} for entry in children[:200]],
         }
 
-    def create_evaluation_build(self, values: dict[str, Any]) -> dict[str, Any]:
+    def create_build(self, values: dict[str, Any]) -> dict[str, Any]:
         build_id = values["id"]
-        if any(build["id"] == build_id for build in self.evaluation_builds()):
-            raise ValueError("같은 ID의 평가 빌드가 이미 있습니다.")
+        if any(build["id"] == build_id for build in self.builds()):
+            raise ValueError("같은 ID의 빌드가 이미 있습니다.")
         runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
@@ -2675,20 +2675,20 @@ if __name__ == "__main__":
             ),
             "executor": executor,
         }
-        builds = self.evaluation_builds()
+        builds = self.builds()
         builds.append(build)
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
         return build
 
-    def update_evaluation_build(self, build_id: str, values: dict[str, Any]) -> dict[str, Any]:
-        builds = self.evaluation_builds()
+    def update_build(self, build_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        builds = self.builds()
         index = next((i for i, build in enumerate(builds) if build["id"] == build_id), None)
         if index is None:
             raise KeyError(build_id)
         if values["id"] != build_id:
-            raise ValueError("evaluation build ID cannot be changed")
+            raise ValueError("build ID cannot be changed")
         runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
@@ -2756,19 +2756,19 @@ if __name__ == "__main__":
             "executor": executor,
         }
         builds[index] = build
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
         return build
 
-    def delete_evaluation_build(self, build_id: str) -> None:
-        builds = self.evaluation_builds()
+    def delete_build(self, build_id: str) -> None:
+        builds = self.builds()
         remaining = [build for build in builds if build["id"] != build_id]
         if len(remaining) == len(builds):
             raise KeyError(build_id)
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(remaining, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
 
     def improvements(self) -> list[dict[str, Any]]:
         path = CONFIG / "improvements.yaml"
@@ -2782,7 +2782,7 @@ if __name__ == "__main__":
         )
 
     def proposal_lifecycles(
-        self, evaluation_build_id: str | None = None, status: str | None = None
+        self, build_id: str | None = None, status: str | None = None
     ) -> list[dict[str, Any]]:
         """Present supervisor proposals directly from evaluation-run results.
 
@@ -2792,7 +2792,7 @@ if __name__ == "__main__":
         """
         values: list[dict[str, Any]] = []
         for run in self.runs():
-            if evaluation_build_id and run.evaluation_build_id != evaluation_build_id:
+            if build_id and run.build_id != build_id:
                 continue
             records = run.supervisor_results or []
             if not records and run.supervisor_response:
@@ -2858,8 +2858,8 @@ if __name__ == "__main__":
                                 proposal.get("rationale") or proposal.get("acceptanceEvidence") or ""
                             ),
                             "status": "proposed" if decision == "pending" else decision,
-                            "evaluation_build_id": run.evaluation_build_id,
-                            "evaluation_build_name": run.evaluation_build_name,
+                            "build_id": run.build_id,
+                            "build_name": run.build_name,
                             "run_id": run.id,
                             "iteration": iteration,
                             "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
@@ -2884,7 +2884,7 @@ if __name__ == "__main__":
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
 
-    def improvement_iteration_data(self, evaluation_build_id: str | None = None) -> list[dict[str, Any]]:
+    def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
         """List SDK-saved data files by persisted evaluation run and iteration.
 
         These entries intentionally exist even when a supervisor did not make a
@@ -2894,7 +2894,7 @@ if __name__ == "__main__":
         """
         values: list[dict[str, Any]] = []
         for run in self.runs():
-            if evaluation_build_id and run.evaluation_build_id != evaluation_build_id:
+            if build_id and run.build_id != build_id:
                 continue
             grouped: dict[int, list[dict[str, Any]]] = {}
             timestamps: dict[int, str] = {}
@@ -2920,8 +2920,8 @@ if __name__ == "__main__":
             for iteration, data_files in grouped.items():
                 values.append(
                     {
-                        "evaluation_build_id": run.evaluation_build_id,
-                        "evaluation_build_name": run.evaluation_build_name,
+                        "build_id": run.build_id,
+                        "build_name": run.build_name,
                         "run_id": run.id,
                         "iteration": iteration,
                         "recorded_at": timestamps[iteration],
@@ -3041,11 +3041,9 @@ if __name__ == "__main__":
         # so older updates remain visible even when their old runner did not
         # emit a structured result in the current schema.
         expected_path = ""
-        if run.evaluation_build_id:
+        if run.build_id:
             try:
-                expected_path = str(
-                    self.evaluation_build(run.evaluation_build_id).get("managed_prompt_path", "")
-                )
+                expected_path = str(self.build(run.build_id).get("managed_prompt_path", ""))
             except KeyError:
                 pass
         history_root = APP_DATA / "file-history"
@@ -3279,16 +3277,16 @@ if __name__ == "__main__":
 
     def dashboard(self) -> dict[str, Any]:
         runs = self.runs()
-        builds = self.evaluation_builds()
+        builds = self.builds()
         build_ids = {build["id"] for build in builds}
         recent_runs: list[Run] = []
         seen_builds: set[str] = set()
         for run in runs:
-            if not run.evaluation_build_id or run.evaluation_build_id not in build_ids:
+            if not run.build_id or run.build_id not in build_ids:
                 continue
-            if run.evaluation_build_id in seen_builds:
+            if run.build_id in seen_builds:
                 continue
-            seen_builds.add(run.evaluation_build_id)
+            seen_builds.add(run.build_id)
             recent_runs.append(run)
             if len(recent_runs) == 8:
                 break
@@ -3299,19 +3297,18 @@ if __name__ == "__main__":
                 for run in runs
                 if run.execution_type == "pipeline"
                 and run.execution_mode == "run"
-                and run.evaluation_build_id in build_ids
+                and run.build_id in build_ids
                 and run.status in {"queued", "running", "awaiting_approval"}
             ],
             "recent_runs": recent_runs,
             "improvements": self.improvements(),
             "metrics": {
-                "evaluation_builds": len(builds),
+                "builds": len(builds),
                 "completed_evaluations": len(
                     [
                         run
                         for run in runs
-                        if run.evaluation_build_id in build_ids
-                        and run.status in {"succeeded", "failed", "cancelled"}
+                        if run.build_id in build_ids and run.status in {"succeeded", "failed", "cancelled"}
                     ]
                 ),
                 "commits": len([item for item in self.improvements() if item["status"] == "committed"]),
@@ -3350,12 +3347,10 @@ if __name__ == "__main__":
             except ValueError:
                 return None
 
-        pipeline_runs = [
-            run for run in self.runs() if run.execution_type == "pipeline" and run.evaluation_build_id
-        ]
+        pipeline_runs = [run for run in self.runs() if run.execution_type == "pipeline" and run.build_id]
         for run in pipeline_runs:
-            build_id = str(run.evaluation_build_id)
-            name = run.evaluation_build_name or build_id
+            build_id = str(run.build_id)
+            name = run.build_name or build_id
             feedback = feedback_by_build.setdefault(
                 build_id, {"build_id": build_id, "name": name, "feedback_count": 0}
             )
@@ -3458,12 +3453,12 @@ if __name__ == "__main__":
         for run in pipeline_runs:
             if run.created_at < start or run.created_at > end:
                 continue
-            build_id = str(run.evaluation_build_id)
+            build_id = str(run.build_id)
             item = health_by_build.setdefault(
                 build_id,
                 {
                     "build_id": build_id,
-                    "name": run.evaluation_build_name or build_id,
+                    "name": run.build_name or build_id,
                     "succeeded": 0,
                     "failed": 0,
                     "cancelled": 0,
@@ -3509,22 +3504,22 @@ if __name__ == "__main__":
         view: neither represents a running local evaluation pipeline.
         """
         # This is the build-facing operations view, not a raw run log.  Keep
-        # exactly one (the most recent) pipeline state per evaluation build so
+        # exactly one (the most recent) pipeline state per build so
         # completed and failed activity remains visible without duplicate rows.
         active = []
         seen_builds: set[str] = set()
-        builds_by_id = {build["id"]: build for build in self.evaluation_builds()}
+        builds_by_id = {build["id"]: build for build in self.builds()}
         existing_build_ids = set(builds_by_id)
         for run in sorted(
             runs if runs is not None else self.runs(), key=lambda item: item.created_at, reverse=True
         ):
-            if run.execution_type != "pipeline" or run.execution_mode != "run" or not run.evaluation_build_id:
+            if run.execution_type != "pipeline" or run.execution_mode != "run" or not run.build_id:
                 continue
-            if run.evaluation_build_id not in existing_build_ids:
+            if run.build_id not in existing_build_ids:
                 continue
-            if run.evaluation_build_id in seen_builds:
+            if run.build_id in seen_builds:
                 continue
-            seen_builds.add(run.evaluation_build_id)
+            seen_builds.add(run.build_id)
             item = run.model_dump(mode="json")
             # The run-level response is the newest iteration only. The table
             # represents the whole retained run, so a successful later
@@ -3553,7 +3548,7 @@ if __name__ == "__main__":
                 [item for item in improvements if item.get("status") == "adopted"]
             )
             item["reported_issues"] = len(issues)
-            item["approval_score"] = builds_by_id[run.evaluation_build_id].get("approval_score")
+            item["approval_score"] = builds_by_id[run.build_id].get("approval_score")
             active.append(item)
         return active
 
@@ -3622,8 +3617,8 @@ if __name__ == "__main__":
         self,
         runner_id: str,
         execution_mode: str = "run",
-        evaluation_build_id: str | None = None,
-        evaluation_build_name: str | None = None,
+        build_id: str | None = None,
+        build_name: str | None = None,
         supervisor_profile_name: str | None = None,
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
@@ -3653,8 +3648,8 @@ if __name__ == "__main__":
             id=uuid.uuid4().hex[:12],
             workflow_id=runner.id,
             workflow_name=runner.name,
-            evaluation_build_id=evaluation_build_id,
-            evaluation_build_name=evaluation_build_name,
+            build_id=build_id,
+            build_name=build_name,
             repository=repository,
             supervisor_profile_name=supervisor_profile_name,
             prompt_source=prompt_source,
@@ -3819,8 +3814,8 @@ if __name__ == "__main__":
         profiles = self.profiles()
         if not any(item["profile_name"] == profile_name for item in profiles):
             raise KeyError(profile_name)
-        if any(build.get("model_profile_name") == profile_name for build in self.evaluation_builds()):
-            raise ValueError("AI model profile is used by an evaluation build")
+        if any(build.get("model_profile_name") == profile_name for build in self.builds()):
+            raise ValueError("AI model profile is used by a build")
         if self.application_settings()["chat_model_profile_name"] == profile_name:
             raise ValueError("AI model profile is used by the chat assistant")
         remaining = [item for item in profiles if item["profile_name"] != profile_name]
@@ -3873,14 +3868,12 @@ if __name__ == "__main__":
         workflow = self._runner_execution_plan(run.workflow_id)
         resources: dict[str, Any] = {
             "workflow": workflow.model_dump(mode="json"),
-            "evaluation_build": {},
+            "build": {},
             "test_cases": [],
         }
-        if run.evaluation_build_id:
-            build = self.evaluation_build(run.evaluation_build_id)
-            resources["evaluation_build"] = {
-                key: value for key, value in build.items() if key not in {"executor"}
-            }
+        if run.build_id:
+            build = self.build(run.build_id)
+            resources["build"] = {key: value for key, value in build.items() if key not in {"executor"}}
             resources["execution_environment"] = self._execution_environment(
                 str(build.get("execution_environment_id", ""))
             )
@@ -4251,9 +4244,9 @@ if __name__ == "__main__":
         # iteration uses that exact file version; the actual text is retained
         # on the supervisor result below for auditability.
         supervisor_prompt = run.prompt_snapshot or ""
-        if run.evaluation_build_id:
+        if run.build_id:
             try:
-                _, supervisor_prompt = self._assembled_prompt(self.evaluation_build(run.evaluation_build_id))
+                _, supervisor_prompt = self._assembled_prompt(self.build(run.build_id))
             except ValueError:
                 # The original immutable run snapshot remains a safe fallback
                 # if an operator has made the prompt temporarily unreadable.
@@ -4268,9 +4261,7 @@ if __name__ == "__main__":
                 "gen_ai.provider.name": settings.provider,
                 "gen_ai.request.model": settings.model,
                 "orbit.manager.template": (
-                    self.evaluation_build(run.evaluation_build_id).get("manager_template_id")
-                    if run.evaluation_build_id
-                    else ""
+                    self.build(run.build_id).get("manager_template_id") if run.build_id else ""
                 ),
                 "orbit.iteration": iteration,
             },
@@ -4282,7 +4273,7 @@ if __name__ == "__main__":
                     threshold = (
                         run.approval_score
                         if run.approval_score is not None
-                        else int(self.evaluation_build(run.evaluation_build_id).get("approval_score", 0))
+                        else int(self.build(run.build_id).get("approval_score", 0))
                     )
                     evaluation["approval"] = "approved" if evaluation["score"] >= threshold else "rejected"
                 reported_at = now().isoformat()
@@ -4357,7 +4348,7 @@ if __name__ == "__main__":
             """You improve an OpenOrbit evaluation cycle, not the evaluated product.\nReturn exactly JSON: {\"diagnosis\":\"string\",\"interventions\":[{\"target\":\"runner|workflow|test_case_set|manager_prompt|schedule\",\"title\":\"string\",\"rationale\":\"string\",\"proposed_change\":\"string\",\"risk\":\"low|medium|high\",\"validation\":\"string\",\"rollback\":\"string\"}]}.\nOnly propose evidence-backed changes. Do not propose target repository code changes.\n\n"""
             + json.dumps(
                 {
-                    "evaluation_build": run.evaluation_build_name,
+                    "build": run.build_name,
                     "iteration": iteration,
                     "supervisor_result": result,
                 },
@@ -4376,8 +4367,8 @@ if __name__ == "__main__":
                 stored.append(
                     {
                         "id": f"ci-{uuid.uuid4().hex[:10]}",
-                        "evaluation_build_id": run.evaluation_build_id,
-                        "evaluation_build_name": run.evaluation_build_name,
+                        "build_id": run.build_id,
+                        "build_name": run.build_name,
                         "run_id": run.id,
                         "iteration": iteration,
                         "diagnosis": str(reviewed.get("diagnosis", "")),
@@ -4456,8 +4447,8 @@ if __name__ == "__main__":
                 ).decode("ascii")
                 if run.prompt_snapshot:
                     environment["ORBIT_EVALUATION_PROMPT"] = run.prompt_snapshot
-                if run.evaluation_build_id:
-                    environment["ORBIT_EVALUATION_BUILD_ID"] = run.evaluation_build_id
+                if run.build_id:
+                    environment["ORBIT_BUILD_ID"] = run.build_id
                 process = subprocess.Popen(
                     step.command,
                     cwd=directory,
@@ -4752,8 +4743,8 @@ if __name__ == "__main__":
         return self.create_run(
             run.workflow_id,
             execution_mode=run.execution_mode,
-            evaluation_build_id=run.evaluation_build_id,
-            evaluation_build_name=run.evaluation_build_name,
+            build_id=run.build_id,
+            build_name=run.build_name,
             supervisor_profile_name=run.supervisor_profile_name,
             prompt_source=run.prompt_source,
             prompt_snapshot=run.prompt_snapshot,
@@ -4783,10 +4774,10 @@ if __name__ == "__main__":
         return stopped
 
     def invoke_remote_build(self, build_id: str, execution_mode: str = "run") -> Run:
-        build = self.evaluation_build(build_id)
+        build = self.build(build_id)
         executor = build.get("executor", {})
         if not build.get("enabled"):
-            raise ValueError("This evaluation build is not enabled.")
+            raise ValueError("This build is not enabled.")
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
         prompt_source, prompt_snapshot = self._assembled_prompt(build)
@@ -4794,8 +4785,8 @@ if __name__ == "__main__":
             return self.create_run(
                 build["runner_id"],
                 execution_mode,
-                evaluation_build_id=build["id"],
-                evaluation_build_name=build["name"],
+                build_id=build["id"],
+                build_name=build["name"],
                 supervisor_profile_name=build.get("model_profile_name"),
                 prompt_source=prompt_source,
                 prompt_snapshot=prompt_snapshot,
@@ -4820,8 +4811,8 @@ if __name__ == "__main__":
             id=uuid.uuid4().hex[:12],
             workflow_id=build["runner_id"],  # Legacy Run field: stores the direct runner ID.
             workflow_name=self._runner(build["runner_id"])["name"],
-            evaluation_build_id=build["id"],
-            evaluation_build_name=build["name"],
+            build_id=build["id"],
+            build_name=build["name"],
             supervisor_profile_name=build.get("model_profile_name"),
             execution_mode=execution_mode,
             execution_type="invoke",
@@ -4839,10 +4830,10 @@ if __name__ == "__main__":
         threading.Thread(target=self._execute_remote, args=(run.id, executor), daemon=True).start()
         return run
 
-    def test_evaluation_build(self, build_id: str) -> Run:
-        build = self.evaluation_build(build_id)
+    def test_build(self, build_id: str) -> Run:
+        build = self.build(build_id)
         if not build.get("enabled"):
-            raise ValueError("This evaluation build is not enabled.")
+            raise ValueError("This build is not enabled.")
         return self.invoke_remote_build(build_id, "test")
 
     def _execute_remote(self, run_id: str, executor: dict[str, Any]) -> None:
@@ -4862,7 +4853,7 @@ if __name__ == "__main__":
                 invocation_values["payload"] = {
                     **(invocation_values.get("payload") or {}),
                     "prompt": run.prompt_snapshot,
-                    "evaluation_build_id": run.evaluation_build_id,
+                    "build_id": run.build_id,
                     "execution_mode": run.execution_mode,
                 }
                 invocation = RemoteInvocation(**invocation_values)

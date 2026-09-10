@@ -1,10 +1,10 @@
 # Runner samples
 
 These samples are portable starting points for **Assets → Runners**. Copy a
-sample's source into a runner, then connect it to an evaluation build. They do
+sample's source into a runner, then connect it to a build. They do
 not contain a product name, a local absolute path, or a background scheduler.
 
-| Sample | Use when | Evaluation-build requirements |
+| Sample | Use when | Build requirements |
 | --- | --- | --- |
 | `browser-user-journey-runner.py` | You want recurring, observable browser checks. | Browser base URL and at least one fixed test case. |
 | `external-command-runner.py` | You already have a command-line automation tool. | `ORBIT_ADAPTER_COMMAND` configured in the runner environment. |

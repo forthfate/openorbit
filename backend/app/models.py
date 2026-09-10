@@ -65,8 +65,8 @@ class Run(BaseModel):
     id: str
     workflow_id: str
     workflow_name: str
-    evaluation_build_id: str | None = None
-    evaluation_build_name: str | None = None
+    build_id: str | None = None
+    build_name: str | None = None
     repository: str | None = None
     supervisor_profile_name: str | None = None
     prompt_source: str | None = None

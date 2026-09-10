@@ -17,8 +17,8 @@ data is loading, without making routine background refreshes visually noisy.
   views use placeholders that preserve their section's visual footprint.
 - Assets use section-shaped placeholders rather than individual catalog rows,
   because several independently managed asset collections load together.
-- The dashboard, assets, evaluation builds, evaluation runs, settings, and
-  improvement results views all provide an initial loading state.
+- The dashboard, assets, builds, runs, settings, and
+  improvements views all provide an initial loading state.
 
 ## Independent section requests
 

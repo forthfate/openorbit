@@ -38,7 +38,7 @@ import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { ProfileForm, type ProfileFormCopy } from "../builds/page";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 const text = localeMessageMap<Record<string, string>>("assetsText");

@@ -32,7 +32,7 @@ python slo_probe_agent.py collect-evidence
 
 ## Use with Orbit
 
-Choose **AI SLO and behavior drift monitor** in Evaluation builds. Set:
+Choose **AI SLO and behavior drift monitor** in Builds. Set:
 
 | Field | Value |
 | --- | --- |

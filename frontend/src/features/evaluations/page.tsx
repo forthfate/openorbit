@@ -174,7 +174,7 @@ export function EvaluationsPage({
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
     [retryingRun, setRetryingRun] = useState<Run | null>(null);
-  const retryCopy = locale === "ko" ? { title: "평가 실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "評価実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry evaluation run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
+  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
   const selected = initialSelectedRun ?? selectedInternal;
   const supervisorTranslationIds = useMemo(
     () =>
@@ -281,12 +281,12 @@ export function EvaluationsPage({
     () => [
       ...new Map(
         runs.map((run) => [
-          run.evaluation_build_id ?? run.workflow_id,
+          run.build_id ?? run.workflow_id,
           {
-            id: run.evaluation_build_id ?? run.workflow_id,
+            id: run.build_id ?? run.workflow_id,
             name:
-              run.evaluation_build_name ??
-              run.evaluation_build_id ??
+              run.build_name ??
+              run.build_id ??
               run.workflow_name,
           },
         ]),
@@ -298,10 +298,10 @@ export function EvaluationsPage({
     (run) =>
       statuses.has(run.status) &&
       (!buildFilter ||
-        (run.evaluation_build_id ?? run.workflow_id) === buildFilter) &&
+        (run.build_id ?? run.workflow_id) === buildFilter) &&
       (modeFilter === "all" || run.execution_mode === modeFilter) &&
       (!phaseFilter || run.current_phase === phaseFilter) &&
-      (!keywordFilter || [run.id, run.evaluation_build_name, run.evaluation_build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
+      (!keywordFilter || [run.id, run.build_name, run.build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
       (!activeOnly || activeStatuses.has(run.status)),
   );
   const toggleStatus = (status: string) =>
@@ -437,14 +437,14 @@ export function EvaluationsPage({
     {id:"select",header:<input aria-label="Select all runs on this page" type="checkbox" checked={allPageSelected} disabled={!selectableRuns.length} onChange={togglePage}/>,render:r=><input aria-label={`Select run ${r.id}`} type="checkbox" checked={selectedRunIds.has(r.id)} disabled={!terminal(r.status)} onChange={()=>toggleRun(r.id)}/>},
     {
       id: "build",
-      header: t.evaluationBuild,
+      header: t.build,
       render: (r) => (
         <span className="run-build">
-          <strong>{r.evaluation_build_name ?? r.evaluation_build_id}</strong>
+          <strong>{r.build_name ?? r.build_id}</strong>
           <code>{r.id}</code>
         </span>
       ),
-      sortValue: (r) => r.evaluation_build_name ?? r.evaluation_build_id ?? r.workflow_name,
+      sortValue: (r) => r.build_name ?? r.build_id ?? r.workflow_name,
     },
     {
       id: "started",
@@ -539,7 +539,7 @@ export function EvaluationsPage({
       ),
     },
   ];
-  columns[1].header = l.evaluation;
+  columns[1].header = l.task;
   columns.splice(4, 0, {
     id: "iteration",
     header: l.iteration,
@@ -797,7 +797,7 @@ export function EvaluationsPage({
               <input value={draftKeywordFilter} onChange={(event) => setDraftKeywordFilter(event.target.value)} placeholder={ui.keywordHint} />
             </label>
             <label>
-              {ui.evaluationBuild}
+              {ui.build}
               <select
                 value={draftBuildFilter}
                 onChange={(event) => setDraftBuildFilter(event.target.value)}
@@ -903,8 +903,8 @@ export function EvaluationsPage({
         >
           <div className="run-detail-evaluation">
             <strong>
-              {selected.evaluation_build_name ??
-                selected.evaluation_build_id ??
+              {selected.build_name ??
+                selected.build_id ??
                 selected.workflow_name}
             </strong>
             <code>{selected.id}</code>

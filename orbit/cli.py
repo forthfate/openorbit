@@ -136,9 +136,9 @@ def main() -> None:
         elif args.command == "telemetry":
             show(request(args.url, "/api/telemetry"))
         elif args.command == "invoke":
-            show(request(args.url, f"/api/evaluation-builds/{args.build_id}/runs", "POST"))
+            show(request(args.url, f"/api/builds/{args.build_id}/runs", "POST"))
         elif args.command == "builds" and args.build_command == "list":
-            show(request(args.url, "/api/evaluation-builds"))
+            show(request(args.url, "/api/builds"))
         elif args.command == "improvements":
             show(request(args.url, "/api/improvements"))
         elif args.command == "tasks":

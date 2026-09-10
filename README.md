@@ -29,7 +29,7 @@ flowchart LR
 
 ## What you can do
 
-- Define reusable **evaluation builds** from a target, workflow, runner, fixed test cases, manager prompt, and AI model profile.
+- Define reusable **builds** from a target, workflow, runner, fixed test cases, manager prompt, and AI model profile.
 - Run a one-off **test** before saving a build, or run its configured lifecycle repeatedly with clear approval boundaries.
 - Inspect every phase through process logs, structured evidence, browser screenshots, supervisor responses, and OpenTelemetry traces.
 - Review reported issues and proposed improvements in a durable decision history.
@@ -43,9 +43,9 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | Area | What it answers |
 | --- | --- |
 | **Dashboard** | Is the AI system healthy right now? What changed recently? |
-| **Evaluation builds** | What exactly is being evaluated, with which assets and policy? |
-| **Evaluation run detail** | What happened in each phase, and what evidence supports the result? |
-| **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
+| **Builds** | What exactly is being evaluated, with which assets and policy? |
+| **Run detail** | What happened in each phase, and what evidence supports the result? |
+| **Improvements** | Are feedback, decisions, and scores actually improving over time? |
 
 The screenshots below follow a customer-support AI through its retained
 evaluation evidence and improvement cycle.
@@ -61,10 +61,10 @@ the evidence supporting it.
 ### Review evidence across the improvement cycle
 
 Compare feedback volume, accepted changes, scores, and run health across
-multiple evaluation builds. The history makes it clear whether the operating
+multiple builds. The history makes it clear whether the operating
 cycle is improving the AI system over time.
 
-![OpenOrbit improvement results with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
+![OpenOrbit improvements with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
 
 ### Ask an AI assistant what to do next
 
@@ -72,7 +72,7 @@ Configure a System AI model to use the built-in Chat Assistant for questions
 about evaluation work, runners, and the control room. Your own AI agent can
 work with the same local operating data through OpenOrbit's versioned API.
 
-![OpenOrbit Chat Assistant asking what to improve next for an evaluation build](docs/images/chat-assistant-question.png)
+![OpenOrbit Chat Assistant asking what to improve next for a build](docs/images/chat-assistant-question.png)
 
 ## Development partners
 
@@ -108,7 +108,7 @@ or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
 ### Start in 10 seconds with a Quick Start
 
 Open the **Quick starts** section on the Dashboard, choose a guided template,
-fill in the few target-specific fields, and create the evaluation build. Each
+fill in the few target-specific fields, and create the build. Each
 template creates the runner, fixed test cases, environments, manager policy,
 and model profile configuration together—so you can start with a working
 operating loop instead of assembling every asset by hand.
@@ -218,7 +218,7 @@ the operational record in your local AppData.
 
 ### Browser journeys (optional)
 
-Only evaluation builds that run browser journeys need a Chromium browser and
+Only builds that run browser journeys need a Chromium browser and
 its platform-specific system libraries. This is not required to start
 OpenOrbit, create assets, review runs, or use non-browser runners.
 
@@ -226,18 +226,18 @@ OpenOrbit, create assets, review runs, or use non-browser runners.
 
 1. Create or choose an AI model profile in **Assets**.
 2. Add the runner, workflow, fixed test cases, and target environment that describe the AI system you want to evaluate.
-3. Create an **Evaluation build** from those assets.
+3. Create a **Build** from those assets.
 4. Use **Test** to execute the build once and inspect its full run detail without adding it to the evaluation-run history.
-5. Start a regular run when ready, then review evidence and supervisor results in **Evaluation runs**.
-6. Use **Improvement results** to compare scores, feedback, decisions, and cycle health over time.
+5. Start a regular run when ready, then review evidence and supervisor results in **Runs**.
+6. Use **Improvements** to compare scores, feedback, decisions, and cycle health over time.
 
 ## Core concepts
 
 | Concept | Meaning |
 | --- | --- |
 | **Asset** | A reusable model profile, runner, workflow, prompt, test set, or environment. |
-| **Evaluation build** | A versioned operating configuration that connects assets to one AI-system evaluation. |
-| **Test** | A transient, one-time execution used to validate an evaluation build. |
+| **Build** | A versioned operating configuration that connects assets to one AI-system evaluation. |
+| **Test** | A transient, one-time execution used to validate a build. |
 | **Run** | A retained execution record, including phases, evidence, logs, and decisions. |
 | **Supervisor** | An AI review step that produces structured evaluation results, issues, and proposals. |
 | **Improvement cycle** | The evidence-backed PDCA loop across multiple evaluations and human decisions. |

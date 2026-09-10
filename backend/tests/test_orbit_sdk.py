@@ -112,7 +112,7 @@ def test_update_file_blocks_a_managed_prompt_when_human_approval_is_required(tmp
     prompt.write_text("before", encoding="utf-8")
     monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
     resources = {
-        "evaluation_build": {
+        "build": {
             "managed_prompt_path": "prompt.md",
             "require_human_approval_before_apply": True,
         }
