@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -233,6 +234,42 @@ class RunnerContext:
 
     def __post_init__(self) -> None:
         self.phase = canonical_phase(self.phase)
+
+    @contextmanager
+    def function(self, function_id: str):
+        """Record one graph-annotated function's outcome within this lifecycle phase."""
+        if not function_id.strip():
+            raise ValueError("function_id must not be empty")
+        started = datetime.now(UTC)
+        try:
+            yield
+        except BaseException:
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "failed",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
+            raise
+        else:
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "succeeded",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
 
     @property
     def resources(self) -> dict[str, object]:

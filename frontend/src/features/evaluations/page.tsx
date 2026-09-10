@@ -593,8 +593,14 @@ export function EvaluationsPage({
       nodes: definition.nodes.map((node) => {
         const phaseSteps = steps.filter((step) => (step.phase ?? step.step_id) === node.phase);
         const latestStep = phaseSteps.at(-1);
+        const functionTrace = [...steps].reverse().flatMap((step) => {
+          const traces = step.result?.workflow_functions;
+          return Array.isArray(traces) ? traces : [];
+        }).find((trace) => typeof trace === "object" && trace !== null && trace.id === node.id) as { status?: WorkflowGraphNode["status"] } | undefined;
         const status: WorkflowGraphNode["status"] = selected?.status === "running" && node.phase === selected.current_phase
           ? "running"
+          : functionTrace?.status
+            ? functionTrace.status
           : latestStep?.error || (latestStep?.exit_code ?? 0) !== 0
             ? "failed"
             : latestStep

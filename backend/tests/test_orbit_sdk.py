@@ -53,6 +53,15 @@ def test_graph_step_inherits_its_zone_from_runner_phase():
     assert graph.definition()["nodes"][0]["phase"] == "before_each"
 
 
+def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
+    ctx = context(tmp_path, iteration=1)
+
+    with ctx.function("collect-source-evidence"):
+        pass
+
+    assert "collect-source-evidence" in capsys.readouterr().out
+
+
 def context(project, *, iteration: int, run_id: str = "run-123"):
     return sdk.RunnerContext(
         phase="execute",
