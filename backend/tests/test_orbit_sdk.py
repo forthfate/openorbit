@@ -8,6 +8,39 @@ from base64 import b64encode
 import orbit_sdk as sdk
 
 
+def test_graph_declarations_export_nodes_and_typed_edges():
+    graph = sdk.Graph()
+
+    @graph.step("collect", phase="before_each", outputs=["evidence"])
+    def collect() -> None:
+        pass
+
+    graph.connect("collect", "collect", kind="loop", label="next iteration")
+
+    assert graph.definition() == {
+        "nodes": [
+            {
+                "id": "collect",
+                "title": "Collect",
+                "phase": "before_each",
+                "inputs": [],
+                "outputs": ["evidence"],
+                "description": None,
+            }
+        ],
+        "edges": [
+            {
+                "source": "collect",
+                "target": "collect",
+                "kind": "loop",
+                "label": "next iteration",
+                "source_port": None,
+                "target_port": None,
+            }
+        ],
+    }
+
+
 def context(project, *, iteration: int, run_id: str = "run-123"):
     return sdk.RunnerContext(
         phase="run",
