@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ChevronDown, ChevronUp, ChevronsUpDown } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 export type Column<Row> = {
@@ -47,7 +47,7 @@ export function DataTable<Row extends { id: string }>({
         {columns.map((c) => {
           const active = sort?.id === c.id;
           if (!c.sortValue) return <span key={c.id}>{c.header}</span>;
-          const Icon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+          const Icon = active ? (sort.direction === "asc" ? ChevronUp : ChevronDown) : ChevronsUpDown;
           return <span key={c.id}><button className="table-sort" type="button" onClick={() => setSort(current => current?.id === c.id ? { id: c.id, direction: current.direction === "asc" ? "desc" : "asc" } : { id: c.id, direction: "asc" })} aria-label={`Sort by ${String(c.header)}`} aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>{c.header}<Icon size={13} aria-hidden="true" /></button></span>;
         })}
       </div>

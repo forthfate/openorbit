@@ -2,9 +2,9 @@
 import {
   ChevronLeft,
   ChevronRight,
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   FileUp,
   Languages,
   Plus,
@@ -112,7 +112,7 @@ function Catalog({
       return sort.direction === "asc" ? value : -value;
     }),
     changeSort = (key: typeof sort.key) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" })),
-    icon = (key: typeof sort.key) => sort.key !== key ? ArrowUpDown : sort.direction === "asc" ? ArrowUp : ArrowDown;
+    icon = (key: typeof sort.key) => sort.key !== key ? ChevronsUpDown : sort.direction === "asc" ? ChevronUp : ChevronDown;
   return (
     <>
       {showRunners && runners && onRefresh && (
