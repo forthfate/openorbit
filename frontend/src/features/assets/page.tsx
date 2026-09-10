@@ -1770,7 +1770,14 @@ export function AssetsPage({
     id: string,
   ) => void;
 }) {
-  if (loading) return <><SectionSkeleton rows={3} /><SectionSkeleton rows={3} /><SectionSkeleton rows={4} /></>;
+  if (loading) return <>
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+  </>;
   return (
     <>
       <ProfileCatalog

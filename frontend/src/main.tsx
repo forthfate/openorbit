@@ -303,7 +303,14 @@ export default function App() {
     ),
     improvements: <ImprovementsPage />,
     settings: (
-      room.loading ? <><SectionSkeleton rows={3} /><SectionSkeleton rows={3} /></> : <SettingsPage
+      room.loading ? <>
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={1} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={4} />
+      </> : <SettingsPage
         locale={locale}
         setLocale={setLocale}
         theme={theme}

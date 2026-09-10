@@ -17,7 +17,7 @@ import type { ImprovementAnalytics } from "../../domain/models";
 import { SectionInfo } from "../../components/ui/section-info";
 import { api } from "../../services/api";
 import { intlLocales, localeMessages, type Locale } from "../../locales";
-import { SectionSkeleton } from "../../components/ui/section-skeleton";
+import { Skeleton } from "../../components/ui/skeleton";
 
 type FeedbackTrendsCopy = {
   title: string; description?: string; range: string; evaluation: string; feedbackVolume: string;
@@ -40,6 +40,23 @@ function Card({ title, locale, children }: { title: string; locale: Locale; chil
   return <article className="analytics-chart"><h3>{hints[title] ? <SectionInfo title={title} description={hints[title]} /> : title}</h3>{children}</article>;
 }
 
+function AnalyticsCardSkeleton() {
+  return <article className="analytics-chart analytics-chart--skeleton">
+    <Skeleton className="analytics-chart-skeleton__title" />
+    <Skeleton className="analytics-chart-skeleton__body" />
+  </article>;
+}
+
+export function FeedbackTrendsSkeleton({ scope }: { scope: "dashboard" | "improvements" }) {
+  const count = scope === "dashboard" ? 5 : 1;
+  return <section className={`panel improvement-trends ${scope === "dashboard" ? "dashboard-feedback-trends" : "evaluation-feedback-trends"}`} role="status" aria-label="Loading analytics">
+    <div className="trend-head"><div><Skeleton className="section-skeleton__title" /><Skeleton className="section-skeleton__hint" /></div><Skeleton className="feedback-trends-skeleton__select" /></div>
+    <div className="analytics-grid">
+      {Array.from({ length: count }, (_, index) => <AnalyticsCardSkeleton key={index} />)}
+    </div>
+  </section>;
+}
+
 export function FeedbackTrends({ locale, buildId, scope = "dashboard" }: { locale: Locale; buildId?: string; scope?: "dashboard" | "improvements" }) {
   const t = localeMessages<FeedbackTrendsCopy>(locale, scope === "dashboard" ? "dashboardFeedbackTrends" : "improvementEvaluationTrends"),
     sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
@@ -50,7 +67,7 @@ export function FeedbackTrends({ locale, buildId, scope = "dashboard" }: { local
       setBuild((current) => next.iteration_trends.some((item) => item.build_id === current) ? current : (next.iteration_trends.find((item) => item.points.length)?.build_id ?? next.iteration_trends[0]?.build_id ?? ""));
     }).catch(() => setData(undefined)).finally(() => setInitialLoading(false));
   }, [hours]);
-  if (initialLoading) return <SectionSkeleton rows={scope === "dashboard" ? 5 : 3} />;
+  if (initialLoading) return <FeedbackTrendsSkeleton scope={scope} />;
   const selectedBuild = buildId || build,
     trend = data?.iteration_trends.find((item) => item.build_id === selectedBuild);
   const short = (value: string) => value.length > 18 ? `${value.slice(0, 18)}…` : value;
