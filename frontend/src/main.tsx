@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
 import { ToastProvider } from "./components/ui/toast";
+import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { AssetsPage } from "./features/assets/page";
@@ -235,6 +236,7 @@ export default function App() {
     dashboard: (
       <DashboardPage
         data={room.data}
+        loading={room.loading}
         locale={locale}
         onOpenRun={() => setPage("runs")}
         onOpenBuild={() => setPage("builds")}
@@ -264,7 +266,7 @@ export default function App() {
       />
     ),
     builds: (
-      <EvaluationBuildsPage
+      room.loading ? <SectionSkeleton rows={6} /> : <EvaluationBuildsPage
         locale={locale}
         builds={room.builds}
         runners={room.runners}
@@ -288,7 +290,7 @@ export default function App() {
       />
     ),
     runs: (
-      <EvaluationsPage
+      room.loading ? <SectionSkeleton rows={7} /> : <EvaluationsPage
         locale={locale}
         runs={room.runs}
         onStop={stopRun}
@@ -301,7 +303,14 @@ export default function App() {
     ),
     improvements: <ImprovementsPage />,
     settings: (
-      <SettingsPage
+      room.loading ? <>
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={1} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={4} />
+      </> : <SettingsPage
         locale={locale}
         setLocale={setLocale}
         theme={theme}

@@ -25,7 +25,9 @@ import {
   type Locale,
 } from "../../locales";
 import { api } from "../../services/api";
-import { FeedbackTrends } from "./feedback-trends";
+import { FeedbackTrends, FeedbackTrendsSkeleton } from "./feedback-trends";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
+import { Skeleton } from "../../components/ui/skeleton";
 
 type HeroCopy = {
   title: string;
@@ -50,6 +52,30 @@ type OperationsCopy = {
 type DashboardHelp = { trend: string };
 type OverviewCopy = { title: string; description: string };
 
+function DashboardSkeleton() {
+  return <>
+    <section className="dashboard-hero dashboard-hero--skeleton" role="status" aria-label="Loading dashboard">
+      <Skeleton className="dashboard-hero-skeleton__eyebrow" />
+      <Skeleton className="dashboard-hero-skeleton__title" />
+      <Skeleton className="dashboard-hero-skeleton__description" />
+      <Skeleton className="dashboard-hero-skeleton__button" />
+    </section>
+    <section className="dashboard-quick-starts dashboard-quick-starts--skeleton">
+      <Skeleton className="section-skeleton__title" />
+      <Skeleton className="section-skeleton__hint" />
+      <div className="dashboard-quick-starts__grid">
+        {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="dashboard-quick-start-skeleton" />)}
+      </div>
+    </section>
+    <SectionSkeleton metrics />
+    <section className="recent-evaluations recent-evaluations--skeleton">
+      {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="evaluation-card-skeleton" />)}
+    </section>
+    <SectionSkeleton metrics chart />
+    <FeedbackTrendsSkeleton scope="dashboard" />
+  </>;
+}
+
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime()),
@@ -66,12 +92,13 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
 }
 
 function OperationalHealth({ locale }: { locale: Locale }) {
-  const [analytics, setAnalytics] = useState<ImprovementAnalytics>();
+  const [analytics, setAnalytics] = useState<ImprovementAnalytics>(), [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
     const refresh = () =>
       api<ImprovementAnalytics>("/api/improvement-analytics?hours=24")
         .then(setAnalytics)
-        .catch(() => setAnalytics(undefined));
+        .catch(() => setAnalytics(undefined))
+        .finally(() => setInitialLoading(false));
     refresh();
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
@@ -102,6 +129,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
     summary?.score_delta === null || summary?.score_delta === undefined
       ? ""
       : ` ${summary.score_delta > 0 ? "+" : ""}${summary.score_delta}`;
+  if (initialLoading) return <SectionSkeleton metrics />;
   return (
     <section className="panel dashboard-health">
       <div className="panel-head">
@@ -171,12 +199,14 @@ function OperationalHealth({ locale }: { locale: Locale }) {
 
 export function DashboardPage({
   data,
+  loading,
   onOpenBuild,
   onOpenQuickStart,
   onOpenRun,
   locale,
 }: {
   data: Dashboard | null;
+  loading: boolean;
   onOpenBuild: (id?: string) => void;
   onOpenQuickStart: (id?: string) => void;
   onOpenRun: () => void;
@@ -202,6 +232,7 @@ export function DashboardPage({
     if (id) sessionStorage.setItem("orbit.selectedBuild", id);
     onOpenBuild(id);
   };
+  if (loading) return <DashboardSkeleton />;
   return (
     <>
       <section className="dashboard-hero">

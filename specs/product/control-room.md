@@ -19,6 +19,13 @@ Provide one local web control room for configuring, running, observing and revie
 
 The list-managed views are list-first. Detail is opened from a row and preserves a link back to the list state.
 
+## Loading states
+
+Every primary view provides an initial-load skeleton for its visible sections.
+Skeletons are not shown again during polling or a normal refresh. See the
+[control-room loading-state contract](loading-states.md) for the complete
+behavior, accessibility, and ownership rules.
+
 ## Planned work
 
 Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvement results.

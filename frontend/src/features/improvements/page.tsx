@@ -38,6 +38,7 @@ import {
 } from "../../locales";
 import "./saved-data-files.css";
 import { FeedbackTrends } from "../dashboard/feedback-trends";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 type ImprovementCopy = {
   improvement: string;
@@ -740,15 +741,18 @@ export function ImprovementsPage() {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
     [build, setBuild] = useState(""),
-    [builds, setBuilds] = useState<Build[]>([]);
+    [builds, setBuilds] = useState<Build[]>([]),
+    [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
     api<Build[]>("/api/evaluation-builds")
       .then((next) => {
         setBuilds(next);
         setBuild((current) => current || next[0]?.id || "");
       })
-      .catch(() => setBuilds([]));
+      .catch(() => setBuilds([]))
+      .finally(() => setInitialLoading(false));
   }, []);
+  if (initialLoading) return <><SectionSkeleton rows={1} /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
   return (
     <>
       <section className="improvements-build-selector">
