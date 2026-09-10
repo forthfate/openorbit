@@ -5,7 +5,7 @@ test.use({ baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001' }
 test('shows the configured repositories and safely runs the approval-gated evaluation', async ({ page }) => {
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Evaluation builds' }).click()
+  await page.getByRole('button', { name: 'Builds' }).click()
   await expect(page).toHaveURL(/#builds/)
   const insighta = page.locator('.tr').filter({ hasText: 'Insighta Daily Quality' })
   await expect(insighta).toContainText('/home/forth/projects/insighta-user-simulator')
@@ -31,7 +31,7 @@ test('collapses the sidebar and preserves the preference after reload', async ({
   const toggle = page.getByRole('button', { name: 'Collapse navigation' })
   await toggle.click()
   await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
-  await expect(page.getByRole('button', { name: 'Evaluation builds' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Builds' })).toBeVisible()
   await page.reload()
   await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
   await page.getByRole('button', { name: 'Expand navigation' }).click()
@@ -39,10 +39,10 @@ test('collapses the sidebar and preserves the preference after reload', async ({
 
 test('opens the build and profile editors with editable lifecycle fields', async ({ page }) => {
   await page.goto('/#builds')
-  await expect(page.getByRole('heading', { name: 'Evaluation builds' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Builds' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  const buildDialog = page.getByRole('dialog', { name: 'Create evaluation build' })
+  const buildDialog = page.getByRole('dialog', { name: 'Create build' })
   await expect(buildDialog).toBeVisible()
   await expect(buildDialog.getByText('Build ID (e.g. local-smoke)')).toBeVisible()
   await buildDialog.getByRole('button', { name: 'Next' }).click()
@@ -80,7 +80,7 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
   const workflowId = `ui-workflow-${suffix}`
   await page.goto('/#builds')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Create evaluation build' })
+  const dialog = page.getByRole('dialog', { name: 'Create build' })
   const rowInput = (label: string) => dialog.getByText(label, { exact: true }).locator('..').getByRole('textbox')
   await rowInput('Build ID (e.g. local-smoke)').fill(buildId)
   await rowInput('Build name').fill(`UI smoke ${suffix}`)
@@ -108,9 +108,9 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
   await expect(buildRow).toBeVisible()
 
   await buildRow.getByRole('button', { name: 'Test' }).click()
-  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { evaluation_build_id?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.status === 'succeeded')?.status)).toBe('succeeded')
+  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { build_id?: string; status: string }[]) => runs.find(run => run.build_id === buildId && run.status === 'succeeded')?.status)).toBe('succeeded')
   await buildRow.getByRole('button', { name: 'Run' }).click()
-  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { evaluation_build_id?: string; execution_mode?: string; status: string }[]) => runs.find(run => run.evaluation_build_id === buildId && run.execution_mode === 'run' && run.status === 'succeeded')?.status)).toBe('succeeded')
+  await expect.poll(async () => (await page.request.get('/api/runs')).json().then((runs: { build_id?: string; execution_mode?: string; status: string }[]) => runs.find(run => run.build_id === buildId && run.execution_mode === 'run' && run.status === 'succeeded')?.status)).toBe('succeeded')
 })
 
 test('persists the selected interface language across pages and reloads', async ({ page }) => {
@@ -118,11 +118,11 @@ test('persists the selected interface language across pages and reloads', async 
   const languageSelect = page.locator('select').first()
   await languageSelect.selectOption('ja')
   await expect(page.getByRole('button', { name: 'ナビゲーションを折りたたむ', exact: true })).toHaveAttribute('title', 'ナビゲーションを折りたたむ')
-  await page.getByRole('button', { name: '評価ビルド' }).click()
-  await expect(page.getByRole('heading', { name: '評価ビルド', exact: true })).toBeVisible()
-  await expect(page.getByText('評価ビルド一覧')).toBeVisible()
+  await page.getByRole('button', { name: 'ビルド' }).click()
+  await expect(page.getByRole('heading', { name: 'ビルド', exact: true })).toBeVisible()
+  await expect(page.getByText('ビルド一覧')).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('button', { name: '評価ビルド' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'ビルド' })).toBeVisible()
   await page.goto('/#settings')
   await languageSelect.selectOption('ko')
   const collapse = page.getByRole('button', { name: '탐색 메뉴 접기', exact: true })

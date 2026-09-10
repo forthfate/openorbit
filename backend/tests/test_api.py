@@ -166,7 +166,7 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", app_data / "data" / "runs")
     monkeypatch.setattr(sdk, "ORBIT_APP_DATA", app_data)
     resources = base64.b64encode(
-        json.dumps({"evaluation_build": {"managed_prompt_path": "prompt.md"}}).encode()
+        json.dumps({"build": {"managed_prompt_path": "prompt.md"}}).encode()
     ).decode()
     update = RunnerContext(
         phase="before_each",
@@ -496,7 +496,7 @@ def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):
         id="feedback-history-run",
         workflow_id="workflow",
         workflow_name="Workflow",
-        evaluation_build_id="build-one",
+        build_id="build-one",
         execution_mode="run",
         execution_type="pipeline",
         status="succeeded",
@@ -514,7 +514,7 @@ def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):
             {"iteration": 2, "response": {"improvements": [], "reported_issues": []}},
         ],
     )
-    monkeypatch.setattr(store, "evaluation_builds", lambda: [{"id": "build-one", "approval_score": 8}])
+    monkeypatch.setattr(store, "builds", lambda: [{"id": "build-one", "approval_score": 8}])
 
     active = store.active_evaluations([run])
 
@@ -988,8 +988,8 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
             id="run-1",
             workflow_id="workflow",
             workflow_name="Workflow",
-            evaluation_build_id="build-1",
-            evaluation_build_name="Build 1",
+            build_id="build-1",
+            build_name="Build 1",
             status="succeeded",
             created_at=timestamp,
             updated_at=timestamp,
@@ -1034,8 +1034,8 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
     ]
     assert store.improvement_iteration_data("build-1") == [
         {
-            "evaluation_build_id": "build-1",
-            "evaluation_build_name": "Build 1",
+            "build_id": "build-1",
+            "build_name": "Build 1",
             "run_id": "run-1",
             "iteration": 2,
             "recorded_at": timestamp.isoformat(),

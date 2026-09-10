@@ -419,15 +419,15 @@ function ProposalHistory({
       }
     >();
     const iteration = (
-      evaluationBuildId: string | undefined,
-      evaluationBuildName: string | undefined,
+      buildId: string | undefined,
+      buildName: string | undefined,
       runId: string | undefined,
       value: number | undefined,
       recordedAt?: string,
     ) => {
-      const resolvedBuildId = evaluationBuildId || "unassigned";
+      const resolvedBuildId = buildId || "unassigned";
       const build = builds.get(resolvedBuildId) || {
-        name: evaluationBuildName || resolvedBuildId,
+        name: buildName || resolvedBuildId,
         runs: new Map(),
       };
       const resolvedRunId = runId || "unknown-run";
@@ -444,21 +444,21 @@ function ProposalHistory({
       builds.set(resolvedBuildId, build);
       return group;
     };
-    for (const item of items.filter((item) => !buildId || item.evaluation_build_id === buildId)) {
+    for (const item of items.filter((item) => !buildId || item.build_id === buildId)) {
       iteration(
-        item.evaluation_build_id,
-        item.evaluation_build_name,
+        item.build_id,
+        item.build_name,
         item.run_id,
         item.iteration,
         item.recorded_at,
       ).items.push(item);
     }
     for (const item of iterationData.filter(
-      (item) => !buildId || item.evaluation_build_id === buildId,
+      (item) => !buildId || item.build_id === buildId,
     )) {
       iteration(
-        item.evaluation_build_id,
-        item.evaluation_build_name,
+        item.build_id,
+        item.build_name,
         item.run_id,
         item.iteration,
         item.recorded_at,
@@ -592,8 +592,8 @@ function ProposalHistory({
                 label={statusLabel(selected.status)}
               />
               <span>
-                {selected.evaluation_build_name ||
-                  selected.evaluation_build_id ||
+                {selected.build_name ||
+                  selected.build_id ||
                   "—"}{" "}
                 · {t.iteration} #{selected.iteration ?? "—"}
               </span>
@@ -679,7 +679,7 @@ function CycleImprovementAI({
   const request = () => {
     setLoading(true);
     api<{ response: string }>("/api/cycle-improvements/analyze", "POST", {
-      evaluation_build_id: build,
+      build_id: build,
       locale,
     })
       .then((result) => setAnalysis(result.response))
@@ -744,7 +744,7 @@ export function ImprovementsPage() {
     [builds, setBuilds] = useState<Build[]>([]),
     [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
-    api<Build[]>("/api/evaluation-builds")
+    api<Build[]>("/api/builds")
       .then((next) => {
         setBuilds(next);
         setBuild((current) => current || next[0]?.id || "");

@@ -237,7 +237,7 @@ class RunnerContext:
     def resources(self) -> dict[str, object]:
         """Return the immutable resource snapshot provided for this invocation.
 
-        The snapshot can contain the workflow, evaluation build, fixed test
+        The snapshot can contain the workflow, build, fixed test
         cases, model profile, and execution-environment settings. Prefer the
         typed convenience properties when one is available.
         """
@@ -893,7 +893,7 @@ class RunnerContext:
         :meth:`rollback_file` to restore a selected one.
         """
         target, relative, directory, manifest_path, manifest = self._load_file_history(relative_path)
-        build = self.evaluation_build
+        build = self.build
         managed_prompt_path = str(build.get("managed_prompt_path") or build.get("prompt_bundle") or "")
         requires_human_approval = bool(build.get("require_human_approval_before_apply", False))
         if requires_human_approval and relative == managed_prompt_path:
@@ -1046,7 +1046,7 @@ class RunnerContext:
         )
         if existing is not None:
             return {"recorded": False, "decision": existing}
-        build = self.evaluation_build
+        build = self.build
         record = {
             "id": f"pd-{len(decisions) + 1:06d}-{fingerprint[:12]}",
             "event_type": "decision",
@@ -1059,8 +1059,8 @@ class RunnerContext:
             "iteration": self.loop_index,
             "phase": self.phase,
             "run_id": self.environment.get("ORBIT_RUN_ID") or None,
-            "evaluation_build_id": build.get("id") or None,
-            "evaluation_build_name": build.get("name") or None,
+            "build_id": build.get("id") or None,
+            "build_name": build.get("name") or None,
         }
         decisions.append(record)
         _atomic_write(
@@ -1092,7 +1092,7 @@ class RunnerContext:
         decisions = document.get("decisions") if isinstance(document, dict) else None
         if not isinstance(decisions, list):
             raise RuntimeError("Orbit proposal decision history is invalid")
-        build = self.evaluation_build
+        build = self.build
         recorded: list[dict[str, object]] = []
         for proposal_id in dict.fromkeys(proposal_ids):
             already_linked = any(
@@ -1113,8 +1113,8 @@ class RunnerContext:
                 "iteration": self.loop_index,
                 "phase": self.phase,
                 "run_id": self.environment.get("ORBIT_RUN_ID") or None,
-                "evaluation_build_id": build.get("id") or None,
-                "evaluation_build_name": build.get("name") or None,
+                "build_id": build.get("id") or None,
+                "build_name": build.get("name") or None,
                 "prompt_version": {
                     "id": prompt_version_id,
                     "path": file_update.get("path"),
@@ -1154,13 +1154,13 @@ class RunnerContext:
         return dict(self.resources.get("workflow", {}))
 
     @property
-    def evaluation_build(self) -> dict[str, object]:
-        """Return the evaluation-build snapshot supplied by Orbit."""
-        return dict(self.resources.get("evaluation_build", {}))
+    def build(self) -> dict[str, object]:
+        """Return the build snapshot supplied by Orbit."""
+        return dict(self.resources.get("build", {}))
 
     @property
     def test_cases(self) -> list[dict[str, object]]:
-        """Return the fixed target test cases selected for this evaluation build."""
+        """Return the fixed target test cases selected for this build."""
         return list(self.resources.get("test_cases", []))
 
     def resource(self, name: str, default: object = None) -> object:
@@ -1320,7 +1320,7 @@ class RunnerContext:
         The browser process is short lived.  Scheduling, locking, and any
         application-server lifecycle remain Orbit's responsibility.
         """
-        build = self.evaluation_build
+        build = self.build
         base_url = str(
             build.get("browser_base_url") or self.environment.get("ORBIT_BROWSER_BASE_URL") or ""
         ).strip()

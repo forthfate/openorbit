@@ -5,11 +5,11 @@ Audited: 2026-09-04. Scope: all tracked source, configuration, resources, tests 
 ## Current handoff memo — 2026-09-05
 
 - Orbit is running locally at `http://127.0.0.1:3001`; it never opens a browser automatically. It prefers port 3000 and advances to the next free port.
-- Current Evaluation builds: `insighta-quality-daily`, `jgent-workflow-gate`, and `hosted-agent-smoke`. Temporary UI smoke builds and workflows were removed.
-- Active evaluations is a build-facing 1:1 view: only the newest pipeline Run for each existing Evaluation build is shown. Deleted-build Run history is retained on disk but excluded from this view.
+- Current Builds: `insighta-quality-daily`, `jgent-workflow-gate`, and `hosted-agent-smoke`. Temporary UI smoke builds and workflows were removed.
+- Active evaluations is a build-facing 1:1 view: only the newest pipeline Run for each existing Build is shown. Deleted-build Run history is retained on disk but excluded from this view.
 - `Phase` is restricted to lifecycle phases (`before_all`, `before_each`, `execute`, `verify`, `after_each`, `after_all`). Terminal state is shown only in `Status`; completed history displays the last PID and the process console output.
 - The Active evaluations action column owns each Run's stop action. The header emergency stop remains the all-active-runs control.
-- Evaluation-build rows open the edit modal; radio, Test/Run, and Delete controls do not. An active build can be inspected but cannot be saved or deleted.
+- Build rows open the edit modal; radio, Test/Run, and Delete controls do not. An active build can be inspected but cannot be saved or deleted.
 - Prompts are structured and stored per build: a versioned manager template, task instruction, and fixed target-AI test cases. Settings can edit shared manager templates; every Run captures the assembled prompt snapshot.
 - On success, the configured manager provider is asked for required JSON (`improvements`, `reported_issues`). Validation outcome, response/error, and OpenTelemetry span events are retained per Run. An unconfigured provider does not turn a successful target pipeline into a failed pipeline.
 - UI defaults to English and Midnight. English/Korean/Japanese selections persist in local storage. Dashboard metrics/cards, build flow, active-evaluation detail, settings, and improvement views use the selected locale.
@@ -46,7 +46,7 @@ Audited: 2026-09-04. Scope: all tracked source, configuration, resources, tests 
 
 1. Add immutable `EvaluationRun` evidence and redacted per-line OTEL console events.
 2. Guarantee `after_each` in a runner `finally`; add graceful cancellation and Windows process-tree termination.
-3. Add Evaluation Build CRUD, prompt revisions and platform command profiles.
+3. Add Build CRUD, prompt revisions and platform command profiles.
 4. Invoke the selected provider during `verify` and validate structured prompt-policy output against hard safety rules.
 5. Add candidate diff isolation, baseline/current scoring, approval records, Git commit/revert and PR connector interfaces.
 6. Replace seed improvement metrics with evidence-derived records and complete locale/theme extraction.

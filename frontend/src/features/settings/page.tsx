@@ -8,7 +8,7 @@ import { SectionInfo } from "../../components/ui/section-info";
 import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { ProfileForm, type ProfileFormCopy } from "../builds/page";
 import { OrbitLogs } from "./orbit-logs";
 
 type ApplicationSettings = {

@@ -7,7 +7,7 @@ import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { AssetsPage } from "./features/assets/page";
-import { EvaluationBuildsPage } from "./features/evaluation-builds/page";
+import { BuildsPage } from "./features/builds/page";
 import { EvaluationsPage } from "./features/evaluations/page";
 import { ImprovementsPage } from "./features/improvements/page";
 import { SettingsPage } from "./features/settings/page";
@@ -147,14 +147,14 @@ export default function App() {
     });
   };
   const invoke = (id: string) =>
-    api(`/api/evaluation-builds/${id}/runs`, "POST")
+    api(`/api/builds/${id}/runs`, "POST")
       .then(() => {
         room.setNotice(ui.evaluationStarted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
   const testBuild = (id: string) =>
-    api<Run>(`/api/evaluation-builds/${id}/tests`, "POST")
+    api<Run>(`/api/builds/${id}/tests`, "POST")
       .then((run) => {
         room.setNotice(ui.evaluationTestStarted, "success");
         return run;
@@ -164,9 +164,9 @@ export default function App() {
         throw e;
       });
   const createBuild = (values: unknown) =>
-    api("/api/evaluation-builds", "POST", values)
+    api("/api/builds", "POST", values)
       .then(() => {
-        room.setNotice(ui.evaluationBuildCreated, "success");
+        room.setNotice(ui.buildCreated, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -183,9 +183,9 @@ export default function App() {
         throw e;
       });
   const updateBuild = (id: string, values: unknown) =>
-    api(`/api/evaluation-builds/${id}`, "PUT", values)
+    api(`/api/builds/${id}`, "PUT", values)
       .then(() => {
-        room.setNotice(ui.evaluationBuildUpdated, "success");
+        room.setNotice(ui.buildUpdated, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -221,9 +221,9 @@ export default function App() {
     if (!deletingBuild) return;
     const id = deletingBuild;
     setDeletingBuild(null);
-    api(`/api/evaluation-builds/${id}`, "DELETE")
+    api(`/api/builds/${id}`, "DELETE")
       .then(() => {
-        room.setNotice(ui.evaluationBuildDeleted, "success");
+        room.setNotice(ui.buildDeleted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -266,7 +266,7 @@ export default function App() {
       />
     ),
     builds: (
-      room.loading ? <SectionSkeleton rows={6} /> : <EvaluationBuildsPage
+      room.loading ? <SectionSkeleton rows={6} /> : <BuildsPage
         locale={locale}
         builds={room.builds}
         runners={room.runners}

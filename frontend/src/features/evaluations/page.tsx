@@ -281,12 +281,12 @@ export function EvaluationsPage({
     () => [
       ...new Map(
         runs.map((run) => [
-          run.evaluation_build_id ?? run.workflow_id,
+          run.build_id ?? run.workflow_id,
           {
-            id: run.evaluation_build_id ?? run.workflow_id,
+            id: run.build_id ?? run.workflow_id,
             name:
-              run.evaluation_build_name ??
-              run.evaluation_build_id ??
+              run.build_name ??
+              run.build_id ??
               run.workflow_name,
           },
         ]),
@@ -298,10 +298,10 @@ export function EvaluationsPage({
     (run) =>
       statuses.has(run.status) &&
       (!buildFilter ||
-        (run.evaluation_build_id ?? run.workflow_id) === buildFilter) &&
+        (run.build_id ?? run.workflow_id) === buildFilter) &&
       (modeFilter === "all" || run.execution_mode === modeFilter) &&
       (!phaseFilter || run.current_phase === phaseFilter) &&
-      (!keywordFilter || [run.id, run.evaluation_build_name, run.evaluation_build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
+      (!keywordFilter || [run.id, run.build_name, run.build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
       (!activeOnly || activeStatuses.has(run.status)),
   );
   const toggleStatus = (status: string) =>
@@ -437,14 +437,14 @@ export function EvaluationsPage({
     {id:"select",header:<input aria-label="Select all runs on this page" type="checkbox" checked={allPageSelected} disabled={!selectableRuns.length} onChange={togglePage}/>,render:r=><input aria-label={`Select run ${r.id}`} type="checkbox" checked={selectedRunIds.has(r.id)} disabled={!terminal(r.status)} onChange={()=>toggleRun(r.id)}/>},
     {
       id: "build",
-      header: t.evaluationBuild,
+      header: t.build,
       render: (r) => (
         <span className="run-build">
-          <strong>{r.evaluation_build_name ?? r.evaluation_build_id}</strong>
+          <strong>{r.build_name ?? r.build_id}</strong>
           <code>{r.id}</code>
         </span>
       ),
-      sortValue: (r) => r.evaluation_build_name ?? r.evaluation_build_id ?? r.workflow_name,
+      sortValue: (r) => r.build_name ?? r.build_id ?? r.workflow_name,
     },
     {
       id: "started",
@@ -797,7 +797,7 @@ export function EvaluationsPage({
               <input value={draftKeywordFilter} onChange={(event) => setDraftKeywordFilter(event.target.value)} placeholder={ui.keywordHint} />
             </label>
             <label>
-              {ui.evaluationBuild}
+              {ui.build}
               <select
                 value={draftBuildFilter}
                 onChange={(event) => setDraftBuildFilter(event.target.value)}
@@ -903,8 +903,8 @@ export function EvaluationsPage({
         >
           <div className="run-detail-evaluation">
             <strong>
-              {selected.evaluation_build_name ??
-                selected.evaluation_build_id ??
+              {selected.build_name ??
+                selected.build_id ??
                 selected.workflow_name}
             </strong>
             <code>{selected.id}</code>

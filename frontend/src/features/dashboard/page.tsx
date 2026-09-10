@@ -281,7 +281,7 @@ export function DashboardPage({
         <div className="metrics">
         <MetricCard
           label={t.totalEval}
-          value={`${data?.metrics.evaluation_builds ?? 0}`}
+          value={`${data?.metrics.builds ?? 0}`}
         />
         <MetricCard
           label={t.completedEval}
@@ -309,11 +309,11 @@ export function DashboardPage({
               className="evaluation-card"
               key={run.id}
               onClick={() =>
-                active ? onOpenRun() : openBuild(run.evaluation_build_id)
+                active ? onOpenRun() : openBuild(run.build_id)
               }
             >
               <small>{`${eventLabel} · ${relativeRunTime(eventTime, locale)}`}</small>
-              <strong>{run.evaluation_build_name ?? run.workflow_name}</strong>
+              <strong>{run.build_name ?? run.workflow_name}</strong>
               <span>{run.current_phase ?? run.status}</span>
               <StatusBadge value={run.status} />
             </button>

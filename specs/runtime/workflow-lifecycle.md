@@ -23,11 +23,11 @@ Runner assets declare the lifecycle phases they use. When all standard phases ar
 
 ## Scheduling
 
-Each generated runner step has a timeout and optional minimum interval. Evaluation builds declare timezone, repeat interval and total run limit. Retry policy, activity windows and their dashboard controls are planned.
+Each generated runner step has a timeout and optional minimum interval. Builds declare timezone, repeat interval and total run limit. Retry policy, activity windows and their dashboard controls are planned.
 
 ## Server-hosted agents
 
-An evaluation build may use the `remote-http` executor to invoke a server-hosted agent. It declares an absolute HTTP(S) endpoint, allowed method, timeout and non-secret payload. Embedded URL credentials are prohibited. The request, response status and trace ID are retained with the run; authentication environment-variable references, response redaction and complete lifecycle staging are planned.
+A build may use the `remote-http` executor to invoke a server-hosted agent. It declares an absolute HTTP(S) endpoint, allowed method, timeout and non-secret payload. Embedded URL credentials are prohibited. The request, response status and trace ID are retained with the run; authentication environment-variable references, response redaction and complete lifecycle staging are planned.
 
 ## Planned work
 
