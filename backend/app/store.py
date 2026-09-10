@@ -2060,6 +2060,36 @@ if __name__ == "__main__":
             test_steps=deepcopy(steps),
         )
 
+    def _runner_graph_definition(self, runner_id: str, repository: str | None) -> dict[str, Any] | None:
+        """Read the runner's optional visual-workflow declaration safely."""
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(ROOT / "backend") + (
+            os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else ""
+        )
+        environment["ORBIT_TARGET_REPOSITORY"] = repository or str(ROOT)
+        environment["ORBIT_APP_DATA"] = str(APP_DATA)
+        try:
+            result = subprocess.run(
+                [sys.executable, str(RUNNERS / f"{runner_id}.py"), "--graph"],
+                cwd=repository or ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                timeout=10,
+                check=False,
+            )
+            definition = json.loads(result.stdout) if result.returncode == 0 else None
+        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(definition, dict)
+            or not isinstance(definition.get("nodes"), list)
+            or not isinstance(definition.get("edges"), list)
+        ):
+            return None
+        return definition
+
     def builds(self) -> list[dict[str, Any]]:
         path = CONFIG / "builds.yaml"
         builds = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
@@ -3584,8 +3614,21 @@ if __name__ == "__main__":
             raise KeyError(run_id)
         return Run.model_validate_json(path.read_text(encoding="utf-8"))
 
+    def _hydrate_workflow_graph(self, run: Run) -> Run:
+        """Attach a runner graph to historical runs when their detail is opened."""
+        if run.workflow_graph or not run.build_id:
+            return run
+        build = next((item for item in self.builds() if item.get("id") == run.build_id), None)
+        if not build:
+            return run
+        definition = self._runner_graph_definition(build.get("runner_id", ""), build.get("repository"))
+        if definition:
+            run.workflow_graph = definition
+            self._save(run)
+        return run
+
     def run(self, run_id: str) -> Run:
-        return self._load(run_id)
+        return self._hydrate_workflow_graph(self._load(run_id))
 
     def runs(self) -> list[Run]:
         entries = [Run.model_validate_json(path.read_text(encoding="utf-8")) for path in RUNS.glob("*.json")]
@@ -3665,6 +3708,7 @@ if __name__ == "__main__":
             start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
             retry_of_run_id=retry_of_run_id,
             retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
+            workflow_graph=self._runner_graph_definition(runner_id, repository),
             repeat_interval_minutes=max(0, repeat_interval_minutes),
             cadence_mode="fixed" if cadence_mode == "fixed" else "after_completion",
             overrun_policy="interrupt_eval" if overrun_policy == "interrupt_eval" else "wait",

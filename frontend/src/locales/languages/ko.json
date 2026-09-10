@@ -595,6 +595,8 @@
       "evaluation": "결과",
       "iteration": "반복",
       "detail": "실행 상세",
+      "workflowGraph": "워크플로우 그래프",
+      "noWorkflowGraph": "이 작업에는 표시할 워크플로우가 선언되어 있지 않습니다.",
       "workflow": "워크플로 로그",
       "workflowDescription": "단계별 실행 로그와 브라우저 근거를 검토합니다.",
       "workflowDataHint": "before_all, before_each, execute, verify, after_each, after_all 단계가 실행되고 러너가 출력이나 근거를 남기면 표시됩니다.",

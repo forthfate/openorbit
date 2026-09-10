@@ -106,6 +106,7 @@ class Run(BaseModel):
     supervisor_response: dict[str, Any] | None = None
     supervisor_error: str | None = None
     supervisor_results: list[dict[str, Any]] = Field(default_factory=list)
+    workflow_graph: dict[str, Any] | None = None
     runner_output: str = ""
     step_results: list[dict] = []
     approval_reason: str | None = None

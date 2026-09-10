@@ -2,6 +2,7 @@ import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilt
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
+  WorkflowGraphNode,
   CommitChange,
   PromptRevision,
   RunTelemetry,
@@ -15,6 +16,7 @@ import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Tooltip } from "../../components/ui/tooltip";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { intlLocales, localeMessageMap, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
@@ -552,10 +554,11 @@ export function EvaluationsPage({
     },
     sortValue: (r) => Math.max(0, ...(r.step_results ?? []).map((step) => step.loop_index ?? 0)),
   });
-  const steps = selected?.step_results ?? [],
+  const steps = useMemo(() => selected?.step_results ?? [], [selected?.step_results]);
+  const iterations =
     // `after_all` is bookkeeping after the last loop. It must not become the
     // default detail iteration because supervisor results belong to execute/verify.
-    iterations = [
+    [
       ...new Set([
         ...steps
           .filter((step) => ["execute", "verify"].includes(step.phase ?? step.step_id ?? ""))
@@ -563,25 +566,44 @@ export function EvaluationsPage({
           .filter((index) => index > 0),
         ...(selected?.supervisor_results ?? []).map((item) => item.iteration ?? 0).filter((index) => index > 0),
       ]),
-    ].sort((a, b) => a - b),
+    ].sort((a, b) => a - b);
     // `before_all` and `after_all` are process-level steps, not iterations.
     // Include them beside the relevant iteration so their evidence remains
     // visible without inventing a separate, misleading iteration.
-    selectedSteps = steps.filter(
+  const selectedSteps = steps.filter(
       (step) =>
         (!candidateTab || step.candidate_id === candidateTab) &&
         (step.loop_index === iterationTab ||
           ((step.phase ?? step.step_id) === "before_all" && iterationTab === iterations[0]) ||
           ((step.phase ?? step.step_id) === "after_all" && iterationTab === iterations.at(-1))),
-    ),
-    availablePhases = phases.filter((phase) =>
-      selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
-    ),
-    supervision = selected?.supervisor_results?.find(
-      (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
-    ),
-    result = supervision?.response,
-    evaluation = result?.evaluation;
+    );
+  const availablePhases = phases.filter((phase) =>
+    selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
+  );
+  const supervision = selected?.supervisor_results?.find(
+    (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
+  );
+  const result = supervision?.response;
+  const evaluation = result?.evaluation;
+  const workflowGraph = useMemo(() => {
+    const definition = selected?.workflow_graph;
+    if (!definition?.nodes.length) return null;
+    return {
+      ...definition,
+      nodes: definition.nodes.map((node) => {
+        const phaseSteps = steps.filter((step) => (step.phase ?? step.step_id) === node.phase);
+        const latestStep = phaseSteps.at(-1);
+        const status: WorkflowGraphNode["status"] = selected?.status === "running" && node.phase === selected.current_phase
+          ? "running"
+          : latestStep?.error || (latestStep?.exit_code ?? 0) !== 0
+            ? "failed"
+            : latestStep
+              ? "succeeded"
+              : "idle";
+        return { ...node, status };
+      }),
+    };
+  }, [selected, steps]);
   const resultFilterOptions = useMemo(() => {
     const improvementStatuses = new Set<string>(),
       issueSeverities = new Set<string>(),
@@ -941,6 +963,13 @@ export function EvaluationsPage({
               <strong>{evaluation?.approval ?? "—"}</strong>
             </div>
           </div>
+          <section className="run-detail-workflow-graph" aria-label={l.workflowGraph}>
+            {workflowGraph ? (
+              <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} />
+            ) : (
+              <p className="hint">{l.noWorkflowGraph}</p>
+            )}
+          </section>
           <RunDetailTabs
             activeTab={tab}
             onSelect={setTab}

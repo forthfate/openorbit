@@ -1468,8 +1468,13 @@ class Runner:
         process environment; callers should not invoke this method directly.
         """
         parser = argparse.ArgumentParser(description="Orbit runner phase")
-        parser.add_argument("--phase", required=True)
+        command = parser.add_mutually_exclusive_group(required=True)
+        command.add_argument("--phase")
+        command.add_argument("--graph", action="store_true")
         args = parser.parse_args()
+        if args.graph:
+            print(json.dumps(graph.definition(), ensure_ascii=False))
+            return
         phase = canonical_phase(args.phase)
         handler = self._handlers.get(phase)
         if handler is None:

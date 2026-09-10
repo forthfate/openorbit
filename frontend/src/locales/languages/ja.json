@@ -595,6 +595,8 @@
       "evaluation": "結果",
       "iteration": "反復",
       "detail": "実行の詳細",
+      "workflowGraph": "ワークフローグラフ",
+      "noWorkflowGraph": "このタスクには表示する宣言済みワークフローがありません。",
       "workflow": "ワークフローログ",
       "workflowDescription": "フェーズごとの実行ログとブラウザー証跡を確認します。",
       "workflowDataHint": "before_all、before_each、execute、verify、after_each、after_all の各フェーズが出力または根拠を残すと表示されます。",

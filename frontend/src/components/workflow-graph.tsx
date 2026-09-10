@@ -16,5 +16,5 @@ export function WorkflowGraph({ nodes, edges, className = "" }: { nodes: Workflo
     const renderedEdges: Edge[] = edges.map((edge, index) => ({ id: `${edge.source}-${edge.target}-${index}`, source: edge.source, target: edge.target, label: edge.label ?? undefined, type: "smoothstep", animated: edge.kind === "loop", markerEnd: { type: MarkerType.ArrowClosed }, className: `workflow-graph-edge workflow-graph-edge--${edge.kind ?? "execution"}` }));
     return [rendered, renderedEdges];
   }, [nodes, edges]);
-  return <div className={`workflow-graph ${className}`}><ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} fitView minZoom={0.2} nodesDraggable panOnDrag><Background gap={20} size={1} /><Controls showInteractive={false} /></ReactFlow></div>;
+  return <div className={`workflow-graph ${className}`}><ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes} fitView minZoom={0.2} nodesDraggable panOnDrag attributionPosition="top-left"><Background gap={20} size={1} /><Controls showInteractive={false} position="bottom-right" /></ReactFlow></div>;
 }
