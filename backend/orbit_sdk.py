@@ -17,10 +17,126 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
+
+
+@dataclass(frozen=True)
+class GraphNode:
+    """A declarative visual-workflow node attached to a runner function."""
+
+    id: str
+    title: str
+    phase: str | None
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class GraphEdge:
+    """A directed relationship between visual-workflow nodes."""
+
+    source: str
+    target: str
+    kind: Literal["execution", "data", "condition", "loop", "error"] = "execution"
+    label: str | None = None
+    source_port: str | None = None
+    target_port: str | None = None
+
+
+class Graph:
+    """Declare a runner's visual workflow without changing its execution.
+
+    ``graph`` is intentionally declarative: decorators only retain metadata.
+    Orbit may inspect :meth:`definition` before a run, then overlay runtime
+    status onto the same node IDs after a run.
+    """
+
+    def __init__(self) -> None:
+        self._nodes: dict[str, GraphNode] = {}
+        self._edges: list[GraphEdge] = []
+
+    def step(
+        self,
+        id: str | None = None,
+        *,
+        title: str | None = None,
+        phase: str | None = None,
+        inputs: tuple[str, ...] | list[str] = (),
+        outputs: tuple[str, ...] | list[str] = (),
+        description: str | None = None,
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """Annotate one function as a visual workflow node.
+
+        ``phase`` is an optional display group, not a hard-coded lifecycle
+        enum, so a runner can evolve its lifecycle without changing this API.
+        """
+
+        def register(handler: Callable[..., Any]) -> Callable[..., Any]:
+            node_id = id or handler.__name__
+            if not node_id or node_id in self._nodes:
+                raise ValueError(f"graph node ID must be unique: {node_id!r}")
+            node = GraphNode(
+                id=node_id,
+                title=title or handler.__name__.replace("_", " ").title(),
+                phase=phase,
+                inputs=tuple(inputs),
+                outputs=tuple(outputs),
+                description=description,
+            )
+            self._nodes[node_id] = node
+            setattr(handler, "__orbit_graph_node__", node)
+            return handler
+
+        return register
+
+    def connect(
+        self,
+        source: str,
+        target: str,
+        *,
+        kind: Literal["execution", "data", "condition", "loop", "error"] = "execution",
+        label: str | None = None,
+        source_port: str | None = None,
+        target_port: str | None = None,
+    ) -> GraphEdge:
+        """Declare a typed arrow; ``loop`` and ``condition`` model control flow."""
+        edge = GraphEdge(source, target, kind, label, source_port, target_port)
+        self._edges.append(edge)
+        return edge
+
+    def definition(self) -> dict[str, object]:
+        """Return JSON-safe graph data for a visual client or source inspector."""
+        return {
+            "nodes": [
+                {
+                    "id": node.id,
+                    "title": node.title,
+                    "phase": node.phase,
+                    "inputs": list(node.inputs),
+                    "outputs": list(node.outputs),
+                    "description": node.description,
+                }
+                for node in self._nodes.values()
+            ],
+            "edges": [
+                {
+                    "source": edge.source,
+                    "target": edge.target,
+                    "kind": edge.kind,
+                    "label": edge.label,
+                    "source_port": edge.source_port,
+                    "target_port": edge.target_port,
+                }
+                for edge in self._edges
+            ],
+        }
+
+
+graph = Graph()
 
 
 def ORBIT_PROJECT_PATH(*parts: str) -> Path:

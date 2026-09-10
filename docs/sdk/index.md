@@ -56,6 +56,36 @@ if __name__ == "__main__":
     runner.main()
 ```
 
+## Declare a visual workflow graph
+
+Import `graph` alongside `runner` to annotate visual nodes without changing
+the runner's execution behavior. A node may belong to any phase name; the
+visual client groups nodes by the supplied value instead of assuming a fixed
+lifecycle. Typed arrows represent execution, data, conditions, loops, and
+error handling.
+
+```python
+from orbit_sdk import graph, runner
+
+
+@graph.step("collect-evidence", phase="before_each", outputs=["evidence"])
+def collect_evidence(ctx):
+    ...
+
+
+@graph.step("verify-outcome", phase="verify", inputs=["evidence"])
+def verify_outcome(ctx):
+    ...
+
+
+graph.connect("collect-evidence", "verify-outcome", kind="data", label="evidence")
+graph.connect("verify-outcome", "collect-evidence", kind="loop", label="next iteration")
+```
+
+Call `graph.definition()` to obtain JSON-safe `nodes` and `edges` for a
+source inspector or visual client. Node IDs are stable join keys for future
+runtime status, logs, timings, and artifacts.
+
 Snapshots include tracked, staged, untracked, and ignored files, plus file
 modes and symbolic links. They also preserve empty directories in Orbit's
 private snapshot manifest. The target must be a Git worktree root and remain
