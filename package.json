@@ -1,6 +1,6 @@
 {
   "name": "openorbit",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Open control plane for recurring AI automations",
   "license": "MIT",
   "type": "module",
