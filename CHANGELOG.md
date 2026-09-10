@@ -5,6 +5,26 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-09-10
+
+### Added
+
+- Initial loading skeletons now match the layouts of Assets, Dashboard, Builds, Runs, Improvements, and Settings.
+- Runner workflow graphs now annotate lifecycle steps with execution information.
+- The runner lifecycle and sortable-list controls are generalized for reuse across workflows and catalog views.
+- Direct dependency license inventory is documented in the repository.
+
+### Changed
+
+- Evaluation Builds are now called Builds, and Improvement Results are now called Improvements, throughout the application, documentation, and localized UI.
+- Workflow lifecycle phases are standardized as `before_all`, `before_each`, `execute`, `verify`, `after_each`, and `after_all`.
+- Application-data path editing and localized help keys have clearer, more stable behavior.
+
+### Breaking changes
+
+- Build API routes now use `/api/builds` instead of `/api/evaluation-builds`; clients must update build create, read, update, delete, run, and test requests.
+- New workflow definitions and run records use the standardized lifecycle phases and `build_id` / `build_name` fields. Legacy lifecycle phase names remain readable for stored workflows and integrations.
+
 ## [0.7.0] - 2026-09-10
 
 ### Added
@@ -174,3 +194,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.3.0]: https://github.com/forthfate/openorbit/releases/tag/v0.3.0
 [0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0
 [0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1
+[0.8.0]: https://github.com/forthfate/openorbit/releases/tag/v0.8.0
