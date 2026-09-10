@@ -370,7 +370,7 @@ export default function App() {
         ).length
       }
     >
-     <Suspense fallback={<div className="page-stack">Loading...</div>}>
+     <Suspense fallback={<SectionSkeleton rows={6} />}>
   <div className="page-stack">{content}</div>
 </Suspense>
       <ConfirmDialog
