@@ -2,19 +2,19 @@
 
 ## Development
 
-Python 3.11+ and Node 20+ are required.
+Python 3.13+ and Node 24+ are required.
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -e '.[dev]'
 .venv/bin/python -m pytest
 .venv/bin/ruff check orbit/ backend/ tests/
-npm --prefix frontend install
-npm --prefix frontend run build
+corepack enable
+pnpm install
+pnpm --filter agent-improvement-console-ui run build
 ```
 
-For the packaged local-app path, run `npm install` at the repository root and
-then `npx orbit-agent-console run --no-open`.
+For the packaged local-app path, run `orbit run`.
 
 On Windows, activate the environment with `.venv\\Scripts\\Activate.ps1` and
 use `.venv\\Scripts\\python.exe`.
@@ -43,7 +43,7 @@ React application with a Vite production build before each commit.
 .venv/bin/pre-commit run --all-files
 ```
 
-The React hook needs `npm --prefix frontend install` to have been run once.
+The React hook needs `pnpm install` to have been run once.
 
 ## Releases
 
