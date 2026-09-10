@@ -4,21 +4,24 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from . import store as store_module
+from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .store import ConsoleStore
+from .terminal import serve_terminal
 
 app = FastAPI(
     title="OpenOrbit API",
     version="0.2.0",
     summary="A local control plane API for recurring AI automations.",
     description="""\
-The versioned API follows a GitLab-inspired resource model: an evaluation build
+The versioned API follows a GitLab-inspired resource model: a build
 is exposed as a **project**, and every invocation is exposed as a **pipeline**.
 
 This service is local by default and has no built-in authentication. Put it
@@ -29,7 +32,7 @@ operator's machine.
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_tags=[
-        {"name": "Projects", "description": "Configured evaluation builds and their assets."},
+        {"name": "Projects", "description": "Configured builds and their assets."},
         {"name": "Pipelines", "description": "Runner executions and approval actions."},
         {"name": "Runners", "description": "Executable local runner assets."},
         {"name": "Runner templates", "description": "Reusable runner-source templates."},
@@ -59,6 +62,7 @@ app.add_middleware(
 )
 store = ConsoleStore()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
 
 
 def safely(action):
@@ -121,22 +125,30 @@ def runs():
     values = []
     for run in store.runs():
         item = run.model_dump(mode="json")
-        response = run.supervisor_response or {"improvements": [], "reported_issues": []}
-        improvements = response.get("improvements", [])
-        item["proposed_improvements"] = len(improvements) if isinstance(improvements, list) else 0
-        item["approved_improvements"] = (
-            len(
-                [
-                    entry
-                    for entry in improvements
-                    if isinstance(entry, dict) and entry.get("status") == "adopted"
-                ]
-            )
-            if isinstance(improvements, list)
-            else 0
+        responses = [
+            record.get("response")
+            for record in run.supervisor_results
+            if isinstance(record, dict) and isinstance(record.get("response"), dict)
+        ]
+        if not responses and isinstance(run.supervisor_response, dict):
+            responses = [run.supervisor_response]
+        improvements = [
+            improvement
+            for response in responses
+            for improvement in response.get("improvements", [])
+            if isinstance(improvement, dict)
+        ]
+        issues = [
+            issue
+            for response in responses
+            for issue in response.get("reported_issues", [])
+            if isinstance(issue, dict)
+        ]
+        item["proposed_improvements"] = len(improvements)
+        item["approved_improvements"] = sum(
+            improvement.get("status") == "adopted" for improvement in improvements
         )
-        issues = response.get("reported_issues", [])
-        item["reported_issues"] = len(issues) if isinstance(issues, list) else 0
+        item["reported_issues"] = len(issues)
         values.append(item)
     return values
 
@@ -161,14 +173,29 @@ def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
 
 
+@app.get("/api/runs/{run_id}/prompt-revisions")
+def prompt_revisions(run_id: str):
+    return safely(lambda: store.prompt_revisions(run_id))
+
+
+@app.get("/api/runs/{run_id}/commit-changes")
+def commit_changes(run_id: str):
+    return safely(lambda: store.commit_changes(run_id))
+
+
+@app.get("/api/runs/{run_id}/artifacts/{loop_index}/{artifact_path:path}")
+def run_artifact(run_id: str, loop_index: int, artifact_path: str):
+    return safely(lambda: FileResponse(store.run_artifact(run_id, loop_index, artifact_path)))
+
+
 @app.get("/api/dashboard")
 def dashboard():
     return store.dashboard()
 
 
-@app.get("/api/evaluation-builds")
-def evaluation_builds():
-    return store.evaluation_builds()
+@app.get("/api/builds")
+def builds():
+    return store.builds()
 
 
 @app.get("/api/prompt-templates")
@@ -315,28 +342,28 @@ def workspaces(path: str | None = None):
     return safely(lambda: store.workspaces(path))
 
 
-@app.post("/api/evaluation-builds/{build_id}/runs")
-def invoke_evaluation_build(build_id: str):
+@app.post("/api/builds/{build_id}/runs")
+def invoke_build(build_id: str):
     return safely(lambda: store.invoke_remote_build(build_id))
 
 
-@app.post("/api/evaluation-builds/{build_id}/tests")
-def test_evaluation_build(build_id: str):
-    return safely(lambda: store.test_evaluation_build(build_id))
+@app.post("/api/builds/{build_id}/tests")
+def test_build(build_id: str):
+    return safely(lambda: store.test_build(build_id))
 
 
-@app.get("/api/evaluation-build-tests/{session_id}")
-def evaluation_build_test(session_id: str):
+@app.get("/api/build-tests/{session_id}")
+def build_test(session_id: str):
     """Return a process-local test session; it is never part of run history."""
     return safely(lambda: store.test_session(session_id))
 
 
-@app.delete("/api/evaluation-build-tests/{session_id}", status_code=204)
-def discard_evaluation_build_test(session_id: str):
+@app.delete("/api/build-tests/{session_id}", status_code=204)
+def discard_build_test(session_id: str):
     safely(lambda: store.discard_test_session(session_id))
 
 
-class EvaluationBuildCreate(BaseModel):
+class BuildCreate(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
     runner_id: str
@@ -352,8 +379,17 @@ class EvaluationBuildCreate(BaseModel):
     browser_library_path: str = Field(default="", max_length=4_000)
     timezone: str = Field(min_length=1, max_length=64)
     repeat_interval_minutes: int = Field(ge=1, le=10080)
+    cadence_mode: Literal["after_completion", "fixed"] = "after_completion"
+    overrun_policy: Literal["wait", "interrupt_eval"] = "wait"
     run_limit: int = Field(ge=1, le=10000)
+    schedule_enabled: bool = False
+    schedule_weekdays: list[int] = Field(default_factory=list)
+    schedule_start_time: str = Field(default="09:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    schedule_end_time: str = Field(default="18:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    iteration_strategy: Literal["linear", "score_select"] = "linear"
+    candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
+    require_human_approval_before_apply: bool = False
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
     )  # Legacy fallback; selected execution environment is authoritative.
@@ -467,19 +503,19 @@ def open_runner_in_vscode(runner_id: str):
     return safely(lambda: store.open_runner_in_vscode(runner_id))
 
 
-@app.post("/api/evaluation-builds")
-def create_evaluation_build(values: EvaluationBuildCreate):
-    return safely(lambda: store.create_evaluation_build(values.model_dump()))
+@app.post("/api/builds")
+def create_build(values: BuildCreate):
+    return safely(lambda: store.create_build(values.model_dump()))
 
 
-@app.put("/api/evaluation-builds/{build_id}")
-def update_evaluation_build(build_id: str, values: EvaluationBuildCreate):
-    return safely(lambda: store.update_evaluation_build(build_id, values.model_dump()))
+@app.put("/api/builds/{build_id}")
+def update_build(build_id: str, values: BuildCreate):
+    return safely(lambda: store.update_build(build_id, values.model_dump()))
 
 
-@app.delete("/api/evaluation-builds/{build_id}")
-def delete_evaluation_build(build_id: str):
-    return safely(lambda: store.delete_evaluation_build(build_id))
+@app.delete("/api/builds/{build_id}")
+def delete_build(build_id: str):
+    return safely(lambda: store.delete_build(build_id))
 
 
 # Public, versioned API.  The existing /api/* endpoints above remain the UI's
@@ -489,14 +525,14 @@ def delete_evaluation_build(build_id: str):
     tags=["Projects"],
     operation_id="listProjects",
     summary="List projects",
-    response_description="A page of evaluation-build projects.",
+    response_description="A page of builds.",
 )
 def list_projects(
     response: Response,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
 ):
-    return paginated(store.evaluation_builds(), response, page, per_page)
+    return paginated(store.builds(), response, page, per_page)
 
 
 @app.get(
@@ -506,7 +542,7 @@ def list_projects(
     summary="Get a project",
 )
 def get_project(project_id: str):
-    return safely(lambda: store.evaluation_build(project_id))
+    return safely(lambda: store.build(project_id))
 
 
 @app.post(
@@ -516,8 +552,8 @@ def get_project(project_id: str):
     status_code=201,
     summary="Create a project",
 )
-def create_project(values: EvaluationBuildCreate):
-    return safely(lambda: store.create_evaluation_build(values.model_dump()))
+def create_project(values: BuildCreate):
+    return safely(lambda: store.create_build(values.model_dump()))
 
 
 @app.put(
@@ -526,8 +562,8 @@ def create_project(values: EvaluationBuildCreate):
     operation_id="updateProject",
     summary="Replace a project configuration",
 )
-def replace_project(project_id: str, values: EvaluationBuildCreate):
-    return safely(lambda: store.update_evaluation_build(project_id, values.model_dump()))
+def replace_project(project_id: str, values: BuildCreate):
+    return safely(lambda: store.update_build(project_id, values.model_dump()))
 
 
 @app.delete(
@@ -538,7 +574,7 @@ def replace_project(project_id: str, values: EvaluationBuildCreate):
     summary="Delete a project",
 )
 def remove_project(project_id: str):
-    safely(lambda: store.delete_evaluation_build(project_id))
+    safely(lambda: store.delete_build(project_id))
 
 
 @app.get(
@@ -554,8 +590,8 @@ def list_project_pipelines(
     per_page: int = Query(default=20, ge=1, le=100),
 ):
     # Validate the parent resource even when it has not run a pipeline yet.
-    safely(lambda: store.evaluation_build(project_id))
-    runs = [run for run in store.runs() if run.evaluation_build_id == project_id]
+    safely(lambda: store.build(project_id))
+    runs = [run for run in store.runs() if run.build_id == project_id]
     return paginated(runs, response, page, per_page)
 
 
@@ -605,7 +641,7 @@ def list_pipelines(
 ):
     runs = store.runs()
     if project_id:
-        runs = [run for run in runs if run.evaluation_build_id == project_id]
+        runs = [run for run in runs if run.build_id == project_id]
     if status:
         runs = [run for run in runs if run.status == status]
     return paginated(runs, response, page, per_page)
@@ -823,12 +859,52 @@ def application_settings():
 
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
+    manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
+    assistant_tools: dict | None = None
+
+
+class ApplicationDataLocationUpdate(BaseModel):
+    path: str = Field(min_length=1, max_length=4_096)
+
+
+class RetryRunRequest(BaseModel):
+    restart_from_first: bool = False
+
+
+def application_data_summary() -> dict[str, object]:
+    root = store_module.APP_DATA
+    total = 0
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                try:
+                    total += path.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return {"path": str(root), "size_bytes": total}
+
+
+@app.get("/api/application-data")
+def application_data():
+    return application_data_summary()
+
+
+@app.put("/api/application-data")
+def update_application_data(values: ApplicationDataLocationUpdate):
+    global store
+    if any(run.status in {"queued", "running", "awaiting_approval"} for run in store.runs()):
+        raise ValueError("Stop active evaluation runs before changing the app data location")
+    store_module.configure_application_data(values.path)
+    store = ConsoleStore()
+    return application_data_summary()
 
 
 @app.put("/api/application-settings")
 def update_application_settings(values: ApplicationSettingsUpdate):
-    return store.save_application_settings(values.model_dump())
+    return store.save_application_settings(values.model_dump(exclude_unset=True))
 
 
 class ChatTurn(BaseModel):
@@ -890,7 +966,7 @@ def template_translation_v1(values: TemplateTranslationRequest):
 
 
 class CycleAnalysisRequest(BaseModel):
-    evaluation_build_id: str = Field(min_length=1, max_length=200)
+    build_id: str = Field(min_length=1, max_length=200)
     locale: str | None = Field(
         default=None, min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
     )
@@ -905,26 +981,24 @@ def analyze_cycle(values: CycleAnalysisRequest):
     configured = profile(store.profiles(), profile_name)
     analytics = store.improvement_analytics(720)
     trend = next(
-        (item for item in analytics["iteration_trends"] if item["build_id"] == values.evaluation_build_id),
+        (item for item in analytics["iteration_trends"] if item["build_id"] == values.build_id),
         None,
     )
     if trend is None:
-        raise HTTPException(404, "Evaluation build has no cycle data.")
+        raise HTTPException(404, "Build has no cycle data.")
     context = {
         "trend": trend,
         "feedback_status": next(
-            (item for item in analytics["feedback_status"] if item["build_id"] == values.evaluation_build_id),
+            (item for item in analytics["feedback_status"] if item["build_id"] == values.build_id),
             {},
         ),
         "run_health": next(
-            (item for item in analytics["run_health"] if item["build_id"] == values.evaluation_build_id),
+            (item for item in analytics["run_health"] if item["build_id"] == values.build_id),
             {},
         ),
-        "proposals": store.proposal_lifecycles(values.evaluation_build_id),
+        "proposals": store.proposal_lifecycles(values.build_id),
         "cycle_interventions": [
-            item
-            for item in store.cycle_interventions()
-            if item.get("evaluation_build_id") == values.evaluation_build_id
+            item for item in store.cycle_interventions() if item.get("build_id") == values.build_id
         ],
     }
     prompt = (
@@ -962,9 +1036,21 @@ def chat(values: ChatMessage):
         if history:
             prompt += f"Conversation so far:\n{history}\n\n"
         prompt += f"User: {values.content}\nAssistant:"
-        return {"response": provider.complete(settings, prompt), "profile_name": profile_name}
+        tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
+        definitions = tool_executor.definitions()
+        response = (
+            provider.complete_with_tools(settings, prompt, definitions, tool_executor.execute)
+            if definitions
+            else provider.complete(settings, prompt)
+        )
+        return {"response": response, "profile_name": profile_name}
     except RuntimeError as error:
         raise HTTPException(409, str(error))
+
+
+@app.websocket("/api/terminal")
+async def terminal(websocket: WebSocket):
+    await serve_terminal(websocket, store.application_settings()["assistant_tools"])
 
 
 class SettingsUpdate(BaseModel):
@@ -1102,10 +1188,20 @@ def list_improvements_v1():
     summary="List proposals and decisions from evaluation-run results",
 )
 def list_proposal_lifecycles_v1(
-    evaluation_build_id: str | None = None,
+    build_id: str | None = None,
     status: Literal["proposed", "accepted", "rejected", "applied"] | None = None,
 ):
-    return store.proposal_lifecycles(evaluation_build_id, status)
+    return store.proposal_lifecycles(build_id, status)
+
+
+@app.get(
+    "/api/v1/improvements/iterations",
+    tags=["Improvements"],
+    operation_id="listImprovementIterationData",
+    summary="List SDK-saved data files by evaluation iteration",
+)
+def list_improvement_iteration_data_v1(build_id: str | None = None):
+    return store.improvement_iteration_data(build_id)
 
 
 @app.get("/api/v1/improvements/analytics", tags=["Improvements"], operation_id="getImprovementAnalytics")
@@ -1163,9 +1259,34 @@ def cancel(run_id: str):
     return safely(lambda: store.cancel(run_id))
 
 
+@app.post("/api/runs/{run_id}/retry")
+def retry(run_id: str, values: RetryRunRequest):
+    return safely(lambda: store.retry(run_id, values.restart_from_first))
+
+
 @app.post("/api/runs/emergency-stop")
 def emergency_stop():
     return store.emergency_stop()
+
+
+@app.get("/sdk-docs/{path:path}", include_in_schema=False)
+def sdk_docs(path: str):
+    """Serve the generated MkDocs runner-SDK reference site."""
+    if not SDK_DOCS_DIST.exists():
+        raise HTTPException(404, "SDK documentation is not built. Run `pnpm run docs:build`.")
+    candidate = (SDK_DOCS_DIST / path).resolve()
+    if path and SDK_DOCS_DIST not in candidate.parents:
+        raise HTTPException(404, "Not found.")
+    if candidate.is_file():
+        return FileResponse(candidate)
+    if path and not path.endswith("/"):
+        directory_index = candidate / "index.html"
+        if directory_index.is_file():
+            return FileResponse(directory_index)
+    index = candidate / "index.html" if path else SDK_DOCS_DIST / "sdk" / "index.html"
+    if index.is_file():
+        return FileResponse(index)
+    raise HTTPException(404, "SDK documentation page was not found.")
 
 
 @app.get("/{path:path}", include_in_schema=False)

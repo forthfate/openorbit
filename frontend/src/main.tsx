@@ -3,10 +3,11 @@ import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
 import { ToastProvider } from "./components/ui/toast";
+import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { AssetsPage } from "./features/assets/page";
-import { EvaluationBuildsPage } from "./features/evaluation-builds/page";
+import { BuildsPage } from "./features/builds/page";
 import { EvaluationsPage } from "./features/evaluations/page";
 import { ImprovementsPage } from "./features/improvements/page";
 import { SettingsPage } from "./features/settings/page";
@@ -102,13 +103,20 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
+  const retryRun = (id: string, restartFromFirst: boolean) =>
+    api(`/api/runs/${id}/retry`, "POST", { restart_from_first: restartFromFirst })
+      .then(() => {
+        room.setNotice("Evaluation retry started.", "warning");
+        room.refresh();
+      })
+      .catch((e) => room.setNotice(e.message));
   const deleteRuns = (ids: string[]) =>
     Promise.all(
       ids.map((id) => api(`/api/runs/${encodeURIComponent(id)}`, "DELETE")),
     )
       .then(() => {
         room.setNotice(
-          `${ids.length} evaluation run${ids.length === 1 ? "" : "s"} deleted`,
+          `${ids.length} run${ids.length === 1 ? "" : "s"} deleted`,
           "success",
         );
         return room.refresh();
@@ -132,26 +140,21 @@ export default function App() {
       })
       .catch((e) => room.setNotice(e.message));
   const save = () => {
-    if (!room.settingsTested) {
-      const error = new Error("Test the configuration before saving.");
-      room.setNotice(error.message, "warning");
-      return Promise.reject(error);
-    }
     return api("/api/settings", "PUT", room.settings).then(() => {
       room.setSettingsTested(false);
-      room.setNotice("AI settings saved", "success");
+      room.setNotice(ui.aiSettingsSaved, "success");
       return room.refresh();
     });
   };
   const invoke = (id: string) =>
-    api(`/api/evaluation-builds/${id}/runs`, "POST")
+    api(`/api/builds/${id}/runs`, "POST")
       .then(() => {
         room.setNotice(ui.evaluationStarted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
   const testBuild = (id: string) =>
-    api<Run>(`/api/evaluation-builds/${id}/tests`, "POST")
+    api<Run>(`/api/builds/${id}/tests`, "POST")
       .then((run) => {
         room.setNotice(ui.evaluationTestStarted, "success");
         return run;
@@ -161,9 +164,9 @@ export default function App() {
         throw e;
       });
   const createBuild = (values: unknown) =>
-    api("/api/evaluation-builds", "POST", values)
+    api("/api/builds", "POST", values)
       .then(() => {
-        room.setNotice(ui.evaluationBuildCreated, "success");
+        room.setNotice(ui.buildCreated, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -180,9 +183,9 @@ export default function App() {
         throw e;
       });
   const updateBuild = (id: string, values: unknown) =>
-    api(`/api/evaluation-builds/${id}`, "PUT", values)
+    api(`/api/builds/${id}`, "PUT", values)
       .then(() => {
-        room.setNotice("Evaluation build updated", "success");
+        room.setNotice(ui.buildUpdated, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -208,7 +211,7 @@ export default function App() {
     }[kind];
     api(path, "DELETE")
       .then(() => {
-        room.setNotice("Asset deleted", "success");
+        room.setNotice(ui.assetDeleted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -218,9 +221,9 @@ export default function App() {
     if (!deletingBuild) return;
     const id = deletingBuild;
     setDeletingBuild(null);
-    api(`/api/evaluation-builds/${id}`, "DELETE")
+    api(`/api/builds/${id}`, "DELETE")
       .then(() => {
-        room.setNotice("Evaluation build deleted", "success");
+        room.setNotice(ui.buildDeleted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -233,7 +236,7 @@ export default function App() {
     dashboard: (
       <DashboardPage
         data={room.data}
-        logs={room.orbitLogs}
+        loading={room.loading}
         locale={locale}
         onOpenRun={() => setPage("runs")}
         onOpenBuild={() => setPage("builds")}
@@ -250,6 +253,7 @@ export default function App() {
         executionEnvironments={room.executionEnvironments}
         targetEnvironments={room.targetEnvironments}
         profiles={room.profiles}
+        loading={room.loading}
         settings={room.settings}
         setSettings={room.setSettings}
         test={test}
@@ -262,7 +266,7 @@ export default function App() {
       />
     ),
     builds: (
-      <EvaluationBuildsPage
+      room.loading ? <SectionSkeleton rows={6} /> : <BuildsPage
         locale={locale}
         builds={room.builds}
         runners={room.runners}
@@ -286,10 +290,11 @@ export default function App() {
       />
     ),
     runs: (
-      <EvaluationsPage
+      room.loading ? <SectionSkeleton rows={7} /> : <EvaluationsPage
         locale={locale}
         runs={room.runs}
         onStop={stopRun}
+        onRetry={retryRun}
         onApprove={approveRun}
         onReject={rejectRun}
         onEmergencyStop={() => setConfirmingEmergencyStop(true)}
@@ -298,7 +303,14 @@ export default function App() {
     ),
     improvements: <ImprovementsPage />,
     settings: (
-      <SettingsPage
+      room.loading ? <>
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={2} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={1} />
+        <SectionSkeleton rows={3} />
+        <SectionSkeleton rows={4} />
+      </> : <SettingsPage
         locale={locale}
         setLocale={setLocale}
         theme={theme}
@@ -309,6 +321,7 @@ export default function App() {
         test={test}
         save={save}
         tested={room.settingsTested}
+        logs={room.orbitLogs}
         onDeleteProfile={(id) => deleteAsset("profile", id)}
       />
     ),

@@ -16,13 +16,15 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import yaml
 
 from orbit import load_bundle
 
-from .models import Run, Step, Workflow
+from .assistant_tools import normalize_settings as normalize_assistant_tools
+from .models import PHASE_ALIASES, Run, Step, Workflow
 from .observability import configure_telemetry
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .remote import RemoteInvocation
@@ -30,11 +32,29 @@ from .remote import RemoteInvocation
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _application_data_pointer() -> Path:
+    """Keep an operator-selected data location outside the data it points to."""
+    if os.name == "nt":
+        root = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
+    elif sys.platform == "darwin":
+        root = Path.home() / "Library" / "Preferences" / "Orbit"
+    else:
+        root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "orbit"
+    return root / "app-data-path"
+
+
 def _application_data_dir() -> Path:
     """Return Orbit's writable per-user state directory on every platform."""
     override = os.environ.get("ORBIT_APP_DATA")
     if override:
         return Path(override).expanduser()
+    pointer = _application_data_pointer()
+    try:
+        selected = pointer.read_text(encoding="utf-8").strip()
+    except OSError:
+        selected = ""
+    if selected:
+        return Path(selected).expanduser()
     if os.name == "nt":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Orbit"
     if sys.platform == "darwin":
@@ -55,6 +75,22 @@ and stop immediately when an emergency stop is requested.
 
 __ORBIT_MANAGER_AI_PROMPT__
 
+__ORBIT_MANAGER_OUTPUT_LANGUAGE__
+
+Your final response must be exactly one JSON object:
+{
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"purpose\":\"string\",\"rationale\":\"string\",\"observation\":\"string\",\"decision\":\"string\",\"next_action\":\"string\"}, \"behavior_summary\":\"legacy string, only when the evaluated target is an AI\"},
+  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+}
+For an evaluated AI, include behavior_trace and fill every field. It is an evidence-backed activity record for a person reviewing the run: purpose explains why this check or action matters now; rationale names only the observable evidence or declared plan behind it; observation records the material change or finding in this iteration; decision records what the target AI did or deliberately did not do; next_action states the specific next check or hypothesis. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics (navigation, waits, screenshots, or generic control inspection). When there is no material change, say so briefly and make next_action explain how the next check will differ or escalate. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is optional legacy compatibility only; prefer behavior_trace. Always include both array keys, using empty arrays when there are no items."""
+LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
+Preserve the task safety boundary, collect observable evidence, and never
+claim success without stated acceptance evidence. Escalate required approvals
+and stop immediately when an emergency stop is requested.
+
+__ORBIT_MANAGER_AI_PROMPT__
+
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
@@ -67,11 +103,11 @@ Decide each improvement status independently from the evaluation approval score.
 Use `adopted` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `adopted` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
 Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
+MANAGER_OUTPUT_LANGUAGE_SLOT = "__ORBIT_MANAGER_OUTPUT_LANGUAGE__"
 NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
-# - The evaluation build selects fixed browser test cases, a browser base URL,
-#   and, when this native runner is selected, a readable managed_prompt_path
-#   configured on its Target Environment.
+# - The build selects fixed target-AI prompts and a configured model
+#   profile, plus a readable managed_prompt_path on its Target Environment.
 # - Only supervisor feedback explicitly marked adopted is applied to the prompt.
 # This runner never commits target changes; ctx.update_file keeps rollback versions.
 
@@ -90,7 +126,7 @@ PROMPT_BLOCK_END = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_END -->"
 
 def state_path(ctx):
     '''Return the per-build state file outside the target repository.'''
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
+    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "improvement-cycles"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{build_id}.json"
@@ -124,7 +160,7 @@ def candidate(ctx):
 
 def update_prompt_from_accepted_proposals(ctx, proposals):
     '''Replace only OpenOrbit's managed prompt block and retain a rollback version.'''
-    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     target = ctx.project_path(prompt_path)
@@ -156,8 +192,8 @@ def update_prompt_from_accepted_proposals(ctx, proposals):
 
 
 def managed_prompt_evidence(ctx):
-    '''Expose the current managed prompt beside the browser validation evidence.'''
-    prompt_path = str(ctx.evaluation_build.get("managed_prompt_path") or ctx.evaluation_build.get("prompt_bundle") or "").strip()
+    '''Expose the current managed prompt beside the target-AI response evidence.'''
+    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
     content = ctx.project_path(prompt_path).read_text(encoding="utf-8")
@@ -168,24 +204,42 @@ def managed_prompt_evidence(ctx):
     }
 
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     # Process-level validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
-    if not ctx.evaluation_build.get("browser_base_url") or not ctx.test_cases:
-        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")
-    ctx.log("Validated an OpenOrbit-native prompt improvement cycle")
+    if not ctx.test_cases:
+        raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
+    if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get("model"):
+        raise ValueError("Select a configured model profile for a native improvement cycle")
+    ctx.log("Validated an OpenOrbit-native target-AI prompt improvement cycle")
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
+    # Keep the target's complete pre-evaluation state outside commit history.
+    # The call is idempotent because before_each runs for every iteration.
+    ctx.save_before_each_snapshot()
     # Apply the latest accepted supervisor feedback before the next validation.
     feedback = ctx.previous_supervisor_feedback
     accepted = [
         proposal for proposal in feedback.get("improvements", [])
         if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
     ]
-    prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
+    requires_human_approval = bool(
+        ctx.build.get("require_human_approval_before_apply", False)
+    )
+    if requires_human_approval and accepted:
+        # A supervisor's adoption is a recommendation, not an operator
+        # authorization. Keep it as evidence until an operator approves it.
+        prompt_update = {
+            "changed": False,
+            "reason": "awaiting_human_approval",
+            "proposal_count": len(accepted),
+        }
+        accepted = []
+    else:
+        prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
     fingerprint, changed = candidate(ctx)
@@ -196,6 +250,7 @@ def setup(ctx):
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
                 "prompt_update": prompt_update,
+                "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
             }
@@ -204,12 +259,40 @@ def setup(ctx):
     ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
 
 
-@runner.phase("run")
-def run(ctx):
-    # Browser evidence is the acceptance input; no target change is made here.
-    evidence = ctx.playwright_journey()
-    results = evidence["results"]
-    passed = all(item["passed"] for item in results)
+@runner.phase("execute")
+def execute(ctx):
+    # Exercise the evaluated AI with the current managed prompt. The raw reply
+    # is retained as supervisor evidence instead of treating a browser page as
+    # proof that a prompt instruction was followed.
+    managed_prompt = managed_prompt_evidence(ctx)
+    responses = []
+    for case in ctx.test_cases:
+        request = str(case.get("prompt") or "").strip()
+        if not request:
+            raise ValueError("each target-AI test case requires a prompt")
+        turn = ctx.complete_model(
+            "# Managed agent instructions\\n"
+            + managed_prompt["content"]
+            + "\\n\\n# User request\\n"
+            + request
+            + "\\n\\nRespond as the managed agent."
+        )
+        responses.append(
+            {
+                "id": case.get("id"),
+                "name": case.get("name"),
+                "request": request,
+                "acceptance": str(case.get("acceptance") or ""),
+                "response": turn["response"],
+                "model": turn["model"],
+            }
+        )
+    artifact = ctx.save_data_file(
+        "target-ai-responses.json",
+        json.dumps(responses, ensure_ascii=False, indent=2),
+        label="Target AI responses",
+        content_type="application/json",
+    )
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -217,17 +300,14 @@ def run(ctx):
                 "iteration": ctx.loop_index,
                 "candidate_fingerprint": fingerprint,
                 "changed_paths": changed,
-                "passed": passed,
-                "evidence": evidence,
+                "evidence": {"target_ai_responses": responses, "artifact": artifact},
             }
         }
     )
-    if not passed:
-        raise SystemExit("A fixed validation journey failed")
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     # Promote a candidate only after the required number of stable evaluations.
     state = load_state(ctx)
     fingerprint, changed = candidate(ctx)
@@ -260,16 +340,19 @@ def evaluate(ctx):
     ctx.log(f"Candidate verdict: {verdict}")
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
+    # Preserve the first evaluated state as a named recovery checkpoint.
+    ctx.save_first_after_each_snapshot()
     # Per-iteration evidence remains available for supervisor review.
     ctx.log("Retained prompt versions, decisions, and validation evidence")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
-    # Process-level finalization intentionally leaves the target repository uncommitted.
-    ctx.log("Finalized the native improvement cycle without committing changes")
+@runner.phase("after_all")
+def after_all(ctx):
+    # Return the target to its exact baseline without creating a Git commit.
+    ctx.restore_before_each_snapshot()
+    ctx.log("Restored the native improvement target without committing changes")
 
 
 if __name__ == "__main__":
@@ -277,7 +360,7 @@ if __name__ == "__main__":
 """
 
 SITE_EXPLORATION_TEMPLATE = r"""# Requirements
-# - The target application is running at the evaluation build's browser base URL.
+# - The target application is running at the build's browser base URL.
 # - Playwright Chromium and LangGraph are available.
 # This runner follows only same-site links and excludes destructive-looking routes.
 
@@ -338,15 +421,15 @@ def graph(ctx):
     return workflow.compile()
 
 
-@runner.phase("init")
-def init(ctx):
-    if not ctx.evaluation_build.get("browser_base_url"):
+@runner.phase("before_all")
+def before_all(ctx):
+    if not ctx.build.get("browser_base_url"):
         raise ValueError("Set a browser base URL before exploring a site")
 
 
-@runner.phase("run")
-def run(ctx):
-    result = graph(ctx).invoke({"base_url": ctx.evaluation_build["browser_base_url"], "max_clicks": 3})
+@runner.phase("execute")
+def execute(ctx):
+    result = graph(ctx).invoke({"base_url": ctx.build["browser_base_url"], "max_clicks": 3})
     ctx.emit_result({"site_exploration": {"opinion": result["opinion"], "evidence": result["evidence"]}})
 
 
@@ -388,7 +471,7 @@ def cycle_input(ctx, action):
         {
             "action": action,
             "iteration": ctx.loop_index,
-            "evaluation_build": ctx.evaluation_build,
+            "build": ctx.build,
             "test_cases": ctx.test_cases,
         },
         ensure_ascii=False,
@@ -412,15 +495,15 @@ def invoke(ctx, action):
     return result
 
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     # Check availability once; later phases must not start an independent loop.
     status = invoke(ctx, "status")
     ctx.emit_result({"agent_cycle": {"status": status}})
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
     # Record the fixed inputs so every external action is auditable.
     ctx.emit_result(
         {
@@ -432,28 +515,28 @@ def setup(ctx):
     )
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     # Exactly one unit of agent work; OpenOrbit schedules a future iteration.
     result = invoke(ctx, "run-once")
     ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": result}})
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     # Re-read status rather than assuming the prior action completed correctly.
     status = invoke(ctx, "status")
     ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "status": status}})
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     # The external process has already returned; no daemon cleanup is required.
     ctx.log("Completed one bounded external agent cycle")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     ctx.log("Finalized the external agent evaluation")
 
 
@@ -496,7 +579,7 @@ def cycle_input(ctx, action):
         {
             "action": action,
             "iteration": ctx.loop_index,
-            "evaluation_build": ctx.evaluation_build,
+            "build": ctx.build,
             "probes": ctx.test_cases,
         },
         ensure_ascii=False,
@@ -520,8 +603,8 @@ def invoke(ctx, action):
     return result
 
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     # A fixed probe set keeps the gate repeatable and its evidence comparable.
     if not ctx.test_cases:
         raise ValueError("Select a fixed test case set before running an evidence gate")
@@ -529,34 +612,34 @@ def init(ctx):
     ctx.emit_result({"probe_gate": {"preflight": preflight}})
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
     # Prepare disposable inputs without mutating the target repository.
     prepared = invoke(ctx, "prepare")
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "prepared": prepared}})
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     # Run the complete fixed matrix once and retain the tool's structured report.
     report = invoke(ctx, "run-probes")
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "report": report}})
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     # Collect final evidence separately so a supervisor can make an independent decision.
     evidence = invoke(ctx, "collect-evidence")
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "evidence": evidence}})
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     ctx.log("Completed one evidence-gated probe matrix")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     ctx.log("Finalized the evidence-gated probe evaluation")
 
 
@@ -575,6 +658,42 @@ QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
 TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
 
 
+def configure_application_data(path: str) -> Path:
+    """Switch the local state root and retain it for later application starts."""
+    requested = Path(path.strip()).expanduser()
+    if not requested.is_absolute():
+        raise ValueError("app data location must be an absolute path")
+    target = requested.resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    pointer = _application_data_pointer()
+    pointer.parent.mkdir(parents=True, exist_ok=True)
+    temporary = pointer.with_suffix(".tmp")
+    temporary.write_text(str(target), encoding="utf-8")
+    temporary.replace(pointer)
+    os.environ["ORBIT_APP_DATA"] = str(target)
+
+    global APP_DATA, CONFIG, TARGET_TEST_CASE_SETS, EXECUTION_ENVIRONMENTS, TARGET_ENVIRONMENTS
+    global CYCLE_INTERVENTIONS, DATA, RUNS, TELEMETRY, SETTINGS, TOOL_TIMES, RUNNERS
+    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS
+    APP_DATA = target
+    CONFIG = APP_DATA / "config"
+    TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
+    EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
+    TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+    CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
+    DATA = APP_DATA / "data"
+    RUNS = DATA / "runs"
+    TELEMETRY = DATA / "telemetry.jsonl"
+    SETTINGS = DATA / "settings.json"
+    TOOL_TIMES = DATA / "tool-times.json"
+    RUNNERS = APP_DATA / "runners"
+    RUNNER_TEMPLATES = APP_DATA / "runner-templates"
+    QUICK_STARTS = APP_DATA / "quick-starts"
+    QUICK_START_INSTANCES = CONFIG / "quick-start-instances.yaml"
+    TEMPLATE_TRANSLATIONS = DATA / "template-translations.json"
+    return APP_DATA
+
+
 def now() -> datetime:
     return datetime.now(UTC)
 
@@ -588,7 +707,7 @@ class ConsoleStore:
         RUNNERS.mkdir(parents=True, exist_ok=True)
         RUNNER_TEMPLATES.mkdir(parents=True, exist_ok=True)
         QUICK_STARTS.mkdir(parents=True, exist_ok=True)
-        self._migrate_evaluation_environments()
+        self._migrate_build_environments()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         # Test runs are deliberately process-local: they support the build-page
         # test dialog without becoming an evaluation-run record or surviving a
@@ -637,10 +756,12 @@ class ConsoleStore:
             if isinstance(document.get("application_settings"), dict)
             else {}
         )
-        if not str(application.get("manager_prompt_template", "")).strip():
+        current_prompt = str(application.get("manager_prompt_template", "")).strip()
+        if not current_prompt or current_prompt == LEGACY_OPERATIONAL_MANAGER_PROMPT:
             document["application_settings"] = {
                 **application,
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": str(application.get("manager_output_locale", "en")).strip(),
                 "chat_model_profile_name": str(application.get("chat_model_profile_name", "")).strip(),
             }
             SETTINGS.write_text(json.dumps(document, indent=2), encoding="utf-8")
@@ -653,8 +774,8 @@ class ConsoleStore:
                 "name": "Browser journey validation",
                 "description": "Validates fixed browser journeys and retains page evidence. Requires a running app and Playwright browser.",
                 "source": """# Requirements
-# - The target application is running at the evaluation build's browser base URL.
-# - The evaluation build selects at least one fixed test case.
+# - The target application is running at the build's browser base URL.
+# - The build selects at least one fixed test case.
 # - Playwright Chromium and its operating-system libraries are available.
 # No external runner script, adapter repository, or background program is required.
 
@@ -666,16 +787,16 @@ from orbit_sdk import runner
 # Validate only configuration that the runner cannot safely infer. This runs
 # once when an evaluation process starts, before its iteration loop.
 def validate(ctx):
-    build = ctx.evaluation_build
+    build = ctx.build
     if not build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL on the evaluation build")
+        raise ValueError("Set a browser base URL on the build")
     if not ctx.test_cases:
         raise ValueError("Select a fixed test case set before running a user journey")
 
 def state_path(ctx):
     # Keep state in OpenOrbit AppData, keyed by build, so a later iteration can
     # resume its focused journey without writing into the target repository.
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
+    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "user-journey-state"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{build_id}.json"
@@ -713,15 +834,15 @@ def plan(ctx, state):
     reason = "Previously failed journeys require confirmation." if failed else "Rotate one fixed journey to retain broad, bounded coverage."
     return {"case_ids": [str(case.get("id")) for case in focused], "rules": rules, "reason": reason, "supervisor_feedback": feedback}
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     # Process-level preparation: run once before OpenOrbit starts repeating.
     validate(ctx)
     ctx.log("Validated the bounded user-journey contract")
 
-@runner.phase("setup")
-def setup(ctx):
-    # Iteration-level preparation: persist a plan that the run phase consumes.
+@runner.phase("before_each")
+def before_each(ctx):
+    # Iteration-level preparation: persist a plan that the execute phase consumes.
     state = load_state(ctx)
     journey_plan = plan(ctx, state)
     state["plan"] = journey_plan
@@ -729,8 +850,8 @@ def setup(ctx):
     ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "case_count": len(ctx.test_cases), "plan": journey_plan}})
     ctx.log(f"Planned {len(journey_plan['case_ids'])} focused journey case(s): {journey_plan['reason']}")
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     # Execute only the focused fixed cases; Playwright returns screenshots and
     # page evidence that can be inspected by both users and the supervisor.
     state = load_state(ctx)
@@ -749,16 +870,16 @@ def run(ctx):
     save_state(ctx, state)
     ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "plan": journey_plan, "passed": passed, "failed": len(results) - passed, "results": results, "evidence": evidence, "handoff": state["handoff"]}})
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     # Expose the persisted handoff as structured run output for supervision.
     state = load_state(ctx)
     ctx.emit_result({"user_journey": {"next_iteration": state.get("handoff", {}), "state_path": str(state_path(ctx))}})
     ctx.log("Stored the journey summary, reasons, and behavior rules for the next iteration")
-@runner.phase("teardown")
-def teardown(ctx): ctx.log("Closed this bounded browser journey")
-@runner.phase("finalize")
-def finalize(ctx): ctx.log("Finalized the user-journey evaluation")
+@runner.phase("after_each")
+def after_each(ctx): ctx.log("Closed this bounded browser journey")
+@runner.phase("after_all")
+def after_all(ctx): ctx.log("Finalized the user-journey evaluation")
 
 if __name__ == "__main__": runner.main()
 """,
@@ -767,13 +888,13 @@ if __name__ == "__main__": runner.main()
                 "id": "external-command-adapter",
                 "name": "External automation integration",
                 "description": "Connects an existing automation tool while OpenOrbit retains scheduling, evidence collection, and supervision.",
-                "source": """import json\nimport os\nimport shlex\n\nfrom orbit_sdk import ORBIT_PROJECT_PATH, runner\n\n# Set ORBIT_ADAPTER_COMMAND to the command prefix for an external tool. It may\n# be a JSON array or a shell-like string. The tool must support the bounded\n# actions appended below and must never start its own scheduler.\ndef adapter_command():\n    # Parse once per invocation so the configuration remains explicit and does\n    # not depend on a target repository's source files.\n    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()\n    if not configured:\n        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")\n    if configured.startswith("["):\n        value = json.loads(configured)\n        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")\n        return value\n    return shlex.split(configured)\n\ndef invoke(ctx, action):\n    # OpenOrbit owns the lifecycle: the adapter receives one bounded action and\n    # must return instead of starting a daemon or an independent scheduler.\n    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)\n\n@runner.phase("init")\ndef init(ctx):\n    # Process-level readiness check, performed once before the repeat loop.\n    invoke(ctx, "status")\n\n@runner.phase("setup")\ndef setup(ctx):\n    # Per-iteration preparation, such as refreshing target-side test data.\n    invoke(ctx, "prepare")\n\n@runner.phase("run")\ndef run(ctx):\n    # Exactly one unit of adapter work; OpenOrbit schedules further iterations.\n    invoke(ctx, "run-once")\n\n@runner.phase("eval")\ndef evaluate(ctx):\n    # Return machine-readable or textual evidence for the supervisor to assess.\n    invoke(ctx, "collect-evidence")\n\n@runner.phase("teardown")\ndef teardown(ctx):\n    # Per-iteration cleanup after evidence collection.\n    ctx.log("Completed the bounded external command")\n\n@runner.phase("finalize")\ndef finalize(ctx):\n    # Process-level finalization, performed once after the loop exits.\n    ctx.log("Finalized the external command evaluation")\n\nif __name__ == "__main__": runner.main()\n""",
+                "source": """import json\nimport os\nimport shlex\n\nfrom orbit_sdk import ORBIT_PROJECT_PATH, runner\n\n# Set ORBIT_ADAPTER_COMMAND to the command prefix for an external tool. It may\n# be a JSON array or a shell-like string. The tool must support the bounded\n# actions appended below and must never start its own scheduler.\ndef adapter_command():\n    # Parse once per invocation so the configuration remains explicit and does\n    # not depend on a target repository's source files.\n    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()\n    if not configured:\n        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")\n    if configured.startswith("["):\n        value = json.loads(configured)\n        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")\n        return value\n    return shlex.split(configured)\n\ndef invoke(ctx, action):\n    # OpenOrbit owns the lifecycle: the adapter receives one bounded action and\n    # must return instead of starting a daemon or an independent scheduler.\n    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    # Process-level readiness check, performed once before the repeat loop.\n    invoke(ctx, "status")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    # Per-iteration preparation, such as refreshing target-side test data.\n    invoke(ctx, "prepare")\n\n@runner.phase("execute")\ndef execute(ctx):\n    # Exactly one unit of adapter work; OpenOrbit schedules further iterations.\n    invoke(ctx, "run-once")\n\n@runner.phase("verify")\ndef verify(ctx):\n    # Return machine-readable or textual evidence for the supervisor to assess.\n    invoke(ctx, "collect-evidence")\n\n@runner.phase("after_each")\ndef after_each(ctx):\n    # Per-iteration cleanup after evidence collection.\n    ctx.log("Completed the bounded external command")\n\n@runner.phase("after_all")\ndef after_all(ctx):\n    # Process-level finalization, performed once after the loop exits.\n    ctx.log("Finalized the external command evaluation")\n\nif __name__ == "__main__": runner.main()\n""",
             },
             {
                 "id": "native-improvement-cycle",
                 "name": "Native improvement cycle",
                 "description": "Tracks a Git change candidate, validates fixed browser journeys, and promotes only repeatedly sufficient evidence. OpenOrbit owns all cycle state and never runs an external improvement script.",
-                "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The evaluation build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("init")\ndef init(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.evaluation_build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("setup")\ndef setup(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("run")\ndef run(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("eval")\ndef evaluate(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("teardown")\ndef teardown(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("finalize")\ndef finalize(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
+                "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("execute")\ndef execute(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("verify")\ndef verify(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("after_each")\ndef after_each(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("after_all")\ndef after_all(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
             },
         ]
         templates[-1] = {
@@ -877,6 +998,7 @@ if __name__ == "__main__": runner.main()
                 }
 
             evaluation = response.get("evaluation")
+            behavior_trace = evaluation.get("behavior_trace") if isinstance(evaluation, dict) else None
             return {
                 **(
                     {"prompt": record["prompt"]}
@@ -884,9 +1006,23 @@ if __name__ == "__main__": runner.main()
                     else {}
                 ),
                 "response": {
-                    "evaluation": display_fields(evaluation, ("behavior_summary", "summary"))
-                    if isinstance(evaluation, dict)
-                    else {},
+                    "evaluation": {
+                        **(
+                            display_fields(evaluation, ("behavior_summary", "summary"))
+                            if isinstance(evaluation, dict)
+                            else {}
+                        ),
+                        **(
+                            {
+                                "behavior_trace": display_fields(
+                                    behavior_trace,
+                                    ("purpose", "rationale", "observation", "decision", "next_action"),
+                                )
+                            }
+                            if isinstance(behavior_trace, dict)
+                            else {}
+                        ),
+                    },
                     "improvements": [
                         display_fields(
                             item,
@@ -970,19 +1106,19 @@ if __name__ == "__main__": runner.main()
     def _quick_start_browser_runner() -> str:
         return """from orbit_sdk import runner
 
-@runner.phase("init")
-def init(ctx):
-    if not ctx.evaluation_build.get("browser_base_url"):
+@runner.phase("before_all")
+def before_all(ctx):
+    if not ctx.build.get("browser_base_url"):
         raise ValueError("Quick start browser evaluation requires a browser base URL")
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     evidence = ctx.playwright_journey()
     if not all(item["passed"] for item in evidence["results"]):
         raise SystemExit("A browser journey failed")
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     ctx.log("Quick start browser evaluation completed")
 
 if __name__ == "__main__":
@@ -1297,9 +1433,9 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.agent-self-improvement",
-                "version": "1.0.2",
+                "version": "1.1.0",
                 "name": "Agent self-improvement",
-                "description": "Improve an agent prompt with browser validation. Requires a Git repository, running app, prompt file, and Playwright browser.",
+                "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
                 "publisher": {"name": "OpenOrbit"},
                 "parameters": [
                     {
@@ -1318,10 +1454,10 @@ if __name__ == "__main__":
                     },
                     {
                         "key": "base_url",
-                        "label": "Browser base URL",
+                        "label": "Browser base URL (optional)",
                         "type": "url",
-                        "required": True,
-                        "placeholder": "http://localhost:3000",
+                        "required": False,
+                        "placeholder": "Not used for target-AI response evaluation",
                     },
                     {
                         "key": "managed_prompt_path",
@@ -1333,26 +1469,18 @@ if __name__ == "__main__":
                     },
                     {
                         "key": "journey_name",
-                        "label": "Validation journey name",
+                        "label": "Test case name",
                         "type": "string",
                         "required": True,
-                        "default": "Agent quality journey",
-                        "placeholder": "e.g. Resolve a customer support request",
-                    },
-                    {
-                        "key": "journey_path",
-                        "label": "Journey start path",
-                        "type": "string",
-                        "required": True,
-                        "default": "/",
-                        "placeholder": "e.g. /chat",
+                        "default": "Missing refund context",
+                        "placeholder": "e.g. Missing order details",
                     },
                     {
                         "key": "journey_prompt",
-                        "label": "User actions",
+                        "label": "User request",
                         "type": "string",
                         "required": True,
-                        "placeholder": "e.g. Ask the agent to find and explain a policy.",
+                        "placeholder": "e.g. I need a refund, but I do not have my order number.",
                     },
                     {
                         "key": "acceptance",
@@ -1360,13 +1488,6 @@ if __name__ == "__main__":
                         "type": "string",
                         "required": True,
                         "placeholder": "e.g. The response is complete, grounded, and has no error.",
-                    },
-                    {
-                        "key": "expected_text",
-                        "label": "Expected visible text (optional)",
-                        "type": "string",
-                        "required": False,
-                        "placeholder": "e.g. Return policy",
                     },
                     {
                         "key": "profile_name",
@@ -1428,7 +1549,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Evaluate the managed agent prompt strictly against the fixed browser evidence. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted whenever it is directly supported by the evidence and has measurable acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
+                        "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -1437,10 +1558,8 @@ if __name__ == "__main__":
                             {
                                 "id": "agent-journey",
                                 "name": "${journey_name}",
-                                "path": "${journey_path}",
                                 "prompt": "${journey_prompt}",
                                 "acceptance": "${acceptance}",
-                                "expected_text": "${expected_text}",
                             }
                         ],
                     },
@@ -1462,7 +1581,7 @@ if __name__ == "__main__":
                 },
                 "build": {
                     "name": "${build_name}",
-                    "purpose": "Validate and improve an agent or managed prompt with fixed browser evidence.",
+                    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
                     "model_profile_name": "${profile_name}",
                     "timezone": "Asia/Tokyo",
                     "repeat_interval_minutes": 30,
@@ -1636,6 +1755,29 @@ if __name__ == "__main__":
         return json.loads(path.read_text(encoding="utf-8"))
 
     @staticmethod
+    def _canonicalize_runner_source(source: str) -> str:
+        """Upgrade legacy lifecycle decorators when an asset is saved or instantiated."""
+        replacements = {
+            "init": "before_all",
+            "setup": "before_each",
+            "run": "execute",
+            "eval": "verify",
+            "teardown": "after_each",
+            "finalize": "after_all",
+        }
+        for legacy, canonical in replacements.items():
+            source = re.sub(
+                rf'(@runner\.phase\(\s*["\']){legacy}(["\']\s*\))',
+                rf"\g<1>{canonical}\g<2>",
+                source,
+            )
+        return (
+            source.replace("save_setup_snapshot(", "save_before_each_snapshot(")
+            .replace("save_first_teardown_snapshot(", "save_first_after_each_snapshot(")
+            .replace("restore_setup_snapshot(", "restore_before_each_snapshot(")
+        )
+
+    @staticmethod
     def _validate_quick_start(manifest: dict[str, Any]) -> dict[str, Any]:
         required = ("schema_version", "id", "version", "name", "description", "parameters", "assets", "build")
         if not isinstance(manifest, dict) or any(key not in manifest for key in required):
@@ -1668,6 +1810,9 @@ if __name__ == "__main__":
                 raise ValueError(f"quick start requires a {key} asset")
         if not str(manifest["assets"]["runner"].get("source", "")).strip():
             raise ValueError("quick start runner requires source")
+        manifest["assets"]["runner"]["source"] = ConsoleStore._canonicalize_runner_source(
+            str(manifest["assets"]["runner"]["source"])
+        )
         compile(str(manifest["assets"]["runner"]["source"]), f"{manifest['id']}.py", "exec")
         return manifest
 
@@ -1724,7 +1869,7 @@ if __name__ == "__main__":
                 TARGET_ENVIRONMENTS,
                 TARGET_TEST_CASE_SETS,
                 CONFIG / "prompt-templates.yaml",
-                CONFIG / "evaluation-builds.yaml",
+                CONFIG / "builds.yaml",
                 QUICK_START_INSTANCES,
                 SETTINGS,
             )
@@ -1749,7 +1894,7 @@ if __name__ == "__main__":
                 if any(item["profile_name"] == profile_name for item in self.profiles()):
                     raise ValueError("AI model profile name already exists")
                 self.save_settings(assets["model_profile"])
-            created = self.create_evaluation_build(
+            created = self.create_build(
                 {
                     "id": generated["build_id"],
                     "runner_id": runner["id"],
@@ -1790,7 +1935,7 @@ if __name__ == "__main__":
         return self._write_runner_template(template_id, values)
 
     def _write_runner_template(self, template_id: str, values: dict[str, str]) -> dict[str, str]:
-        source = str(values["source"])
+        source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{template_id}.py", "exec")
         template = {
             "id": template_id,
@@ -1840,13 +1985,14 @@ if __name__ == "__main__":
         )
 
     def _write_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
-        source = str(values["source"])
+        source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
         asset = {
             "id": runner_id,
             "name": str(values["name"]).strip(),
             "description": str(values["description"]).strip(),
             "template_id": str(values.get("template_id", "custom")),
+            "created_at": str(values.get("created_at") or now().isoformat()),
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
@@ -1870,16 +2016,19 @@ if __name__ == "__main__":
 
     def delete_runner(self, runner_id: str) -> None:
         self._runner(runner_id)
-        if any(build.get("runner_id") == runner_id for build in self.evaluation_builds()):
-            raise ValueError("runner is used by an evaluation build")
+        if any(build.get("runner_id") == runner_id for build in self.builds()):
+            raise ValueError("runner is used by a build")
         (RUNNERS / f"{runner_id}.py").unlink(missing_ok=True)
         (RUNNERS / f"{runner_id}.json").unlink(missing_ok=True)
 
     def _runner_execution_plan(self, runner_id: str) -> Workflow:
         """Build the lifecycle declared by a runner without a workflow asset."""
         runner = self._runner(runner_id)
-        lifecycle_order = ("init", "setup", "run", "eval", "teardown", "finalize")
-        declared = set(re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', runner["source"]))
+        lifecycle_order = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
+        declared = {
+            PHASE_ALIASES.get(phase, phase)
+            for phase in re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', runner["source"])
+        }
         phases = [phase for phase in lifecycle_order if phase in declared]
         if not phases:
             raise ValueError("runner must declare at least one Orbit lifecycle phase")
@@ -1890,7 +2039,7 @@ if __name__ == "__main__":
                 name=phase,
                 command=[sys.executable, str(RUNNERS / f"{runner_id}.py"), "--phase", phase],
                 working_directory=str(ROOT),
-                timeout_seconds=86_400 if phase == "run" else 300,
+                timeout_seconds=86_400 if phase == "execute" else 300,
                 approval="not_required",
                 # A non-zero process exit means the lifecycle did not produce
                 # a valid evaluation. Runners that intentionally tolerate a
@@ -1911,17 +2060,20 @@ if __name__ == "__main__":
             test_steps=deepcopy(steps),
         )
 
-    def evaluation_builds(self) -> list[dict[str, Any]]:
-        path = CONFIG / "evaluation-builds.yaml"
+    def builds(self) -> list[dict[str, Any]]:
+        path = CONFIG / "builds.yaml"
         builds = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
         builds = builds if isinstance(builds, list) else []
         fallback = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat() if path.exists() else None
         runs = self.runs()
         for build in builds:
+            # Existing builds predate this optional policy, so leave it off
+            # unless an operator explicitly enabled it.
+            build.setdefault("require_human_approval_before_apply", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
-            dates = [run.created_at for run in runs if run.evaluation_build_id == build["id"]]
+            dates = [run.created_at for run in runs if run.build_id == build["id"]]
             build["last_run_at"] = max(dates).isoformat() if dates else None
         return builds
 
@@ -2082,6 +2234,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2097,6 +2250,7 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": now().isoformat(),
         }
         items.append(item)
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
@@ -2114,6 +2268,7 @@ if __name__ == "__main__":
             "browser_executable_path": str(values.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(values.get("browser_library_path", "")).strip(),
             "environment_variables": self._environment_variables_from_values(values),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(EXECUTION_ENVIRONMENTS, items)
@@ -2130,14 +2285,15 @@ if __name__ == "__main__":
             "repository": str(values["repository"]).strip(),
             "browser_base_url": str(values.get("browser_base_url", "")).strip(),
             "managed_prompt_path": str(values.get("managed_prompt_path", "")).strip(),
+            "created_at": items[index].get("created_at", now().isoformat()),
         }
         items[index] = item
         self._save_asset_list(TARGET_ENVIRONMENTS, items)
         return item
 
     def _delete_environment(self, environment_id: str, path: Path, reference_key: str, label: str) -> None:
-        if any(build.get(reference_key) == environment_id for build in self.evaluation_builds()):
-            raise ValueError(f"{label} is used by an evaluation build")
+        if any(build.get(reference_key) == environment_id for build in self.builds()):
+            raise ValueError(f"{label} is used by a build")
         items = self._asset_list(path)
         remaining = [item for item in items if item.get("id") != environment_id]
         if len(remaining) == len(items):
@@ -2154,8 +2310,8 @@ if __name__ == "__main__":
             environment_id, TARGET_ENVIRONMENTS, "target_environment_id", "target environment"
         )
 
-    def _migrate_evaluation_environments(self) -> None:
-        path = CONFIG / "evaluation-builds.yaml"
+    def _migrate_build_environments(self) -> None:
+        path = CONFIG / "builds.yaml"
         builds = self._asset_list(path)
         if not builds:
             return
@@ -2253,6 +2409,7 @@ if __name__ == "__main__":
             raise ValueError("target-AI test case set ID is required and must be unique")
         sets = self.target_test_case_sets()
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = now().isoformat()
         sets.append(test_set)
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2265,6 +2422,7 @@ if __name__ == "__main__":
         if index is None:
             raise KeyError(set_id)
         test_set = self._validated_target_test_case_set(values, set_id)
+        test_set["created_at"] = sets[index].get("created_at", now().isoformat())
         sets[index] = test_set
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(sets, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2275,8 +2433,8 @@ if __name__ == "__main__":
         sets = self.target_test_case_sets()
         if not any(item.get("id") == set_id for item in sets):
             raise KeyError(set_id)
-        if any(build.get("test_case_set_id") == set_id for build in self.evaluation_builds()):
-            raise ValueError("test case set is used by an evaluation build")
+        if any(build.get("test_case_set_id") == set_id for build in self.builds()):
+            raise ValueError("test case set is used by a build")
         temporary = TARGET_TEST_CASE_SETS.with_suffix(".tmp")
         temporary.write_text(
             yaml.safe_dump(
@@ -2307,12 +2465,15 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": versions,
+            "created_at": current.get("created_at", now().isoformat()),
         }
         templates[index] = template
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(yaml.safe_dump(templates, allow_unicode=True, sort_keys=False), encoding="utf-8")
         temporary.replace(CONFIG / "prompt-templates.yaml")
-        return template
+        # Preserve the established update response shape; the persisted value
+        # is exposed by the subsequent catalog refresh.
+        return {key: value for key, value in template.items() if key != "created_at"}
 
     def create_prompt_template(self, values: dict[str, Any]) -> dict[str, Any]:
         template_id = str(values["id"])
@@ -2325,8 +2486,8 @@ if __name__ == "__main__":
         templates = self.prompt_templates()
         if not any(item.get("id") == template_id for item in templates):
             raise KeyError(template_id)
-        if any(build.get("manager_template_id") == template_id for build in self.evaluation_builds()):
-            raise ValueError("prompt template is used by an evaluation build")
+        if any(build.get("manager_template_id") == template_id for build in self.builds()):
+            raise ValueError("prompt template is used by a build")
         temporary = CONFIG / "prompt-templates.tmp"
         temporary.write_text(
             yaml.safe_dump(
@@ -2351,6 +2512,7 @@ if __name__ == "__main__":
             "version": version,
             "content": content,
             "versions": [{"version": version, "content": content}],
+            "created_at": now().isoformat(),
         }
         templates.append(template)
         temporary = CONFIG / "prompt-templates.tmp"
@@ -2367,6 +2529,8 @@ if __name__ == "__main__":
         operational = self.application_settings()["manager_prompt_template"]
         if MANAGER_PROMPT_SLOT not in operational:
             raise ValueError(f"operational manager prompt must include {MANAGER_PROMPT_SLOT}")
+        if MANAGER_OUTPUT_LANGUAGE_SLOT not in operational:
+            raise ValueError(f"operational manager prompt must include {MANAGER_OUTPUT_LANGUAGE_SLOT}")
         selected_set = next(
             (
                 item
@@ -2405,7 +2569,13 @@ if __name__ == "__main__":
         assembled = "\n\n".join(
             part
             for part in (
-                operational.replace(MANAGER_PROMPT_SLOT, manager_policy),
+                operational.replace(MANAGER_PROMPT_SLOT, manager_policy).replace(
+                    MANAGER_OUTPUT_LANGUAGE_SLOT,
+                    "# Output language\n"
+                    "Write all human-readable string values in the configured application language "
+                    f"({self.application_settings()['manager_output_locale']}). "
+                    "Keep JSON keys, field names, and required enum values exactly as specified.",
+                ),
                 f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
                 PROPOSAL_DECISION_POLICY,
@@ -2414,8 +2584,8 @@ if __name__ == "__main__":
         )
         return f"application-settings + manager-template:{template_id}", assembled[:100_000]
 
-    def evaluation_build(self, build_id: str) -> dict[str, Any]:
-        for build in self.evaluation_builds():
+    def build(self, build_id: str) -> dict[str, Any]:
+        for build in self.builds():
             if build["id"] == build_id:
                 return build
         raise KeyError(build_id)
@@ -2436,10 +2606,10 @@ if __name__ == "__main__":
             "directories": [{"name": entry.name, "path": str(entry)} for entry in children[:200]],
         }
 
-    def create_evaluation_build(self, values: dict[str, Any]) -> dict[str, Any]:
+    def create_build(self, values: dict[str, Any]) -> dict[str, Any]:
         build_id = values["id"]
-        if any(build["id"] == build_id for build in self.evaluation_builds()):
-            raise ValueError("같은 ID의 평가 빌드가 이미 있습니다.")
+        if any(build["id"] == build_id for build in self.builds()):
+            raise ValueError("같은 ID의 빌드가 이미 있습니다.")
         runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
@@ -2488,24 +2658,37 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
-        builds = self.evaluation_builds()
+        builds = self.builds()
         builds.append(build)
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
         return build
 
-    def update_evaluation_build(self, build_id: str, values: dict[str, Any]) -> dict[str, Any]:
-        builds = self.evaluation_builds()
+    def update_build(self, build_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        builds = self.builds()
         index = next((i for i, build in enumerate(builds) if build["id"] == build_id), None)
         if index is None:
             raise KeyError(build_id)
         if values["id"] != build_id:
-            raise ValueError("evaluation build ID cannot be changed")
+            raise ValueError("build ID cannot be changed")
         runner = self._runner(values["runner_id"])
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
@@ -2555,24 +2738,37 @@ if __name__ == "__main__":
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
             "timezone": values["timezone"],
             "repeat_interval_minutes": values["repeat_interval_minutes"],
+            "cadence_mode": values.get("cadence_mode", "after_completion"),
+            "overrun_policy": values.get("overrun_policy", "wait"),
             "run_limit": values["run_limit"],
+            "schedule_enabled": bool(values.get("schedule_enabled", False)),
+            "schedule_weekdays": [
+                int(day) for day in values.get("schedule_weekdays", []) if 0 <= int(day) <= 6
+            ],
+            "schedule_start_time": values.get("schedule_start_time", "09:00"),
+            "schedule_end_time": values.get("schedule_end_time", "18:00"),
+            "iteration_strategy": values.get("iteration_strategy", "linear"),
+            "candidates_per_iteration": values.get("candidates_per_iteration", 2),
             "approval_score": values["approval_score"],
+            "require_human_approval_before_apply": bool(
+                values.get("require_human_approval_before_apply", False)
+            ),
             "executor": executor,
         }
         builds[index] = build
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
         return build
 
-    def delete_evaluation_build(self, build_id: str) -> None:
-        builds = self.evaluation_builds()
+    def delete_build(self, build_id: str) -> None:
+        builds = self.builds()
         remaining = [build for build in builds if build["id"] != build_id]
         if len(remaining) == len(builds):
             raise KeyError(build_id)
-        temporary = CONFIG / "evaluation-builds.tmp"
+        temporary = CONFIG / "builds.tmp"
         temporary.write_text(yaml.safe_dump(remaining, allow_unicode=True, sort_keys=False), encoding="utf-8")
-        temporary.replace(CONFIG / "evaluation-builds.yaml")
+        temporary.replace(CONFIG / "builds.yaml")
 
     def improvements(self) -> list[dict[str, Any]]:
         path = CONFIG / "improvements.yaml"
@@ -2586,7 +2782,7 @@ if __name__ == "__main__":
         )
 
     def proposal_lifecycles(
-        self, evaluation_build_id: str | None = None, status: str | None = None
+        self, build_id: str | None = None, status: str | None = None
     ) -> list[dict[str, Any]]:
         """Present supervisor proposals directly from evaluation-run results.
 
@@ -2596,7 +2792,7 @@ if __name__ == "__main__":
         """
         values: list[dict[str, Any]] = []
         for run in self.runs():
-            if evaluation_build_id and run.evaluation_build_id != evaluation_build_id:
+            if build_id and run.build_id != build_id:
                 continue
             records = run.supervisor_results or []
             if not records and run.supervisor_response:
@@ -2610,6 +2806,25 @@ if __name__ == "__main__":
             for record in records:
                 if not isinstance(record, dict):
                     continue
+                iteration = record.get("iteration")
+                data_files: list[dict[str, Any]] = []
+                for step in run.step_results:
+                    if not isinstance(step, dict) or step.get("loop_index") != iteration:
+                        continue
+                    for data_file in step.get("data_files", []):
+                        if not isinstance(data_file, dict):
+                            continue
+                        path, filename = data_file.get("path"), data_file.get("filename")
+                        if not isinstance(path, str) or not isinstance(filename, str):
+                            continue
+                        data_files.append(
+                            {
+                                "label": str(data_file.get("label") or "")[:256],
+                                "filename": filename,
+                                "path": path,
+                                "relative_path": str(data_file.get("relative_path") or ""),
+                            }
+                        )
                 response = record.get("response")
                 if not isinstance(response, dict):
                     continue
@@ -2643,11 +2858,12 @@ if __name__ == "__main__":
                                 proposal.get("rationale") or proposal.get("acceptanceEvidence") or ""
                             ),
                             "status": "proposed" if decision == "pending" else decision,
-                            "evaluation_build_id": run.evaluation_build_id,
-                            "evaluation_build_name": run.evaluation_build_name,
+                            "build_id": run.build_id,
+                            "build_name": run.build_name,
                             "run_id": run.id,
-                            "iteration": record.get("iteration"),
+                            "iteration": iteration,
                             "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                            "data_files": data_files,
                             "prompt_version": None,
                             "events": [
                                 {
@@ -2668,6 +2884,52 @@ if __name__ == "__main__":
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
 
+    def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
+        """List SDK-saved data files by persisted evaluation run and iteration.
+
+        These entries intentionally exist even when a supervisor did not make a
+        proposal. The proposal-decision history uses them to expose the full
+        iteration record rather than hiding developer-retained evidence behind
+        a proposal requirement.
+        """
+        values: list[dict[str, Any]] = []
+        for run in self.runs():
+            if build_id and run.build_id != build_id:
+                continue
+            grouped: dict[int, list[dict[str, Any]]] = {}
+            timestamps: dict[int, str] = {}
+            for step in run.step_results:
+                if not isinstance(step, dict) or not isinstance(step.get("loop_index"), int):
+                    continue
+                iteration = step["loop_index"]
+                for data_file in step.get("data_files", []):
+                    if not isinstance(data_file, dict):
+                        continue
+                    path, filename = data_file.get("path"), data_file.get("filename")
+                    if not isinstance(path, str) or not isinstance(filename, str):
+                        continue
+                    grouped.setdefault(iteration, []).append(
+                        {
+                            "label": str(data_file.get("label") or "")[:256],
+                            "filename": filename,
+                            "path": path,
+                            "relative_path": str(data_file.get("relative_path") or ""),
+                        }
+                    )
+                    timestamps.setdefault(iteration, str(step.get("ended_at") or run.updated_at.isoformat()))
+            for iteration, data_files in grouped.items():
+                values.append(
+                    {
+                        "build_id": run.build_id,
+                        "build_name": run.build_name,
+                        "run_id": run.id,
+                        "iteration": iteration,
+                        "recorded_at": timestamps[iteration],
+                        "data_files": data_files,
+                    }
+                )
+        return sorted(values, key=lambda item: str(item["recorded_at"]), reverse=True)
+
     def _save_cycle_interventions(self, values: list[dict[str, Any]]) -> None:
         temporary = CYCLE_INTERVENTIONS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(values, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -2682,6 +2944,270 @@ if __name__ == "__main__":
             return []
         lines = TELEMETRY.read_text(encoding="utf-8").splitlines()[-100:]
         return [json.loads(line) for line in reversed(lines)]
+
+    @staticmethod
+    def _prompt_snapshot_content(directory: Path, state: object) -> str | None:
+        if not isinstance(state, dict) or not state.get("exists"):
+            return ""
+        snapshot = state.get("snapshot")
+        if not isinstance(snapshot, str):
+            return None
+        candidate = (directory / snapshot).resolve()
+        if directory.resolve() not in candidate.parents:
+            return None
+        try:
+            payload = candidate.read_bytes()
+        except OSError:
+            return None
+        if len(payload) > 100_000:
+            return None
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+    def prompt_revisions(self, run_id: str) -> list[dict[str, Any]]:
+        """Return immutable managed-prompt changes and blocked writes for one Run."""
+        run = self._load(run_id)
+        repository = Path(run.repository or "").expanduser()
+        if not repository.is_dir():
+            return []
+        revisions: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            if not isinstance(result, dict):
+                continue
+            update = result.get("file_update") or result.get("file_rollback")
+            blocked = result.get("file_update_blocked")
+            cycle = result.get("improvement_cycle")
+            prompt_update = cycle.get("prompt_update") if isinstance(cycle, dict) else None
+            if (
+                not isinstance(update, dict)
+                and not isinstance(blocked, dict)
+                and not isinstance(prompt_update, dict)
+            ):
+                continue
+            event = (
+                update
+                if isinstance(update, dict)
+                else blocked
+                if isinstance(blocked, dict)
+                else prompt_update
+            )
+            path = str(event.get("path") or "")
+            version = event.get("version") if isinstance(event.get("version"), dict) else None
+            if not path and isinstance(prompt_update, dict):
+                path = str(prompt_update.get("path") or "")
+                version = (
+                    prompt_update.get("version")
+                    if isinstance(prompt_update.get("version"), dict)
+                    else version
+                )
+            if not path:
+                continue
+            project_key = hashlib.sha256(str(repository.resolve()).encode("utf-8")).hexdigest()
+            path_key = hashlib.sha256(path.encode("utf-8")).hexdigest()
+            directory = APP_DATA / "file-history" / project_key / path_key
+            previous = version.get("previous") if version else None
+            written = version.get("written") if version else None
+            operation = str(version.get("operation") if version else "")
+            reason = str(event.get("reason") or (prompt_update or {}).get("reason") or "")
+            if not version and reason != "awaiting_human_approval":
+                continue
+            revisions.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "path": path,
+                    "status": "blocked"
+                    if reason == "awaiting_human_approval"
+                    else "rolled_back"
+                    if operation == "rollback"
+                    else "applied"
+                    if version
+                    else "unchanged",
+                    "reason": reason or None,
+                    "recorded_at": (version or {}).get("recorded_at") or step.get("ended_at"),
+                    "version_id": (version or {}).get("id"),
+                    "run_id": (version or {}).get("run_id") or run.id,
+                    "before": self._prompt_snapshot_content(directory, previous),
+                    "after": self._prompt_snapshot_content(directory, written),
+                    "before_sha256": (previous or {}).get("sha256"),
+                    "after_sha256": (written or {}).get("sha256"),
+                }
+            )
+        # A Run record is convenient for current executions, but prompt files
+        # have a longer life than a single Run. Merge the durable file history
+        # so older updates remain visible even when their old runner did not
+        # emit a structured result in the current schema.
+        expected_path = ""
+        if run.build_id:
+            try:
+                expected_path = str(self.build(run.build_id).get("managed_prompt_path", ""))
+            except KeyError:
+                pass
+        history_root = APP_DATA / "file-history"
+        for manifest_path in history_root.glob("*/*/manifest.json"):
+            try:
+                document = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if document.get("project_root") != str(repository.resolve()):
+                continue
+            path = str(document.get("relative_path") or "")
+            if not path or (expected_path and path != expected_path):
+                continue
+            history = document.get("history")
+            if not isinstance(history, list):
+                continue
+            directory = manifest_path.parent
+            current_path = repository / path
+            current = current_path.read_bytes() if current_path.is_file() else None
+            for index, version in enumerate(history):
+                if not isinstance(version, dict):
+                    continue
+                previous = version.get("previous")
+                written = version.get("written")
+                after = self._prompt_snapshot_content(directory, written)
+                if after is None and isinstance(written, dict):
+                    next_previous = (
+                        history[index + 1].get("previous")
+                        if index + 1 < len(history) and isinstance(history[index + 1], dict)
+                        else None
+                    )
+                    if isinstance(next_previous, dict) and next_previous.get("sha256") == written.get(
+                        "sha256"
+                    ):
+                        after = self._prompt_snapshot_content(directory, next_previous)
+                    elif current is not None and hashlib.sha256(current).hexdigest() == written.get("sha256"):
+                        try:
+                            after = current.decode("utf-8")
+                        except UnicodeDecodeError:
+                            pass
+                existing = next(
+                    (item for item in revisions if item.get("version_id") == version.get("id")), None
+                )
+                if existing is not None:
+                    if existing.get("before") is None:
+                        existing["before"] = self._prompt_snapshot_content(directory, previous)
+                    if existing.get("after") is None:
+                        existing["after"] = after
+                    existing["run_id"] = existing.get("run_id") or version.get("run_id")
+                    continue
+                operation = str(version.get("operation") or "")
+                revisions.append(
+                    {
+                        "iteration": version.get("iteration"),
+                        "phase": version.get("phase"),
+                        "path": path,
+                        "status": "rolled_back" if operation == "rollback" else "applied",
+                        "recorded_at": version.get("recorded_at"),
+                        "version_id": version.get("id"),
+                        "run_id": version.get("run_id"),
+                        "before": self._prompt_snapshot_content(directory, previous),
+                        "after": after,
+                        "before_sha256": previous.get("sha256") if isinstance(previous, dict) else None,
+                        "after_sha256": written.get("sha256") if isinstance(written, dict) else None,
+                    }
+                )
+        ordered = sorted(revisions, key=lambda item: str(item.get("recorded_at") or ""))
+        initial_revisions: list[dict[str, Any]] = []
+        current_by_path: dict[str, str] = {}
+        for revision in ordered:
+            path = str(revision.get("path") or "")
+            before = revision.get("before")
+            after = revision.get("after")
+            if path and path not in current_by_path:
+                initial = before if isinstance(before, str) else after if isinstance(after, str) else None
+                if initial is not None:
+                    initial_revisions.append(
+                        {
+                            "iteration": None,
+                            "phase": "initial",
+                            "path": path,
+                            "status": "initial",
+                            "reason": None,
+                            "recorded_at": None,
+                            "version_id": None,
+                            "run_id": None,
+                            "before": initial,
+                            "after": initial,
+                            "before_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                            "after_sha256": hashlib.sha256(initial.encode("utf-8")).hexdigest(),
+                        }
+                    )
+                    current_by_path[path] = initial
+            if revision.get("status") == "blocked" and path in current_by_path:
+                revision["before"] = current_by_path[path]
+                revision["after"] = current_by_path[path]
+                digest = hashlib.sha256(current_by_path[path].encode("utf-8")).hexdigest()
+                revision["before_sha256"] = digest
+                revision["after_sha256"] = digest
+            elif isinstance(after, str) and path:
+                current_by_path[path] = after
+        return [*initial_revisions, *ordered]
+
+    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
+        """Return commit ranges automatically retained by SDK runner phases."""
+        run = self._load(run_id)
+        changes: list[dict[str, Any]] = []
+        for step in run.step_results:
+            result = step.get("result")
+            event = result.get("commit_change") if isinstance(result, dict) else None
+            if not isinstance(event, dict) and isinstance(result, dict):
+                jgent = result.get("jgent_paired")
+                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
+                event = candidate if isinstance(candidate, dict) else None
+            if not isinstance(event, dict):
+                continue
+            before, after = str(event.get("before") or ""), str(event.get("after") or "")
+            if not before or not after or before == after:
+                continue
+            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
+            diff: str | None = None
+            if artifact:
+                raw_path = artifact.get("path")
+                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
+                artifacts_root = (APP_DATA / "artifacts").resolve()
+                if candidate and artifacts_root in candidate.parents:
+                    try:
+                        if candidate.stat().st_size <= 500_000:
+                            diff = candidate.read_text(encoding="utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        pass
+            changes.append(
+                {
+                    "iteration": step.get("loop_index"),
+                    "phase": step.get("phase"),
+                    "recorded_at": step.get("ended_at"),
+                    "before": before,
+                    "after": after,
+                    "changed_paths": event.get("changed_paths")
+                    if isinstance(event.get("changed_paths"), list)
+                    else [],
+                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
+                    "diff_artifact": artifact,
+                    "diff": diff,
+                }
+            )
+        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
+
+    def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
+        """Resolve one retained run artifact without permitting path traversal."""
+        if loop_index < 0:
+            raise KeyError(relative_path)
+        relative = Path(relative_path)
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or any(part in {"", ".", ".."} for part in relative.parts)
+        ):
+            raise KeyError(relative_path)
+        directory = (APP_DATA / "artifacts" / run_id / f"loop-{loop_index}").resolve()
+        candidate = (directory / relative).resolve()
+        if directory not in candidate.parents or not candidate.is_file():
+            raise KeyError(relative_path)
+        return candidate
 
     def run_telemetry(self, run_id: str) -> dict[str, Any]:
         """Return the exported OpenTelemetry spans belonging to one execution."""
@@ -2751,16 +3277,16 @@ if __name__ == "__main__":
 
     def dashboard(self) -> dict[str, Any]:
         runs = self.runs()
-        builds = self.evaluation_builds()
+        builds = self.builds()
         build_ids = {build["id"] for build in builds}
         recent_runs: list[Run] = []
         seen_builds: set[str] = set()
         for run in runs:
-            if not run.evaluation_build_id or run.evaluation_build_id not in build_ids:
+            if not run.build_id or run.build_id not in build_ids:
                 continue
-            if run.evaluation_build_id in seen_builds:
+            if run.build_id in seen_builds:
                 continue
-            seen_builds.add(run.evaluation_build_id)
+            seen_builds.add(run.build_id)
             recent_runs.append(run)
             if len(recent_runs) == 8:
                 break
@@ -2771,19 +3297,18 @@ if __name__ == "__main__":
                 for run in runs
                 if run.execution_type == "pipeline"
                 and run.execution_mode == "run"
-                and run.evaluation_build_id in build_ids
+                and run.build_id in build_ids
                 and run.status in {"queued", "running", "awaiting_approval"}
             ],
             "recent_runs": recent_runs,
             "improvements": self.improvements(),
             "metrics": {
-                "evaluation_builds": len(builds),
+                "builds": len(builds),
                 "completed_evaluations": len(
                     [
                         run
                         for run in runs
-                        if run.evaluation_build_id in build_ids
-                        and run.status in {"succeeded", "failed", "cancelled"}
+                        if run.build_id in build_ids and run.status in {"succeeded", "failed", "cancelled"}
                     ]
                 ),
                 "commits": len([item for item in self.improvements() if item["status"] == "committed"]),
@@ -2822,12 +3347,10 @@ if __name__ == "__main__":
             except ValueError:
                 return None
 
-        pipeline_runs = [
-            run for run in self.runs() if run.execution_type == "pipeline" and run.evaluation_build_id
-        ]
+        pipeline_runs = [run for run in self.runs() if run.execution_type == "pipeline" and run.build_id]
         for run in pipeline_runs:
-            build_id = str(run.evaluation_build_id)
-            name = run.evaluation_build_name or build_id
+            build_id = str(run.build_id)
+            name = run.build_name or build_id
             feedback = feedback_by_build.setdefault(
                 build_id, {"build_id": build_id, "name": name, "feedback_count": 0}
             )
@@ -2930,12 +3453,12 @@ if __name__ == "__main__":
         for run in pipeline_runs:
             if run.created_at < start or run.created_at > end:
                 continue
-            build_id = str(run.evaluation_build_id)
+            build_id = str(run.build_id)
             item = health_by_build.setdefault(
                 build_id,
                 {
                     "build_id": build_id,
-                    "name": run.evaluation_build_name or build_id,
+                    "name": run.build_name or build_id,
                     "succeeded": 0,
                     "failed": 0,
                     "cancelled": 0,
@@ -2981,31 +3504,51 @@ if __name__ == "__main__":
         view: neither represents a running local evaluation pipeline.
         """
         # This is the build-facing operations view, not a raw run log.  Keep
-        # exactly one (the most recent) pipeline state per evaluation build so
+        # exactly one (the most recent) pipeline state per build so
         # completed and failed activity remains visible without duplicate rows.
         active = []
         seen_builds: set[str] = set()
-        builds_by_id = {build["id"]: build for build in self.evaluation_builds()}
+        builds_by_id = {build["id"]: build for build in self.builds()}
         existing_build_ids = set(builds_by_id)
         for run in sorted(
             runs if runs is not None else self.runs(), key=lambda item: item.created_at, reverse=True
         ):
-            if run.execution_type != "pipeline" or run.execution_mode != "run" or not run.evaluation_build_id:
+            if run.execution_type != "pipeline" or run.execution_mode != "run" or not run.build_id:
                 continue
-            if run.evaluation_build_id not in existing_build_ids:
+            if run.build_id not in existing_build_ids:
                 continue
-            if run.evaluation_build_id in seen_builds:
+            if run.build_id in seen_builds:
                 continue
-            seen_builds.add(run.evaluation_build_id)
+            seen_builds.add(run.build_id)
             item = run.model_dump(mode="json")
-            response = run.supervisor_response or {"improvements": [], "reported_issues": []}
-            improvements = response["improvements"]
+            # The run-level response is the newest iteration only. The table
+            # represents the whole retained run, so a successful later
+            # iteration must not hide feedback recorded by an earlier one.
+            responses = [
+                record.get("response")
+                for record in run.supervisor_results
+                if isinstance(record, dict) and isinstance(record.get("response"), dict)
+            ]
+            if not responses and isinstance(run.supervisor_response, dict):
+                responses = [run.supervisor_response]
+            improvements = [
+                improvement
+                for response in responses
+                for improvement in response.get("improvements", [])
+                if isinstance(improvement, dict)
+            ]
+            issues = [
+                issue
+                for response in responses
+                for issue in response.get("reported_issues", [])
+                if isinstance(issue, dict)
+            ]
             item["proposed_improvements"] = len(improvements)
             item["approved_improvements"] = len(
                 [item for item in improvements if item.get("status") == "adopted"]
             )
-            item["reported_issues"] = len(response["reported_issues"])
-            item["approval_score"] = builds_by_id[run.evaluation_build_id].get("approval_score")
+            item["reported_issues"] = len(issues)
+            item["approval_score"] = builds_by_id[run.build_id].get("approval_score")
             active.append(item)
         return active
 
@@ -3074,14 +3617,26 @@ if __name__ == "__main__":
         self,
         runner_id: str,
         execution_mode: str = "run",
-        evaluation_build_id: str | None = None,
-        evaluation_build_name: str | None = None,
+        build_id: str | None = None,
+        build_name: str | None = None,
         supervisor_profile_name: str | None = None,
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
         loop_limit: int = 1,
+        timezone: str = "UTC",
+        schedule_enabled: bool = False,
+        schedule_weekdays: list[int] | None = None,
+        schedule_start_time: str = "09:00",
+        schedule_end_time: str = "18:00",
+        start_iteration: int = 1,
+        retry_of_run_id: str | None = None,
+        retry_mode: str | None = None,
         repeat_interval_minutes: int = 0,
+        cadence_mode: str = "after_completion",
+        overrun_policy: str = "wait",
         approval_score: int | None = None,
+        iteration_strategy: str = "linear",
+        candidates_per_iteration: int = 1,
         repository: str | None = None,
         transient: bool = False,
     ) -> Run:
@@ -3093,8 +3648,8 @@ if __name__ == "__main__":
             id=uuid.uuid4().hex[:12],
             workflow_id=runner.id,
             workflow_name=runner.name,
-            evaluation_build_id=evaluation_build_id,
-            evaluation_build_name=evaluation_build_name,
+            build_id=build_id,
+            build_name=build_name,
             repository=repository,
             supervisor_profile_name=supervisor_profile_name,
             prompt_source=prompt_source,
@@ -3102,8 +3657,20 @@ if __name__ == "__main__":
             execution_mode=execution_mode,
             execution_type="pipeline",
             loop_limit=max(1, loop_limit),
+            timezone=timezone,
+            schedule_enabled=schedule_enabled,
+            schedule_weekdays=schedule_weekdays or [],
+            schedule_start_time=schedule_start_time,
+            schedule_end_time=schedule_end_time,
+            start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
+            retry_of_run_id=retry_of_run_id,
+            retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
             repeat_interval_minutes=max(0, repeat_interval_minutes),
+            cadence_mode="fixed" if cadence_mode == "fixed" else "after_completion",
+            overrun_policy="interrupt_eval" if overrun_policy == "interrupt_eval" else "wait",
             approval_score=approval_score,
+            iteration_strategy=("score_select" if iteration_strategy == "score_select" else "linear"),
+            candidates_per_iteration=max(1, candidates_per_iteration),
             status="awaiting_approval" if needs_approval else "queued",
             created_at=now(),
             updated_at=now(),
@@ -3145,6 +3712,8 @@ if __name__ == "__main__":
             if isinstance(item, dict) and item.get("profile_name", "").strip():
                 profile = dict(default)
                 profile.update({key: str(value) for key, value in item.items() if key in default})
+                if item.get("created_at"):
+                    profile["created_at"] = str(item["created_at"])
                 profiles.append(profile)
         return profiles or [default]
 
@@ -3157,30 +3726,46 @@ if __name__ == "__main__":
                 active = str(stored.get("active_profile", ""))
         return next((profile for profile in profiles if profile["profile_name"] == active), profiles[0])
 
-    def application_settings(self) -> dict[str, str]:
+    def application_settings(self) -> dict[str, Any]:
         """Settings for operating this console, separate from build assets."""
         if not SETTINGS.exists():
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "assistant_tools": normalize_assistant_tools(None),
             }
         stored = json.loads(SETTINGS.read_text(encoding="utf-8"))
         values = stored.get("application_settings", {}) if isinstance(stored, dict) else {}
         if not isinstance(values, dict):
             return {
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+                "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "assistant_tools": normalize_assistant_tools(None),
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
         if MANAGER_PROMPT_SLOT not in prompt:
             prompt = f"{prompt}\n\n{MANAGER_PROMPT_SLOT}".strip()
+        if MANAGER_OUTPUT_LANGUAGE_SLOT not in prompt:
+            prompt = f"{prompt}\n\n{MANAGER_OUTPUT_LANGUAGE_SLOT}".strip()
+        output_locale = str(values.get("manager_output_locale", "en")).strip() or "en"
         return {
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
+            "manager_output_locale": output_locale,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),
+            "assistant_tools": normalize_assistant_tools(values.get("assistant_tools")),
         }
 
-    def save_application_settings(self, values: dict[str, str]) -> dict[str, str]:
-        chat_profile_name = str(values.get("chat_model_profile_name", "")).strip()
+    def save_application_settings(self, values: dict[str, Any]) -> dict[str, Any]:
+        current = self.application_settings()
+        chat_profile_name = str(
+            values.get("chat_model_profile_name", current["chat_model_profile_name"])
+        ).strip()
+        output_locale = (
+            str(values.get("manager_output_locale", current["manager_output_locale"])).strip()
+            or current["manager_output_locale"]
+        )
         if chat_profile_name and not any(
             item["profile_name"] == chat_profile_name for item in self.profiles()
         ):
@@ -3188,8 +3773,14 @@ if __name__ == "__main__":
         stored = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
         document = stored if isinstance(stored, dict) else {}
         document["application_settings"] = {
-            "manager_prompt_template": str(values.get("manager_prompt_template", "")).strip(),
+            "manager_prompt_template": str(
+                values.get("manager_prompt_template", current["manager_prompt_template"])
+            ).strip(),
+            "manager_output_locale": output_locale,
             "chat_model_profile_name": chat_profile_name,
+            "assistant_tools": normalize_assistant_tools(
+                values.get("assistant_tools", current["assistant_tools"])
+            ),
         }
         temporary = SETTINGS.with_suffix(".tmp")
         temporary.write_text(json.dumps(document, indent=2), encoding="utf-8")
@@ -3202,8 +3793,12 @@ if __name__ == "__main__":
         stored["profile_name"] = stored.get("profile_name", "").strip()
         if not stored["profile_name"]:
             raise ValueError("프로필 이름을 입력해야 합니다.")
+        existing_profile = next(
+            (item for item in self.profiles() if item["profile_name"] == stored["profile_name"]), None
+        )
         profile = dict(self._default_settings())
         profile.update(stored)
+        profile["created_at"] = (existing_profile or {}).get("created_at", now().isoformat())
         profiles = self.profiles() if SETTINGS.exists() else []
         profiles = [item for item in profiles if item["profile_name"] != profile["profile_name"]]
         profiles.append(profile)
@@ -3219,8 +3814,8 @@ if __name__ == "__main__":
         profiles = self.profiles()
         if not any(item["profile_name"] == profile_name for item in profiles):
             raise KeyError(profile_name)
-        if any(build.get("model_profile_name") == profile_name for build in self.evaluation_builds()):
-            raise ValueError("AI model profile is used by an evaluation build")
+        if any(build.get("model_profile_name") == profile_name for build in self.builds()):
+            raise ValueError("AI model profile is used by a build")
         if self.application_settings()["chat_model_profile_name"] == profile_name:
             raise ValueError("AI model profile is used by the chat assistant")
         remaining = [item for item in profiles if item["profile_name"] != profile_name]
@@ -3273,14 +3868,12 @@ if __name__ == "__main__":
         workflow = self._runner_execution_plan(run.workflow_id)
         resources: dict[str, Any] = {
             "workflow": workflow.model_dump(mode="json"),
-            "evaluation_build": {},
+            "build": {},
             "test_cases": [],
         }
-        if run.evaluation_build_id:
-            build = self.evaluation_build(run.evaluation_build_id)
-            resources["evaluation_build"] = {
-                key: value for key, value in build.items() if key not in {"executor"}
-            }
+        if run.build_id:
+            build = self.build(run.build_id)
+            resources["build"] = {key: value for key, value in build.items() if key not in {"executor"}}
             resources["execution_environment"] = self._execution_environment(
                 str(build.get("execution_environment_id", ""))
             )
@@ -3293,6 +3886,11 @@ if __name__ == "__main__":
                 None,
             )
             resources["test_cases"] = selected.get("cases", []) if selected else build.get("test_cases", [])
+            profile_name = str(build.get("model_profile_name", ""))
+            resources["model_profile"] = next(
+                (profile for profile in self.profiles() if profile.get("profile_name") == profile_name),
+                self.settings(),
+            )
         # A build repository is the product under evaluation, while a workflow
         # step may execute through a separate adapter project (for example the
         # Insighta user simulator).  Keep each step's runner directory intact;
@@ -3314,20 +3912,112 @@ if __name__ == "__main__":
             run.status, run.updated_at, run.telemetry_trace_id = "running", now(), trace_id
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
-            init = [step for step in steps if step.phase == "init"]
-            loop_steps = [step for step in steps if step.phase in {"setup", "run", "eval", "teardown"}]
-            finalize = [step for step in steps if step.phase == "finalize"]
-            for step in init:
-                self._execute_step(run_id, step, 0, resources)
-                if self._load(run_id).status in {"failed", "cancelled"}:
-                    break
-            for loop_index in range(1, run.loop_limit + 1):
-                if self._load(run_id).status in {"failed", "cancelled"}:
-                    break
-                for step in loop_steps:
-                    self._execute_step(run_id, step, loop_index, resources)
+            before_all = [step for step in steps if step.phase == "before_all"]
+            loop_steps = [step for step in steps if step.phase in {"before_each", "execute", "verify"}]
+            after_each = [step for step in steps if step.phase == "after_each"]
+            after_all = [step for step in steps if step.phase == "after_all"]
+            if not self._wait_for_schedule(run_id):
+                return
+            if run.start_iteration == 1 and run.retry_mode != "resume":
+                for step in before_all:
+                    self._execute_step(run_id, step, 0, resources)
                     if self._load(run_id).status in {"failed", "cancelled"}:
                         break
+            for loop_index in range(run.start_iteration, run.loop_limit + 1):
+                if not self._wait_for_schedule(run_id):
+                    break
+                run = self._load(run_id)
+                if run.cadence_mode == "fixed" and run.repeat_interval_minutes:
+                    run.iteration_deadline_at = run.created_at + timedelta(
+                        minutes=run.repeat_interval_minutes * loop_index
+                    )
+                    self._save(run)
+                candidate_ids = (
+                    (
+                        [str(loop_index)]
+                        if loop_index == 1
+                        else [f"{loop_index}-{index}" for index in range(1, run.candidates_per_iteration + 1)]
+                    )
+                    if run.iteration_strategy == "score_select"
+                    else []
+                )
+                base_candidate_id = next(
+                    (
+                        str(item["id"])
+                        for item in reversed(run.iteration_candidates)
+                        if item.get("iteration") == loop_index - 1 and item.get("selected")
+                    ),
+                    None,
+                )
+                candidate_results: list[dict[str, Any]] = []
+                for candidate_id in candidate_ids:
+                    if self._load(run_id).status in {"failed", "cancelled"}:
+                        break
+                    for step in loop_steps:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                    for step in after_each:
+                        self._execute_step(
+                            run_id,
+                            step,
+                            loop_index,
+                            resources,
+                            allow_terminal=True,
+                            candidate_id=candidate_id,
+                            base_candidate_id=base_candidate_id,
+                        )
+                    if self._load(run_id).status == "running" and run.execution_mode == "run":
+                        self._complete_supervision(run_id)
+                        record = (self._load(run_id).supervisor_results or [])[-1:]
+                        response = record[0].get("response", {}) if record else {}
+                        evaluation = response.get("evaluation", {}) if isinstance(response, dict) else {}
+                        candidate_results.append(
+                            {
+                                "id": candidate_id,
+                                "iteration": loop_index,
+                                "score": evaluation.get("score"),
+                                "status": record[0].get("status") if record else "failed",
+                            }
+                        )
+                if candidate_results:
+                    ranked = sorted(
+                        candidate_results,
+                        key=lambda item: (
+                            item.get("score") is not None,
+                            item.get("score") or float("-inf"),
+                            item["id"],
+                        ),
+                        reverse=True,
+                    )
+                    winner = ranked[0]
+                    current = self._load(run_id)
+                    for candidate in candidate_results:
+                        candidate["selected"] = candidate["id"] == winner["id"]
+                    current.iteration_candidates.extend(candidate_results)
+                    self._save(current)
+                if run.iteration_strategy == "score_select":
+                    continue
+                terminal_before_iteration = self._load(run_id).status in {"failed", "cancelled"}
+                if not terminal_before_iteration:
+                    for step in loop_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                        if self._load(run_id).status in {"failed", "cancelled"}:
+                            break
+                # Cleanup is part of the lifecycle contract, not merely the
+                # happy path. Run it after an earlier phase fails or a user
+                # cancels the Run; the terminal status remains unchanged.
+                for step in after_each:
+                    self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
+                if self._load(run_id).status in {"failed", "cancelled"}:
+                    break
                 if (
                     self._load(run_id).status == "running"
                     and run.execution_mode == "run"
@@ -3343,13 +4033,21 @@ if __name__ == "__main__":
                     run = self._load(run_id)
                     run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
                     self._save(run)
-                    for _ in range(run.repeat_interval_minutes * 60):
+                    wait_seconds = run.repeat_interval_minutes * 60
+                    if run.cadence_mode == "fixed":
+                        next_start = run.created_at + timedelta(
+                            minutes=run.repeat_interval_minutes * loop_index
+                        )
+                        wait_seconds = max(0, int((next_start - now()).total_seconds()))
+                    for _ in range(wait_seconds):
                         if self._load(run_id).status != "running":
                             break
                         time.sleep(1)
-            for step in finalize:
-                if self._load(run_id).status != "cancelled":
-                    self._execute_step(run_id, step, run.loop_limit + 1, resources)
+            for step in after_all:
+                # Finalization owns process-level recovery. It must still run
+                # after a failed or cancelled iteration so a runner can restore
+                # the repository baseline it captured during before_each.
+                self._execute_step(run_id, step, run.loop_limit + 1, resources, allow_terminal=True)
             run = self._load(run_id)
             if run.status == "running":
                 run.status = "succeeded"
@@ -3370,7 +4068,7 @@ if __name__ == "__main__":
         as an evaluation outcome.
         """
         for step in reversed(run.step_results):
-            if step.get("phase") != "run":
+            if step.get("phase") != "execute":
                 continue
             result = step.get("result")
             if not isinstance(result, dict):
@@ -3421,9 +4119,12 @@ if __name__ == "__main__":
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
         if evaluation is not None:
-            if not isinstance(evaluation, dict) or set(evaluation) not in (
-                {"score", "approval", "summary"},
-                {"score", "approval", "behavior_summary", "summary"},
+            if (
+                not isinstance(evaluation, dict)
+                or not {"score", "approval", "summary"}.issubset(evaluation)
+                or not set(evaluation).issubset(
+                    {"score", "approval", "summary", "behavior_summary", "behavior_trace"}
+                )
             ):
                 raise ValueError(
                     "supervisor evaluation must contain score, approval, summary, and behavior_summary"
@@ -3444,6 +4145,17 @@ if __name__ == "__main__":
                 raise ValueError("supervisor evaluation approval or summary is invalid")
             if "behavior_summary" in evaluation and not isinstance(evaluation["behavior_summary"], str):
                 raise ValueError("supervisor evaluation behavior_summary is invalid")
+            if "behavior_trace" in evaluation:
+                trace = evaluation["behavior_trace"]
+                trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
+                if (
+                    not isinstance(trace, dict)
+                    or set(trace) != trace_fields
+                    or not all(
+                        isinstance(trace[field], str) and trace[field].strip() for field in trace_fields
+                    )
+                ):
+                    raise ValueError("supervisor evaluation behavior_trace is invalid")
         return result
 
     def _complete_supervision(self, run_id: str) -> None:
@@ -3453,7 +4165,7 @@ if __name__ == "__main__":
         target pipeline into a failed pipeline.
         """
         run = self._load(run_id)
-        # Finalization is recorded after the last run/eval loop and therefore
+        # Finalization is recorded after the last execute/verify loop and therefore
         # has a higher loop index.  Supervision must evaluate the most recent
         # loop that actually produced runner evidence, not that bookkeeping
         # phase.
@@ -3461,9 +4173,17 @@ if __name__ == "__main__":
             (
                 int(item.get("loop_index", 0))
                 for item in run.step_results
-                if item.get("phase") in {"run", "eval"}
+                if item.get("phase") in {"execute", "verify"}
             ),
             default=0,
+        )
+        candidate_id = next(
+            (
+                str(item.get("candidate_id"))
+                for item in reversed(run.step_results)
+                if item.get("loop_index") == iteration and item.get("candidate_id")
+            ),
+            None,
         )
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
@@ -3516,16 +4236,17 @@ if __name__ == "__main__":
                 "output": str(item.get("output", ""))[-4_000:],
             }
             for item in run.step_results
-            if item.get("phase") in {"setup", "run", "eval"} and item.get("loop_index") == iteration
+            if item.get("phase") in {"before_each", "execute", "verify"}
+            and item.get("loop_index") == iteration
         ]
         # A native improvement runner can update its rollback-protected prompt
-        # during setup. Reassemble before every supervision pass so the next
+        # during before_each. Reassemble before every supervision pass so the next
         # iteration uses that exact file version; the actual text is retained
         # on the supervisor result below for auditability.
         supervisor_prompt = run.prompt_snapshot or ""
-        if run.evaluation_build_id:
+        if run.build_id:
             try:
-                _, supervisor_prompt = self._assembled_prompt(self.evaluation_build(run.evaluation_build_id))
+                _, supervisor_prompt = self._assembled_prompt(self.build(run.build_id))
             except ValueError:
                 # The original immutable run snapshot remains a safe fallback
                 # if an operator has made the prompt temporarily unreadable.
@@ -3540,9 +4261,7 @@ if __name__ == "__main__":
                 "gen_ai.provider.name": settings.provider,
                 "gen_ai.request.model": settings.model,
                 "orbit.manager.template": (
-                    self.evaluation_build(run.evaluation_build_id).get("manager_template_id")
-                    if run.evaluation_build_id
-                    else ""
+                    self.build(run.build_id).get("manager_template_id") if run.build_id else ""
                 ),
                 "orbit.iteration": iteration,
             },
@@ -3554,7 +4273,7 @@ if __name__ == "__main__":
                     threshold = (
                         run.approval_score
                         if run.approval_score is not None
-                        else int(self.evaluation_build(run.evaluation_build_id).get("approval_score", 0))
+                        else int(self.build(run.build_id).get("approval_score", 0))
                     )
                     evaluation["approval"] = "approved" if evaluation["score"] >= threshold else "rejected"
                 reported_at = now().isoformat()
@@ -3574,6 +4293,7 @@ if __name__ == "__main__":
                 run.supervisor_results.append(
                     {
                         "iteration": iteration,
+                        "candidate_id": candidate_id,
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
@@ -3628,7 +4348,7 @@ if __name__ == "__main__":
             """You improve an OpenOrbit evaluation cycle, not the evaluated product.\nReturn exactly JSON: {\"diagnosis\":\"string\",\"interventions\":[{\"target\":\"runner|workflow|test_case_set|manager_prompt|schedule\",\"title\":\"string\",\"rationale\":\"string\",\"proposed_change\":\"string\",\"risk\":\"low|medium|high\",\"validation\":\"string\",\"rollback\":\"string\"}]}.\nOnly propose evidence-backed changes. Do not propose target repository code changes.\n\n"""
             + json.dumps(
                 {
-                    "evaluation_build": run.evaluation_build_name,
+                    "build": run.build_name,
                     "iteration": iteration,
                     "supervisor_result": result,
                 },
@@ -3647,8 +4367,8 @@ if __name__ == "__main__":
                 stored.append(
                     {
                         "id": f"ci-{uuid.uuid4().hex[:10]}",
-                        "evaluation_build_id": run.evaluation_build_id,
-                        "evaluation_build_name": run.evaluation_build_name,
+                        "build_id": run.build_id,
+                        "build_name": run.build_name,
                         "run_id": run.id,
                         "iteration": iteration,
                         "diagnosis": str(reviewed.get("diagnosis", "")),
@@ -3662,7 +4382,15 @@ if __name__ == "__main__":
             return
 
     def _execute_step(
-        self, run_id: str, step, loop_index: int = 1, resources: dict[str, Any] | None = None
+        self,
+        run_id: str,
+        step,
+        loop_index: int = 1,
+        resources: dict[str, Any] | None = None,
+        *,
+        allow_terminal: bool = False,
+        candidate_id: str | None = None,
+        base_candidate_id: str | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         with self.tracer.start_as_current_span(
             "workflow.step",
@@ -3673,7 +4401,7 @@ if __name__ == "__main__":
             },
         ) as span:
             run = self._load(run_id)
-            if run.status == "cancelled":
+            if run.status in {"failed", "cancelled"} and not allow_terminal:
                 return
             run.current_step, run.current_phase, run.updated_at = step.id, step.phase, now()
             self._save(run)
@@ -3709,14 +4437,18 @@ if __name__ == "__main__":
                 environment["ORBIT_APP_DATA"] = str(APP_DATA)
                 environment["ORBIT_EXECUTION_MODE"] = run.execution_mode
                 environment["ORBIT_LOOP_INDEX"] = str(loop_index)
+                if candidate_id:
+                    environment["ORBIT_CANDIDATE_ID"] = candidate_id
+                if base_candidate_id:
+                    environment["ORBIT_BASE_CANDIDATE_ID"] = base_candidate_id
                 environment["ORBIT_RUN_ID"] = run_id
                 environment["ORBIT_RUNNER_RESOURCES"] = base64.b64encode(
                     json.dumps(resources or {}, ensure_ascii=False).encode("utf-8")
                 ).decode("ascii")
                 if run.prompt_snapshot:
                     environment["ORBIT_EVALUATION_PROMPT"] = run.prompt_snapshot
-                if run.evaluation_build_id:
-                    environment["ORBIT_EVALUATION_BUILD_ID"] = run.evaluation_build_id
+                if run.build_id:
+                    environment["ORBIT_BUILD_ID"] = run.build_id
                 process = subprocess.Popen(
                     step.command,
                     cwd=directory,
@@ -3727,12 +4459,72 @@ if __name__ == "__main__":
                     creationflags=creation_flags,
                     env=environment,
                 )
+                interruption_timer: threading.Timer | None = None
+                if (
+                    step.phase == "verify"
+                    and run.overrun_policy == "interrupt_eval"
+                    and run.iteration_deadline_at
+                ):
+                    delay = (run.iteration_deadline_at - now()).total_seconds()
+                    if delay <= 0:
+                        delay = 0.01
+
+                    def interrupt_overdue_evaluation() -> None:
+                        current = self._load(run_id)
+                        if current.current_phase != "verify" or process.poll() is not None:
+                            return
+                        current.advance_requested, current.updated_at = True, now()
+                        self._save(current)
+                        if os.name == "nt":
+                            process.terminate()
+                        else:
+                            os.killpg(process.pid, signal.SIGTERM)
+
+                    interruption_timer = threading.Timer(delay, interrupt_overdue_evaluation)
+                    interruption_timer.daemon = True
+                    interruption_timer.start()
                 captured_lines: list[tuple[str, str]] = []
+                live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
+
+                def retained_visible_lines() -> list[tuple[str, str]]:
+                    retained: list[tuple[str, str]] = []
+                    retained_size = 0
+                    for item in reversed(captured_lines):
+                        if item[1].startswith("__ORBIT_RESULT__"):
+                            continue
+                        line_size = len(item[1]) + (1 if retained else 0)
+                        if retained and retained_size + line_size > 12_000:
+                            break
+                        retained.append(item)
+                        retained_size += line_size
+                    retained.reverse()
+                    return retained
+
+                def persist_live_output() -> None:
+                    retained = retained_visible_lines()
+                    # `_load` and `_save` each acquire the store lock for their
+                    # in-memory test-session handling.  Do not hold it here as
+                    # well: `Lock` is deliberately non-reentrant, and doing so
+                    # would deadlock the reader thread on its first live update.
+                    current = self._load(run_id)
+                    for item in reversed(current.step_results):
+                        if item.get("_live_step_key") == live_step_key:
+                            item["output"] = "\n".join(line for _, line in retained)
+                            item["log_lines"] = [
+                                {"timestamp": timestamp, "value": line} for timestamp, line in retained
+                            ]
+                            current.updated_at = now()
+                            self._save(current)
+                            return
 
                 def capture_output() -> None:
                     assert process.stdout is not None
+                    last_persist = 0.0
                     for line in process.stdout:
                         captured_lines.append((now(), line.rstrip("\r\n")))
+                        if time.monotonic() - last_persist >= 0.75:
+                            persist_live_output()
+                            last_persist = time.monotonic()
 
                 output_reader = threading.Thread(target=capture_output, daemon=True)
                 output_reader.start()
@@ -3740,11 +4532,32 @@ if __name__ == "__main__":
                     self._processes[run_id] = process
                 run = self._load(run_id)
                 run.pid, run.last_pid, run.updated_at = process.pid, process.pid, now()
+                run.step_results.append(
+                    {
+                        "step_id": step.id,
+                        "phase": step.phase,
+                        "loop_index": loop_index,
+                        "candidate_id": candidate_id,
+                        "name": step.name,
+                        "command": step.command,
+                        "working_directory": str(directory),
+                        "started_at": started,
+                        "in_progress": True,
+                        "_live_step_key": live_step_key,
+                        "output": "",
+                        "log_lines": [],
+                    }
+                )
                 self._save(run)
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
+                if interruption_timer:
+                    interruption_timer.cancel()
                 output_reader.join()
+                persist_live_output()
                 structured_result: dict[str, Any] | None = None
+                target_logs: list[dict[str, Any]] = []
+                data_files: list[dict[str, Any]] = []
                 visible_lines: list[tuple[str, str]] = []
                 for timestamp, line in captured_lines:
                     if line.startswith("__ORBIT_RESULT__"):
@@ -3752,24 +4565,62 @@ if __name__ == "__main__":
                             emitted = json.loads(line.removeprefix("__ORBIT_RESULT__"))
                             if not isinstance(emitted, dict):
                                 raise ValueError("structured runner result must be an object")
+                            emitted_target_logs = emitted.pop("target_logs", [])
+                            if isinstance(emitted_target_logs, list):
+                                for entry in emitted_target_logs:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    message = entry.get("message")
+                                    if not isinstance(message, str) or not message.strip():
+                                        continue
+                                    target_logs.append(
+                                        {
+                                            "timestamp": entry.get("timestamp")
+                                            if isinstance(entry.get("timestamp"), str)
+                                            else timestamp,
+                                            "level": str(entry.get("level") or "info")[:32],
+                                            "source": str(entry.get("source") or "")[:256],
+                                            "message": message.strip()[:4000],
+                                            "run_id": run_id,
+                                            "iteration": loop_index,
+                                            "phase": step.phase,
+                                        }
+                                    )
+                            emitted_data_files = emitted.pop("data_files", [])
+                            if isinstance(emitted_data_files, list):
+                                for entry in emitted_data_files:
+                                    if not isinstance(entry, dict):
+                                        continue
+                                    path = entry.get("path")
+                                    relative_path = entry.get("relative_path")
+                                    if not isinstance(path, str) or not isinstance(relative_path, str):
+                                        continue
+                                    data_files.append(
+                                        {
+                                            "label": str(entry.get("label") or "")[:256],
+                                            "filename": str(
+                                                entry.get("filename") or Path(relative_path).name
+                                            ),
+                                            "path": path,
+                                            "relative_path": relative_path,
+                                            "sha256": str(entry.get("sha256") or ""),
+                                            "size": entry.get("size")
+                                            if isinstance(entry.get("size"), int)
+                                            else 0,
+                                            "content_type": str(entry.get("content_type") or ""),
+                                        }
+                                    )
                             structured_result = {**(structured_result or {}), **emitted}
                         except json.JSONDecodeError:
                             visible_lines.append((timestamp, line))
                     else:
                         visible_lines.append((timestamp, line))
-                retained_lines: list[tuple[str, str]] = []
-                retained_size = 0
-                for item in reversed(visible_lines):
-                    line_size = len(item[1]) + (1 if retained_lines else 0)
-                    if retained_lines and retained_size + line_size > 12_000:
-                        break
-                    retained_lines.append(item)
-                    retained_size += line_size
-                retained_lines.reverse()
+                retained_lines = retained_visible_lines()
                 result: dict[str, Any] = {
                     "step_id": step.id,
                     "phase": step.phase,
                     "loop_index": loop_index,
+                    "candidate_id": candidate_id,
                     "name": step.name,
                     "command": step.command,
                     "working_directory": str(directory),
@@ -3783,17 +4634,43 @@ if __name__ == "__main__":
                 }
                 if structured_result is not None:
                     result["result"] = structured_result
+                if target_logs:
+                    result["target_logs"] = target_logs[-200:]
+                if data_files:
+                    result["data_files"] = data_files
                 run = self._load(run_id)
-                run.step_results.append(result)
+                live_index = next(
+                    (
+                        index
+                        for index, item in enumerate(run.step_results)
+                        if item.get("_live_step_key") == live_step_key
+                    ),
+                    None,
+                )
+                if live_index is None:
+                    run.step_results.append(result)
+                else:
+                    run.step_results[live_index] = result
                 run.pid, run.updated_at = None, now()
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
                 if process.returncode and step.on_failure == "stop":
+                    if step.phase == "verify" and run.advance_requested:
+                        run.advance_requested = False
+                        self._save(run)
+                        return
+                    # A stop request intentionally terminates the subprocess.
+                    # Preserve cancellation while still letting the caller run
+                    # the terminal after_each path.
+                    if self._load(run_id).status == "cancelled":
+                        return
                     self._fail(run, step.id, f"exit code {process.returncode}")
                     return
             except subprocess.TimeoutExpired:
                 process.kill()
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
+                if self._load(run_id).status == "cancelled":
+                    return
                 self._fail(self._load(run_id), step.id, f"timed out after {step.timeout_seconds}s")
                 return
             except ValueError as error:
@@ -3829,6 +4706,66 @@ if __name__ == "__main__":
         self._save(run)
         return run
 
+    def _wait_for_schedule(self, run_id: str) -> bool:
+        while True:
+            run = self._load(run_id)
+            if run.status in {"failed", "cancelled"}:
+                return False
+            if not run.schedule_enabled or run.execution_mode != "run":
+                return True
+            try:
+                current = datetime.now(ZoneInfo(run.timezone))
+            except ZoneInfoNotFoundError:
+                current = datetime.now(UTC)
+            now_time = current.strftime("%H:%M")
+            weekdays = set(run.schedule_weekdays)
+            start, end = run.schedule_start_time, run.schedule_end_time
+            in_day = not weekdays or current.weekday() in weekdays
+            in_time = start <= now_time <= end if start <= end else now_time >= start or now_time <= end
+            if in_day and in_time:
+                return True
+            run.current_step, run.current_phase, run.updated_at = None, "waiting", now()
+            self._save(run)
+            time.sleep(30)
+
+    def retry(self, run_id: str, restart_from_first: bool) -> Run:
+        run = self._load(run_id)
+        if run.execution_type != "pipeline" or run.status not in {"failed", "cancelled"}:
+            raise ValueError("Only failed or cancelled pipeline runs can be retried")
+        latest_iteration = max(
+            (
+                int(item.get("loop_index", 0))
+                for item in run.step_results
+                if int(item.get("loop_index", 0)) > 0
+            ),
+            default=1,
+        )
+        return self.create_run(
+            run.workflow_id,
+            execution_mode=run.execution_mode,
+            build_id=run.build_id,
+            build_name=run.build_name,
+            supervisor_profile_name=run.supervisor_profile_name,
+            prompt_source=run.prompt_source,
+            prompt_snapshot=run.prompt_snapshot,
+            loop_limit=run.loop_limit,
+            timezone=run.timezone,
+            schedule_enabled=run.schedule_enabled,
+            schedule_weekdays=run.schedule_weekdays,
+            schedule_start_time=run.schedule_start_time,
+            schedule_end_time=run.schedule_end_time,
+            start_iteration=1 if restart_from_first else min(latest_iteration, run.loop_limit),
+            repeat_interval_minutes=run.repeat_interval_minutes,
+            cadence_mode=run.cadence_mode,
+            overrun_policy=run.overrun_policy,
+            approval_score=run.approval_score,
+            iteration_strategy=run.iteration_strategy,
+            candidates_per_iteration=run.candidates_per_iteration,
+            repository=run.repository,
+            retry_of_run_id=run.id,
+            retry_mode="restart" if restart_from_first else "resume",
+        )
+
     def emergency_stop(self) -> list[Run]:
         stopped = []
         for run in self.runs():
@@ -3837,10 +4774,10 @@ if __name__ == "__main__":
         return stopped
 
     def invoke_remote_build(self, build_id: str, execution_mode: str = "run") -> Run:
-        build = self.evaluation_build(build_id)
+        build = self.build(build_id)
         executor = build.get("executor", {})
         if not build.get("enabled"):
-            raise ValueError("This evaluation build is not enabled.")
+            raise ValueError("This build is not enabled.")
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
         prompt_source, prompt_snapshot = self._assembled_prompt(build)
@@ -3848,16 +4785,25 @@ if __name__ == "__main__":
             return self.create_run(
                 build["runner_id"],
                 execution_mode,
-                evaluation_build_id=build["id"],
-                evaluation_build_name=build["name"],
+                build_id=build["id"],
+                build_name=build["name"],
                 supervisor_profile_name=build.get("model_profile_name"),
                 prompt_source=prompt_source,
                 prompt_snapshot=prompt_snapshot,
                 loop_limit=1 if execution_mode == "test" else int(build.get("run_limit", 1)),
+                timezone=str(build.get("timezone", "UTC")),
+                schedule_enabled=execution_mode == "run" and bool(build.get("schedule_enabled", False)),
+                schedule_weekdays=list(build.get("schedule_weekdays", [])),
+                schedule_start_time=str(build.get("schedule_start_time", "09:00")),
+                schedule_end_time=str(build.get("schedule_end_time", "18:00")),
                 repeat_interval_minutes=0
                 if execution_mode == "test"
                 else int(build.get("repeat_interval_minutes", 0)),
+                cadence_mode=str(build.get("cadence_mode", "after_completion")),
+                overrun_policy=str(build.get("overrun_policy", "wait")),
                 approval_score=int(build.get("approval_score", 0)),
+                iteration_strategy=str(build.get("iteration_strategy", "linear")),
+                candidates_per_iteration=int(build.get("candidates_per_iteration", 2)),
                 repository=build.get("repository"),
                 transient=execution_mode == "test",
             )
@@ -3865,15 +4811,15 @@ if __name__ == "__main__":
             id=uuid.uuid4().hex[:12],
             workflow_id=build["runner_id"],  # Legacy Run field: stores the direct runner ID.
             workflow_name=self._runner(build["runner_id"])["name"],
-            evaluation_build_id=build["id"],
-            evaluation_build_name=build["name"],
+            build_id=build["id"],
+            build_name=build["name"],
             supervisor_profile_name=build.get("model_profile_name"),
             execution_mode=execution_mode,
             execution_type="invoke",
             status="queued",
             created_at=now(),
             updated_at=now(),
-            current_phase="init",
+            current_phase="before_all",
             prompt_source=prompt_source,
             prompt_snapshot=prompt_snapshot,
         )
@@ -3884,10 +4830,10 @@ if __name__ == "__main__":
         threading.Thread(target=self._execute_remote, args=(run.id, executor), daemon=True).start()
         return run
 
-    def test_evaluation_build(self, build_id: str) -> Run:
-        build = self.evaluation_build(build_id)
+    def test_build(self, build_id: str) -> Run:
+        build = self.build(build_id)
         if not build.get("enabled"):
-            raise ValueError("This evaluation build is not enabled.")
+            raise ValueError("This build is not enabled.")
         return self.invoke_remote_build(build_id, "test")
 
     def _execute_remote(self, run_id: str, executor: dict[str, Any]) -> None:
@@ -3895,7 +4841,7 @@ if __name__ == "__main__":
         with self.tracer.start_as_current_span("remote.agent.run", attributes={"run.id": run_id}) as span:
             run.status, run.current_phase, run.telemetry_trace_id, run.updated_at = (
                 "running",
-                "run",
+                "execute",
                 f"{span.get_span_context().trace_id:032x}",
                 now(),
             )
@@ -3907,19 +4853,21 @@ if __name__ == "__main__":
                 invocation_values["payload"] = {
                     **(invocation_values.get("payload") or {}),
                     "prompt": run.prompt_snapshot,
-                    "evaluation_build_id": run.evaluation_build_id,
+                    "build_id": run.build_id,
                     "execution_mode": run.execution_mode,
                 }
                 invocation = RemoteInvocation(**invocation_values)
                 status_code, output = invocation.invoke()
                 span.set_attribute("http.response.status_code", status_code)
                 run = self._load(run_id)
-                run.step_results.append({"step_id": "run", "http_status": status_code, "output": output})
+                run.step_results.append(
+                    {"step_id": "execute", "phase": "execute", "http_status": status_code, "output": output}
+                )
                 run.status = "succeeded" if 200 <= status_code < 300 else "failed"
-                run.current_phase, run.updated_at, run.finished_at = "teardown", now(), now()
+                run.current_phase, run.updated_at, run.finished_at = "after_all", now(), now()
                 self._save(run)
                 if run.status == "succeeded":
                     self._complete_supervision(run_id)
             except (ValueError, requests.RequestException) as error:
                 span.record_exception(error)
-                self._fail(self._load(run_id), "run", str(error))
+                self._fail(self._load(run_id), "execute", str(error))

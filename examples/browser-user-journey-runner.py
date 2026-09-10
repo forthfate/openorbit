@@ -1,6 +1,6 @@
 """Run one bounded browser journey per OpenOrbit iteration.
 
-Copy this file into Assets > Runners when an evaluation build has a browser
+Copy this file into Assets > Runners when a build has a browser
 base URL and one or more fixed test cases. OpenOrbit owns scheduling; this
 runner only chooses and executes one focused journey for each iteration.
 """
@@ -15,7 +15,7 @@ from orbit_sdk import runner
 
 def state_path(ctx):
     """Keep runner state outside the evaluated repository and keyed by build."""
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.evaluation_build.get("id") or "manual"))
+    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "sample-user-journey-state"
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{build_id}.json"
@@ -44,17 +44,17 @@ def focused_cases(ctx, state):
     return [ctx.test_cases[index]], "Rotating through fixed journeys."
 
 
-@runner.phase("init")
-def init(ctx):
-    if not ctx.evaluation_build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL on the evaluation build")
+@runner.phase("before_all")
+def before_all(ctx):
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("Set a browser base URL on the build")
     if not ctx.test_cases:
         raise ValueError("Select at least one fixed test case")
     ctx.log("Validated the browser journey configuration")
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
     state = load_state(ctx)
     cases, reason = focused_cases(ctx, state)
     state["plan"] = {"case_ids": [str(case.get("id")) for case in cases], "reason": reason}
@@ -63,8 +63,8 @@ def setup(ctx):
     ctx.log(reason)
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     state = load_state(ctx)
     planned_ids = set((state.get("plan") or {}).get("case_ids", []))
     cases = [case for case in ctx.test_cases if str(case.get("id")) in planned_ids]
@@ -84,20 +84,20 @@ def run(ctx):
     ctx.emit_result({"user_journey": {"evidence": evidence, "handoff": handoff}})
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     state = load_state(ctx)
     ctx.emit_result({"user_journey": {"next_iteration": state.get("history", [])[-1:]}})
     ctx.log("Published browser evidence and the next-iteration handoff")
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     ctx.log("Completed one bounded browser journey")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     ctx.log("Finalized the user-journey evaluation")
 
 

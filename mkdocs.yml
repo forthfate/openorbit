@@ -1,0 +1,48 @@
+site_name: OpenOrbit SDK
+site_description: Python runner SDK reference for OpenOrbit evaluation assets.
+repo_url: https://github.com/forthfate/openorbit
+repo_name: forthfate/openorbit
+
+theme:
+  name: material
+  language: en
+  features:
+    - content.code.copy
+    - content.action.edit
+    - navigation.expand
+    - navigation.tabs
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [backend]
+          options:
+            docstring_section_style: table
+            members_order: source
+            show_root_full_path: false
+            show_source: false
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - SDK overview: sdk/index.md
+  - Target logs: sdk/target-logs.md
+  - API reference: sdk/api-reference.md

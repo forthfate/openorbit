@@ -1,7 +1,7 @@
 # OpenOrbit API v1
 
 OpenOrbit exposes a local, versioned HTTP API at `/api/v1`. The resource names
-are intentionally similar to GitLab: an evaluation build is a **project**, and
+are intentionally similar to GitLab: a build is a **project**, and
 each execution is a **pipeline**. The interactive OpenAPI documentation is
 available from a running server at `/api/docs`; the raw contract is
 `/api/openapi.json`.
@@ -31,7 +31,7 @@ front of it before allowing remote clients.
 
 | Resource | Meaning | Main endpoints |
 | --- | --- | --- |
-| Project | An evaluation-build configuration, including its workflow and repository | `GET, POST /api/v1/projects` |
+| Project | A build configuration, including its workflow and repository | `GET, POST /api/v1/projects` |
 | Pipeline | One `run` or `test` execution of a project | `GET /api/v1/pipelines`, `POST /api/v1/projects/{id}/pipelines` |
 | Workflow | Reusable lifecycle definition | `GET, POST /api/v1/workflows` |
 | Runner | Local executable runner source | `GET, POST /api/v1/runners` |
@@ -58,7 +58,7 @@ They return GitLab-style pagination headers: `X-Total`, `X-Total-Pages`,
 | Model profiles | `GET /model-profiles`; `GET, PUT, DELETE /model-profiles/{name}`; `POST /model-profiles/test` |
 | Local configuration | `GET, PUT /application-settings`; `GET /workspaces?path=…` |
 | Observability | `GET /dashboard`, `/telemetry`, `/logs` |
-| Improvements | `GET /improvements`, `/improvements/analytics?hours=24`, `/improvements/interventions`, `/improvements/proposal-decisions`, `/improvements/proposals?evaluation_build_id=…&status=…`, `/reported-issues` |
+| Improvements | `GET /improvements`, `/improvements/analytics?hours=24`, `/improvements/interventions`, `/improvements/proposal-decisions`, `/improvements/proposals?build_id=…&status=…`, `/reported-issues` |
 
 ## Common workflow
 
@@ -81,8 +81,8 @@ curl -X POST http://localhost:3000/api/v1/pipelines/PIPELINE_ID/actions \
 ```
 
 Creating or replacing a project uses the same configuration fields as the
-control room's evaluation-build form. Refer to `/api/docs` for the generated
-`EvaluationBuildCreate` schema and validation rules.
+control room's build form. Refer to `/api/docs` for the generated
+`BuildCreate` schema and validation rules.
 
 ## Compatibility
 

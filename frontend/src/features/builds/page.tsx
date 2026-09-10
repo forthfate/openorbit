@@ -53,7 +53,16 @@ type Draft = {
   timezone: string;
   repeat_interval_minutes: number;
   run_limit: number;
+  cadence_mode: "after_completion" | "fixed";
+  overrun_policy: "wait" | "interrupt_eval";
+  schedule_enabled: boolean;
+  schedule_weekdays: number[];
+  schedule_start_time: string;
+  schedule_end_time: string;
+  iteration_strategy: "linear" | "score_select";
+  candidates_per_iteration: number;
   approval_score: number;
+  require_human_approval_before_apply: boolean;
   enabled: boolean;
 };
 
@@ -85,8 +94,19 @@ type BuildWizardCopy = {
   aiProfile: LabelCopy;
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
+  iterationTiming: LabelCopy;
+  iterationTimingAfterCompletion: string;
+  iterationTimingFixed: string;
+  iterationTimingWait: string;
+  iterationTimingInterrupt: string;
   runLimit: LabelCopy;
+  iterationStrategy: LabelCopy;
+  iterationStrategyLinear: string;
+  iterationStrategyScoreSelect: string;
+  candidatesPerIteration: LabelCopy;
   approvalScore: LabelCopy;
+  humanApproval: LabelCopy;
+  humanApprovalEnable: string;
   name: string;
   next: string;
 };
@@ -132,7 +152,16 @@ const empty: Draft = {
   timezone: "Asia/Tokyo",
   repeat_interval_minutes: 30,
   run_limit: 1,
+  cadence_mode: "after_completion",
+  overrun_policy: "wait",
+  schedule_enabled: false,
+  schedule_weekdays: [0, 1, 2, 3, 4],
+  schedule_start_time: "09:00",
+  schedule_end_time: "18:00",
+  iteration_strategy: "linear",
+  candidates_per_iteration: 2,
   approval_score: 8,
+  require_human_approval_before_apply: false,
   enabled: true,
 };
 const testIsActive = (status: string) =>
@@ -151,7 +180,17 @@ const draftOf = (b: Build, copy = false): Draft => ({
   timezone: b.timezone,
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
+  cadence_mode: b.cadence_mode ?? "after_completion",
+  overrun_policy: b.overrun_policy ?? "wait",
+  schedule_enabled: b.schedule_enabled ?? false,
+  schedule_weekdays: b.schedule_weekdays ?? [0, 1, 2, 3, 4],
+  schedule_start_time: b.schedule_start_time ?? "09:00",
+  schedule_end_time: b.schedule_end_time ?? "18:00",
+  iteration_strategy: b.iteration_strategy ?? "linear",
+  candidates_per_iteration: b.candidates_per_iteration ?? 2,
   approval_score: b.approval_score,
+  require_human_approval_before_apply:
+    b.require_human_approval_before_apply ?? false,
   enabled: b.enabled,
 });
 const Field = ({
@@ -272,7 +311,7 @@ export function ProfileForm({
           <Bot size={15} />
           {t.test}
         </button>
-        <button className="approve" disabled={!tested} onClick={save}>
+        <button className="approve" title={tested ? undefined : t.test} onClick={save}>
           {t.saveProfile}
         </button>
       </div>
@@ -307,11 +346,12 @@ function Direct({
 }) {
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
   return (
     <div className="build-wizard">
       <ol className="wizard-steps">
-        {[t.common.evaluationBuild, t.evaluation.criteria, t.ui.review].map(
+        {[t.common.build, t.evaluation.criteria, t.ui.review].map(
           (x, i) => (
             <li key={x} className={step === i + 1 ? "current" : ""}>
               <button onClick={() => setStep(i + 1)}>
@@ -458,6 +498,10 @@ function Direct({
               }
             />
           </Field>
+          <Field label={copy.iterationTiming.label} description={copy.iterationTiming.hint}>
+            <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">{copy.iterationTimingAfterCompletion}</option><option value="fixed">{copy.iterationTimingFixed}</option></select>
+            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select>}
+          </Field>
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
@@ -467,6 +511,21 @@ function Direct({
               }
             />
           </Field>
+          <Field label={scheduleCopy.label} description={scheduleCopy.hint}>
+            <label className="build-schedule-toggle"><input type="checkbox" checked={d.schedule_enabled} onChange={(e) => setD({ ...d, schedule_enabled: e.target.checked })} /> {scheduleCopy.enable}</label>
+            {d.schedule_enabled && <div className="build-schedule-fields"><div className="build-schedule-days">{scheduleCopy.days.map((day, index) => <label key={day}><input type="checkbox" checked={d.schedule_weekdays.includes(index)} onChange={() => setD({ ...d, schedule_weekdays: d.schedule_weekdays.includes(index) ? d.schedule_weekdays.filter((value) => value !== index) : [...d.schedule_weekdays, index] })} />{day}</label>)}</div><label>{scheduleCopy.start}<input type="time" value={d.schedule_start_time} onChange={(e) => setD({ ...d, schedule_start_time: e.target.value })} /></label><label>{scheduleCopy.end}<input type="time" value={d.schedule_end_time} onChange={(e) => setD({ ...d, schedule_end_time: e.target.value })} /></label></div>}
+          </Field>
+          <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
+            <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
+              <option value="linear">{copy.iterationStrategyLinear}</option>
+              <option value="score_select">{copy.iterationStrategyScoreSelect}</option>
+            </select>
+          </Field>
+          {d.iteration_strategy === "score_select" && (
+            <Field label={copy.candidatesPerIteration.label} description={copy.candidatesPerIteration.hint}>
+              <input type="number" min="2" max="8" value={d.candidates_per_iteration} onChange={(e) => setD({ ...d, candidates_per_iteration: Number(e.target.value) })} />
+            </Field>
+          )}
           <Field
             label={copy.approvalScore.label}
             description={copy.approvalScore.hint}
@@ -478,6 +537,24 @@ function Direct({
                 setD({ ...d, approval_score: Number(e.target.value) })
               }
             />
+          </Field>
+          <Field
+            label={copy.humanApproval.label}
+            description={copy.humanApproval.hint}
+          >
+            <span className="build-approval-toggle">
+              <input
+                type="checkbox"
+                checked={d.require_human_approval_before_apply}
+                onChange={(e) =>
+                  setD({
+                    ...d,
+                    require_human_approval_before_apply: e.target.checked,
+                  })
+                }
+              />
+              {copy.humanApprovalEnable}
+            </span>
           </Field>
         </div>
       )}
@@ -676,7 +753,7 @@ function QuickStartCard({
   );
 }
 
-export function EvaluationBuildsPage(props: {
+export function BuildsPage(props: {
   locale: Locale;
   builds: Build[];
   runners: RunnerAsset[];
@@ -743,7 +820,7 @@ export function EvaluationBuildsPage(props: {
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
-      api<Run>(`/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`)
+      api<Run>(`/api/build-tests/${encodeURIComponent(testRun.id)}`)
         .then(setTestRun)
         .catch(() => setTestRun(null));
     }, 750);
@@ -761,7 +838,7 @@ export function EvaluationBuildsPage(props: {
   const closeTest = () => {
     if (testRun && !testIsActive(testRun.status))
       api(
-        `/api/evaluation-build-tests/${encodeURIComponent(testRun.id)}`,
+        `/api/build-tests/${encodeURIComponent(testRun.id)}`,
         "DELETE",
       ).catch(() => undefined);
     setTestRun(null);
@@ -812,7 +889,7 @@ export function EvaluationBuildsPage(props: {
           <input
             aria-label={`Select ${b.name}`}
             checked={selected === b.id}
-            name="evaluation-build-selection"
+            name="build-selection"
             onChange={() => setSelected(b.id)}
             type="radio"
           />
@@ -822,21 +899,25 @@ export function EvaluationBuildsPage(props: {
         id: "name",
         header: locales[locale].evaluation.name,
         render: (b) => b.name,
+        sortValue: (b) => b.name,
       },
       {
         id: "repository",
         header: ui.repository,
         render: (b) => b.repository_name ?? b.repository,
+        sortValue: (b) => b.repository_name ?? b.repository,
       },
       {
         id: "created",
         header: ui.created,
         render: (b) => formatDate(locale, b.created_at),
+        sortValue: (b) => b.created_at ?? "",
       },
       {
         id: "last-started",
         header: ui.lastStarted,
         render: (b) => formatDate(locale, b.last_run_at),
+        sortValue: (b) => b.last_run_at ?? "",
       },
       {
         id: "action",
@@ -876,9 +957,12 @@ export function EvaluationBuildsPage(props: {
     };
   return (
     <>
-      <section className="panel evaluation-build-panel">
+      <section className="panel build-panel">
         <div className="panel-title-action">
-          <PanelHeader title={locales[locale].evaluation.evaluationBuildList} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={locales[locale].evaluation.buildList} description={localeMessages<Record<string, string>>(locale, "sectionDetails").buildList} />} />
+            <p className="hint section-description">{locales[locale].evaluation.buildListDescription}</p>
+          </div>
           <div className="build-list-actions">
             <button
               className="ghost"
@@ -922,7 +1006,7 @@ export function EvaluationBuildsPage(props: {
             setMode("direct");
             setOpen(true);
           }}
-          className="evaluation-build-table"
+          className="build-table"
           gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
         />
         <Pagination
@@ -941,6 +1025,7 @@ export function EvaluationBuildsPage(props: {
           initialSelectedRun={testRun}
           onSelectedRunClose={closeTest}
           onStop={() => undefined}
+          onRetry={() => undefined}
           onApprove={() => undefined}
           onReject={() => undefined}
           onEmergencyStop={() => undefined}
@@ -951,8 +1036,8 @@ export function EvaluationBuildsPage(props: {
         open={open}
         title={
           edit
-            ? t.evaluation.createEvaluationBuild
-            : t.evaluation.createEvaluationBuild
+            ? t.evaluation.createBuild
+            : t.evaluation.createBuild
         }
         onClose={() => setOpen(false)}
       >
@@ -1003,8 +1088,8 @@ export function EvaluationBuildsPage(props: {
                   disabled={translations.loading}
                   onClick={
                     translations.content(items[0]?.id ?? "")
-                      ? translations.showOriginal
-                      : translations.translate
+                      ? () => translations.showOriginal()
+                      : () => translations.translate()
                   }
                 >
                   <Languages size={15} />

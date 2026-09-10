@@ -8,7 +8,7 @@ Docker execution is planned for Linux hosts with a reachable Docker Engine. Orbi
 
 ## Build configuration
 
-The future Docker-enabled evaluation build will declare executor type, Dockerfile, snapshot mode, parallelism, network policy, resource limits and image retention. The intended default is one worker, commit snapshot, no network and no image retention.
+The future Docker-enabled build will declare executor type, Dockerfile, snapshot mode, parallelism, network policy, resource limits and image retention. The intended default is one worker, commit snapshot, no network and no image retention.
 
 ## Isolation contract
 

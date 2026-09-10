@@ -5,6 +5,7 @@ These documents define accepted product and engineering contracts. They are not 
 | Specification | Status | Purpose |
 | --- | --- | --- |
 | [Control room](product/control-room.md) | accepted | Current control-room views and user operations |
+| [Control-room loading states](product/loading-states.md) | accepted | Initial-load skeleton and refresh behavior contract |
 | [Quick starts](product/quick-starts.md) | accepted | Declarative packages for creating ready-to-run evaluations |
 | [Workflow lifecycle](runtime/workflow-lifecycle.md) | accepted | Required phase order, process ownership and cancellation |
 | [Docker parallel execution](runtime/docker-parallel-execution.md) | planned | Linux-only isolated parallel execution design |

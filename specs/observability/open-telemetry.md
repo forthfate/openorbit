@@ -4,7 +4,7 @@ Status: accepted
 
 ## Trace model
 
-- One evaluation run creates one root trace.
+- One run creates one root trace.
 - Workflow, step, remote-invocation and model calls are spans.
 - Dashboard rows expose the local trace ID and its exported spans.
 

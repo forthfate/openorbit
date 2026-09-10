@@ -13,10 +13,9 @@ import { Sparkles } from "lucide-react";
 import type {
   Dashboard,
   ImprovementAnalytics,
-  OrbitLog,
   QuickStart,
 } from "../../domain/models";
-import { MetricCard } from "../../components/ui/page-header";
+import { MetricCard, PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
 import {
@@ -26,6 +25,9 @@ import {
   type Locale,
 } from "../../locales";
 import { api } from "../../services/api";
+import { FeedbackTrends, FeedbackTrendsSkeleton } from "./feedback-trends";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
+import { Skeleton } from "../../components/ui/skeleton";
 
 type HeroCopy = {
   title: string;
@@ -38,6 +40,7 @@ type HeroCopy = {
 type OperationsCopy = {
   title: string;
   description: string;
+  tooltip: string;
   feedback: string;
   accepted: string;
   issues: string;
@@ -46,7 +49,32 @@ type OperationsCopy = {
   none: string;
   previous: string;
 };
-type DashboardHelp = { trend: string; logs: string };
+type DashboardHelp = { trend: string };
+type OverviewCopy = { title: string; description: string };
+
+function DashboardSkeleton() {
+  return <>
+    <section className="dashboard-hero dashboard-hero--skeleton" role="status" aria-label="Loading dashboard">
+      <Skeleton className="dashboard-hero-skeleton__eyebrow" />
+      <Skeleton className="dashboard-hero-skeleton__title" />
+      <Skeleton className="dashboard-hero-skeleton__description" />
+      <Skeleton className="dashboard-hero-skeleton__button" />
+    </section>
+    <section className="dashboard-quick-starts dashboard-quick-starts--skeleton">
+      <Skeleton className="section-skeleton__title" />
+      <Skeleton className="section-skeleton__hint" />
+      <div className="dashboard-quick-starts__grid">
+        {Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="dashboard-quick-start-skeleton" />)}
+      </div>
+    </section>
+    <SectionSkeleton metrics />
+    <section className="recent-evaluations recent-evaluations--skeleton">
+      {Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="evaluation-card-skeleton" />)}
+    </section>
+    <SectionSkeleton metrics chart />
+    <FeedbackTrendsSkeleton scope="dashboard" />
+  </>;
+}
 
 function relativeRunTime(value: string | undefined, locale: Locale) {
   if (!value) return "—";
@@ -64,12 +92,13 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
 }
 
 function OperationalHealth({ locale }: { locale: Locale }) {
-  const [analytics, setAnalytics] = useState<ImprovementAnalytics>();
+  const [analytics, setAnalytics] = useState<ImprovementAnalytics>(), [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
     const refresh = () =>
       api<ImprovementAnalytics>("/api/improvement-analytics?hours=24")
         .then(setAnalytics)
-        .catch(() => setAnalytics(undefined));
+        .catch(() => setAnalytics(undefined))
+        .finally(() => setInitialLoading(false));
     refresh();
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
@@ -100,13 +129,14 @@ function OperationalHealth({ locale }: { locale: Locale }) {
     summary?.score_delta === null || summary?.score_delta === undefined
       ? ""
       : ` ${summary.score_delta > 0 ? "+" : ""}${summary.score_delta}`;
+  if (initialLoading) return <SectionSkeleton metrics />;
   return (
     <section className="panel dashboard-health">
       <div className="panel-head">
         <div>
           <p className="eyebrow">IMPROVEMENT RESULTS</p>
           <h2>
-            <SectionInfo title={copy.title} description={copy.description} />
+            <SectionInfo title={copy.title} description={copy.tooltip} />
           </h2>
           <p className="hint">{copy.description}</p>
         </div>
@@ -169,14 +199,14 @@ function OperationalHealth({ locale }: { locale: Locale }) {
 
 export function DashboardPage({
   data,
-  logs,
+  loading,
   onOpenBuild,
   onOpenQuickStart,
   onOpenRun,
   locale,
 }: {
   data: Dashboard | null;
-  logs: OrbitLog[];
+  loading: boolean;
   onOpenBuild: (id?: string) => void;
   onOpenQuickStart: (id?: string) => void;
   onOpenRun: () => void;
@@ -184,8 +214,9 @@ export function DashboardPage({
 }) {
   const t = locales[locale].common,
     h = localeMessages<HeroCopy>(locale, "dashboardHero"),
+    overview = localeMessages<OverviewCopy>(locale, "dashboardOverview"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     dashboard = locales[locale].dashboardUi,
-    help = localeMessages<DashboardHelp>(locale, "dashboardHelp"),
     quickStartLabels = localeMessages<
       Record<string, { name: string; description: string }>
     >(locale, "quickStartLabels"),
@@ -201,6 +232,7 @@ export function DashboardPage({
     if (id) sessionStorage.setItem("orbit.selectedBuild", id);
     onOpenBuild(id);
   };
+  if (loading) return <DashboardSkeleton />;
   return (
     <>
       <section className="dashboard-hero">
@@ -243,10 +275,13 @@ export function DashboardPage({
           </div>
         </section>
       )}
-      <div className="metrics">
+      <section className="panel dashboard-overview">
+        <PanelHeader title={overview.title} description={sectionDetails.dashboardOverview} />
+        <p className="hint">{overview.description}</p>
+        <div className="metrics">
         <MetricCard
           label={t.totalEval}
-          value={`${data?.metrics.evaluation_builds ?? 0}`}
+          value={`${data?.metrics.builds ?? 0}`}
         />
         <MetricCard
           label={t.completedEval}
@@ -257,7 +292,8 @@ export function DashboardPage({
           value={`${data?.active_runs.length ?? 0}`}
         />
         <MetricCard label={t.totalError} value={`${errors}`} />
-      </div>
+        </div>
+      </section>
       <section className="recent-evaluations">
         {recent.map((run) => {
           const active = ["queued", "running", "awaiting_approval"].includes(
@@ -273,11 +309,11 @@ export function DashboardPage({
               className="evaluation-card"
               key={run.id}
               onClick={() =>
-                active ? onOpenRun() : openBuild(run.evaluation_build_id)
+                active ? onOpenRun() : openBuild(run.build_id)
               }
             >
               <small>{`${eventLabel} · ${relativeRunTime(eventTime, locale)}`}</small>
-              <strong>{run.evaluation_build_name ?? run.workflow_name}</strong>
+              <strong>{run.build_name ?? run.workflow_name}</strong>
               <span>{run.current_phase ?? run.status}</span>
               <StatusBadge value={run.status} />
             </button>
@@ -285,37 +321,7 @@ export function DashboardPage({
         })}
       </section>
       <OperationalHealth locale={locale} />
-      <section className="panel orbit-log-panel">
-        <div className="panel-head">
-          <div>
-            <p className="eyebrow">ORBIT</p>
-            <h2>
-              <SectionInfo
-                title={dashboard.operationalLogs}
-                description={help.logs}
-              />
-            </h2>
-          </div>
-        </div>
-        <div className="orbit-log-output">
-          {logs.length ? (
-            logs.map((log, index) => (
-              <div
-                key={`${log.time}-${index}`}
-                className={log.status === "ERROR" ? "error-log" : ""}
-              >
-                <time>
-                  {log.time ? new Date(log.time).toLocaleTimeString() : "—"}
-                </time>
-                <strong>{log.name}</strong>
-                <span>{log.message || log.status}</span>
-              </div>
-            ))
-          ) : (
-            <p className="hint">{dashboard.noEvents}</p>
-          )}
-        </div>
-      </section>
+      <FeedbackTrends locale={locale} />
     </>
   );
 }

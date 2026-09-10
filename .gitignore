@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 node_modules/
 dist/
+site/
 *.tsbuildinfo
 .env
 data/runs/*.json

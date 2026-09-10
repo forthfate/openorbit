@@ -1,0 +1,49 @@
+.saved-data-files {
+  display: grid;
+  gap: 9px;
+}
+
+.saved-data-files__list {
+  display: grid;
+  gap: 7px;
+}
+
+.saved-data-files__list article {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #2d3a32;
+  border-radius: 8px;
+  background: #111814;
+}
+
+.saved-data-files__list article > strong {
+  font-size: 12px;
+}
+
+.saved-data-files__list small {
+  color: #8a9990;
+  font-size: 10px;
+}
+
+.saved-data-files__list article > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.saved-data-files__list code {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #b8c6b9;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-data-files__copy-name {
+  justify-self: start;
+  padding: 0;
+}

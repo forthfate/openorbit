@@ -6,6 +6,13 @@ OpenOrbit does not use AI merely to automate work. It automates the operating cy
 
 Run the control room locally, keep the operational record in your own AppData, and decide which changes deserve approval.
 
+## See OpenOrbit in action
+
+Start with a Quick Start, watch the evaluation loop take shape, and review
+evidence-backed improvements in one place.
+
+![OpenOrbit dashboard opening the Agent self-improvement Quick Start](docs/images/openorbit-quick-start.gif)
+
 ## Why OpenOrbit?
 
 An AI feature can look healthy in a demo and still regress after a prompt, model, tool, or product change. OpenOrbit gives that feature a repeatable operating loop rather than a one-off test:
@@ -22,7 +29,7 @@ flowchart LR
 
 ## What you can do
 
-- Define reusable **evaluation builds** from a target, workflow, runner, fixed test cases, manager prompt, and AI model profile.
+- Define reusable **builds** from a target, workflow, runner, fixed test cases, manager prompt, and AI model profile.
 - Run a one-off **test** before saving a build, or run its configured lifecycle repeatedly with clear approval boundaries.
 - Inspect every phase through process logs, structured evidence, browser screenshots, supervisor responses, and OpenTelemetry traces.
 - Review reported issues and proposed improvements in a durable decision history.
@@ -36,36 +43,28 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | Area | What it answers |
 | --- | --- |
 | **Dashboard** | Is the AI system healthy right now? What changed recently? |
-| **Evaluation builds** | What exactly is being evaluated, with which assets and policy? |
-| **Evaluation run detail** | What happened in each phase, and what evidence supports the result? |
-| **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
+| **Builds** | What exactly is being evaluated, with which assets and policy? |
+| **Run detail** | What happened in each phase, and what evidence supports the result? |
+| **Improvements** | Are feedback, decisions, and scores actually improving over time? |
 
-The screenshots below follow a customer-support AI through recurring quality
-evaluation, an evidence-backed failed handoff, and a proposed improvement.
+The screenshots below follow a customer-support AI through its retained
+evaluation evidence and improvement cycle.
 
-### Monitor a healthy AI system
+### See what the evaluated AI actually did
 
-Start with the operating picture: completed evaluations, active work, errors,
-and the latest supervisor feedback. This lets an operator spot a regression
-before opening an individual run.
+Open a retained run to review the behavior observed from the evaluated AI at
+each iteration. Then compare that behavior with the proposed improvement and
+the evidence supporting it.
 
-![OpenOrbit dashboard showing successful evaluations, zero errors, and supervisor feedback](docs/images/dashboard-healthy.png)
-
-### Review a successful evaluation result
-
-Open a retained run to see the supervisor score and decision beside the
-improvements and issues supported by that evaluation. Every proposal remains
-connected to the iteration that produced it.
-
-![OpenOrbit evaluation-run detail with a completed result, approved decision, and adopted improvement](docs/images/evaluation-result-approved.png)
+![OpenOrbit Evaluation result showing observed target-AI behavior across two iterations and an adopted prompt improvement](docs/images/evaluation-result-approved.png)
 
 ### Review evidence across the improvement cycle
 
 Compare feedback volume, accepted changes, scores, and run health across
-multiple evaluation builds. The history makes it clear whether the operating
+multiple builds. The history makes it clear whether the operating
 cycle is improving the AI system over time.
 
-![OpenOrbit improvement results with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
+![OpenOrbit improvements with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
 
 ### Ask an AI assistant what to do next
 
@@ -73,7 +72,7 @@ Configure a System AI model to use the built-in Chat Assistant for questions
 about evaluation work, runners, and the control room. Your own AI agent can
 work with the same local operating data through OpenOrbit's versioned API.
 
-![OpenOrbit Chat Assistant asking what to improve next for an evaluation build](docs/images/chat-assistant-question.png)
+![OpenOrbit Chat Assistant asking what to improve next for a build](docs/images/chat-assistant-question.png)
 
 ## Development partners
 
@@ -94,15 +93,42 @@ work with the same local operating data through OpenOrbit's versioned API.
 ## Build with us
 
 We are looking for thoughtful collaborators who share our belief that AI
-systems should be observable, controllable, and continuously improved. Start a
-fork, open a small issue, improve the docs, or help shape a larger idea—every
-contribution is welcome.
+systems should be observable, controllable, and continuously improved.
+Contributions are especially welcome from people working on agent harnesses,
+browser evaluation (including Playwright), local automation, and evidence-backed
+operational loops. Start a fork, open a small issue, improve the docs, or help
+shape a larger idea—every contribution is welcome.
 
 New to the project? Browse [good first issues](https://github.com/forthfate/openorbit/labels/good%20first%20issue),
 ask a question or share an idea in [Issues](https://github.com/forthfate/openorbit/issues),
 or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
 
 ## Quick start
+
+### Start in 10 seconds with a Quick Start
+
+Open the **Quick starts** section on the Dashboard, choose a guided template,
+fill in the few target-specific fields, and create the build. Each
+template creates the runner, fixed test cases, environments, manager policy,
+and model profile configuration together—so you can start with a working
+operating loop instead of assembling every asset by hand.
+
+| Quick Start | Use it when | Example first run |
+| --- | --- | --- |
+| **User journey smoke test** | You need a recurring, read-only browser check for a local product. | Confirm that the home page loads and the primary heading is visible. |
+| **Site exploration review** | You want evidence-backed product feedback from safe same-site exploration. | Explore the documentation or dashboard and retain the visited pages behind each recommendation. |
+| **Agent self-improvement** | You want to improve a managed prompt from real AI responses. | Send a support request to the configured target model, retain its response, and let the supervisor approve only response-backed prompt changes. |
+| **AI SLO and behavior drift monitor** | You already have a structured evaluator for quality, safety, latency, or cost. | Connect its probe command and compare the retained metrics with the configured baseline and thresholds. |
+
+For example, to evaluate a support-agent prompt:
+
+1. Choose **Agent self-improvement**.
+2. Select the Git repository and managed prompt file, then choose your AI model profile.
+3. Enter one representative user request and its response-level acceptance criterion.
+4. Create the build and run it. OpenOrbit retains the actual target-AI response, asks the supervisor to review that evidence, and applies only an adopted, reversible prompt improvement on the following iteration.
+
+Quick Starts never store provider keys. They reference the environment-variable
+name already configured in the selected model profile.
 
 ### Requirements
 
@@ -111,6 +137,18 @@ or read the [contribution guide](CONTRIBUTING.md) before opening a pull request.
 | Python | 3.13+ | Local API and runner SDK |
 | Git | 2.40+ recommended | Install from Git and repository-backed evaluation cycles |
 | Node.js | 24+ | Installing from Git and frontend development |
+
+### Runner SDK documentation
+
+The runner SDK reference is generated from the Python module and its
+docstrings. Preview it locally with:
+
+```bash
+pnpm run docs:serve
+```
+
+Build a static documentation site with `pnpm run docs:build`, or
+run `pnpm run build` to generate both the SDK docs and the control-room UI.
 
 ### Run the packaged app
 
@@ -180,7 +218,7 @@ the operational record in your local AppData.
 
 ### Browser journeys (optional)
 
-Only evaluation builds that run browser journeys need a Chromium browser and
+Only builds that run browser journeys need a Chromium browser and
 its platform-specific system libraries. This is not required to start
 OpenOrbit, create assets, review runs, or use non-browser runners.
 
@@ -188,18 +226,18 @@ OpenOrbit, create assets, review runs, or use non-browser runners.
 
 1. Create or choose an AI model profile in **Assets**.
 2. Add the runner, workflow, fixed test cases, and target environment that describe the AI system you want to evaluate.
-3. Create an **Evaluation build** from those assets.
+3. Create a **Build** from those assets.
 4. Use **Test** to execute the build once and inspect its full run detail without adding it to the evaluation-run history.
-5. Start a regular run when ready, then review evidence and supervisor results in **Evaluation runs**.
-6. Use **Improvement results** to compare scores, feedback, decisions, and cycle health over time.
+5. Start a regular run when ready, then review evidence and supervisor results in **Runs**.
+6. Use **Improvements** to compare scores, feedback, decisions, and cycle health over time.
 
 ## Core concepts
 
 | Concept | Meaning |
 | --- | --- |
 | **Asset** | A reusable model profile, runner, workflow, prompt, test set, or environment. |
-| **Evaluation build** | A versioned operating configuration that connects assets to one AI-system evaluation. |
-| **Test** | A transient, one-time execution used to validate an evaluation build. |
+| **Build** | A versioned operating configuration that connects assets to one AI-system evaluation. |
+| **Test** | A transient, one-time execution used to validate a build. |
 | **Run** | A retained execution record, including phases, evidence, logs, and decisions. |
 | **Supervisor** | An AI review step that produces structured evaluation results, issues, and proposals. |
 | **Improvement cycle** | The evidence-backed PDCA loop across multiple evaluations and human decisions. |
@@ -227,8 +265,8 @@ Read the [API reference](docs/API.md) for endpoint details. To add reusable auto
 ```python
 from orbit_sdk import runner
 
-@runner.phase("run")
-def evaluate(ctx):
+@runner.phase("execute")
+def verify(ctx):
     ctx.log("Run one bounded evaluation step")
 
 if __name__ == "__main__":
