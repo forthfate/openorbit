@@ -82,6 +82,14 @@ type ImprovementCopy = {
   running: string;
   selectBuild: string;
 };
+type ChartHints = {
+  feedbackByBuild: string;
+  activeRuns: string;
+  iterationTrend: string;
+  feedbackStatus: string;
+  issueSeverity: string;
+  runHealth: string;
+};
 const copy = localeMessageMap<ImprovementCopy>("improvementPage");
 const tick = (value: string) =>
   new Date(value).toLocaleTimeString([], {
@@ -90,18 +98,19 @@ const tick = (value: string) =>
   });
 const timestamp = (locale: Locale, value?: string) =>
   value ? new Date(value).toLocaleString(intlLocales[locale]) : "—";
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
-    chartHints = localeMessages<Record<string, string>>(locale, "chartHints"),
-    description = chartHints[title];
+function Card({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
   return (
     <article className="analytics-chart">
       <h3>
-        {description ? (
-          <SectionInfo title={title} description={description} />
-        ) : (
-          title
-        )}
+        <SectionInfo title={title} description={description} />
       </h3>
       {children}
     </article>
@@ -109,7 +118,10 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function Trends({ t }: { t: (typeof copy)["en"] }) {
-  const [hours, setHours] = useState(24),
+  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
+    chartHints = localeMessages<ChartHints>(locale, "chartHints"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
+    [hours, setHours] = useState(24),
     [build, setBuild] = useState(""),
     [data, setData] = useState<ImprovementAnalytics>();
   useEffect(() => {
@@ -132,7 +144,10 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
   return (
     <section className="panel improvement-trends">
       <div className="trend-head">
-        <PanelHeader title={t.trends} />
+        <PanelHeader
+          title={t.trends}
+          description={sectionDetails.iterationImprovementTrend}
+        />
         <label>
           {t.range}
           <select
@@ -147,7 +162,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
         </label>
       </div>
       <div className="analytics-grid">
-        <Card title={t.feedbackVolume}>
+        <Card title={t.feedbackVolume} description={chartHints.feedbackByBuild}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart
               data={data?.feedback_by_build ?? []}
@@ -166,7 +181,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
             </BarChart>
           </ResponsiveContainer>
         </Card>
-        <Card title={t.activeTrend}>
+        <Card title={t.activeTrend} description={chartHints.activeRuns}>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart
               data={data?.active_evaluations ?? []}
@@ -190,7 +205,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
           </ResponsiveContainer>
         </Card>
       </div>
-      <Card title={t.iterationTrend}>
+      <Card title={t.iterationTrend} description={chartHints.iterationTrend}>
         <div className="chart-select">
           <label>
             {t.evaluation}
@@ -233,7 +248,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
         )}
       </Card>
       <div className="analytics-grid">
-        <Card title={t.feedbackStatus}>
+        <Card title={t.feedbackStatus} description={chartHints.feedbackStatus}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={data?.feedback_status ?? []} margin={{ left: -18 }}>
               <CartesianGrid vertical={false} />
@@ -247,7 +262,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
             </BarChart>
           </ResponsiveContainer>
         </Card>
-        <Card title={t.issueSeverity}>
+        <Card title={t.issueSeverity} description={chartHints.issueSeverity}>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={data?.issue_severity ?? []} margin={{ left: -18 }}>
               <XAxis dataKey="time" tickFormatter={tick} />
@@ -292,7 +307,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
           </ResponsiveContainer>
         </Card>
       </div>
-      <Card title={t.runHealth}>
+      <Card title={t.runHealth} description={chartHints.runHealth}>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={data?.run_health ?? []} margin={{ left: -18 }}>
             <CartesianGrid vertical={false} />

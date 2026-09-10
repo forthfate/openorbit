@@ -298,7 +298,7 @@ export function SettingsPage({
       <section className="panel app-settings">
         <div className="panel-title-action">
           <div className="panel-title-action__copy">
-            <PanelHeader title={l.title} />
+            <PanelHeader title={l.title} description={sectionDetails.managerPrompt} />
             <p className="hint section-description">{l.description}</p>
           </div>
           <button className="approve" onClick={() => setOpen(true)}>
