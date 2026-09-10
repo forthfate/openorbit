@@ -26,6 +26,7 @@ import {
 } from "../../locales";
 import { api } from "../../services/api";
 import { FeedbackTrends } from "./feedback-trends";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 type HeroCopy = {
   title: string;
@@ -66,12 +67,13 @@ function relativeRunTime(value: string | undefined, locale: Locale) {
 }
 
 function OperationalHealth({ locale }: { locale: Locale }) {
-  const [analytics, setAnalytics] = useState<ImprovementAnalytics>();
+  const [analytics, setAnalytics] = useState<ImprovementAnalytics>(), [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
     const refresh = () =>
       api<ImprovementAnalytics>("/api/improvement-analytics?hours=24")
         .then(setAnalytics)
-        .catch(() => setAnalytics(undefined));
+        .catch(() => setAnalytics(undefined))
+        .finally(() => setInitialLoading(false));
     refresh();
     const timer = window.setInterval(refresh, 15000);
     return () => window.clearInterval(timer);
@@ -102,6 +104,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
     summary?.score_delta === null || summary?.score_delta === undefined
       ? ""
       : ` ${summary.score_delta > 0 ? "+" : ""}${summary.score_delta}`;
+  if (initialLoading) return <SectionSkeleton metrics />;
   return (
     <section className="panel dashboard-health">
       <div className="panel-head">
@@ -171,12 +174,14 @@ function OperationalHealth({ locale }: { locale: Locale }) {
 
 export function DashboardPage({
   data,
+  loading,
   onOpenBuild,
   onOpenQuickStart,
   onOpenRun,
   locale,
 }: {
   data: Dashboard | null;
+  loading: boolean;
   onOpenBuild: (id?: string) => void;
   onOpenQuickStart: (id?: string) => void;
   onOpenRun: () => void;
@@ -202,6 +207,7 @@ export function DashboardPage({
     if (id) sessionStorage.setItem("orbit.selectedBuild", id);
     onOpenBuild(id);
   };
+  if (loading) return <><SectionSkeleton metrics /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
   return (
     <>
       <section className="dashboard-hero">

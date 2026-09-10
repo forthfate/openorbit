@@ -17,6 +17,7 @@ import type { ImprovementAnalytics } from "../../domain/models";
 import { SectionInfo } from "../../components/ui/section-info";
 import { api } from "../../services/api";
 import { intlLocales, localeMessages, type Locale } from "../../locales";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 type FeedbackTrendsCopy = {
   title: string; description?: string; range: string; evaluation: string; feedbackVolume: string;
@@ -42,13 +43,14 @@ function Card({ title, locale, children }: { title: string; locale: Locale; chil
 export function FeedbackTrends({ locale, buildId, scope = "dashboard" }: { locale: Locale; buildId?: string; scope?: "dashboard" | "improvements" }) {
   const t = localeMessages<FeedbackTrendsCopy>(locale, scope === "dashboard" ? "dashboardFeedbackTrends" : "improvementEvaluationTrends"),
     sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
-  const [hours, setHours] = useState(24), [build, setBuild] = useState(""), [data, setData] = useState<ImprovementAnalytics>();
+  const [hours, setHours] = useState(24), [build, setBuild] = useState(""), [data, setData] = useState<ImprovementAnalytics>(), [initialLoading, setInitialLoading] = useState(true);
   useEffect(() => {
     api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`).then((next) => {
       setData(next);
       setBuild((current) => next.iteration_trends.some((item) => item.build_id === current) ? current : (next.iteration_trends.find((item) => item.points.length)?.build_id ?? next.iteration_trends[0]?.build_id ?? ""));
-    }).catch(() => setData(undefined));
+    }).catch(() => setData(undefined)).finally(() => setInitialLoading(false));
   }, [hours]);
+  if (initialLoading) return <SectionSkeleton rows={scope === "dashboard" ? 5 : 3} />;
   const selectedBuild = buildId || build,
     trend = data?.iteration_trends.find((item) => item.build_id === selectedBuild);
   const short = (value: string) => value.length > 18 ? `${value.slice(0, 18)}…` : value;

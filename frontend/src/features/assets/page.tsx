@@ -36,7 +36,7 @@ import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
-import { Skeleton } from "../../components/ui/skeleton";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 const text = localeMessageMap<Record<string, string>>("assetsText");
 const testBlank: TargetTestCaseSet = {
@@ -47,8 +47,9 @@ const testBlank: TargetTestCaseSet = {
 };
 
 function CatalogSkeleton() {
-  return <div className="catalog-skeleton" role="status" aria-label="Loading assets"><Skeleton className="catalog-skeleton__title"/><Skeleton className="catalog-skeleton__detail"/><Skeleton className="catalog-skeleton__title"/><Skeleton className="catalog-skeleton__detail"/></div>;
+  return <SectionSkeleton rows={3} />;
 }
+
 const fieldHelp = localeMessageMap<Record<string, string>>("assetsHelp");
 const runnerLabels = localeMessageMap<Record<string, string>>("runnerLabels");
 const phases: WorkflowStep["phase"][] = [
@@ -1769,6 +1770,7 @@ export function AssetsPage({
     id: string,
   ) => void;
 }) {
+  if (loading) return <><SectionSkeleton rows={3} /><SectionSkeleton rows={3} /><SectionSkeleton rows={4} /></>;
   return (
     <>
       <ProfileCatalog
