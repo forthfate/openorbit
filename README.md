@@ -44,7 +44,7 @@ OpenOrbit is designed around the information an operator needs at each stage:
 | --- | --- |
 | **Dashboard** | Is the AI system healthy right now? What changed recently? |
 | **Builds** | What exactly is being evaluated, with which assets and policy? |
-| **Evaluation run detail** | What happened in each phase, and what evidence supports the result? |
+| **Run detail** | What happened in each phase, and what evidence supports the result? |
 | **Improvement results** | Are feedback, decisions, and scores actually improving over time? |
 
 The screenshots below follow a customer-support AI through its retained
@@ -226,9 +226,9 @@ OpenOrbit, create assets, review runs, or use non-browser runners.
 
 1. Create or choose an AI model profile in **Assets**.
 2. Add the runner, workflow, fixed test cases, and target environment that describe the AI system you want to evaluate.
-3. Create an **Build** from those assets.
+3. Create a **Build** from those assets.
 4. Use **Test** to execute the build once and inspect its full run detail without adding it to the evaluation-run history.
-5. Start a regular run when ready, then review evidence and supervisor results in **Evaluation runs**.
+5. Start a regular run when ready, then review evidence and supervisor results in **Runs**.
 6. Use **Improvement results** to compare scores, feedback, decisions, and cycle health over time.
 
 ## Core concepts

@@ -525,7 +525,7 @@ def delete_build(build_id: str):
     tags=["Projects"],
     operation_id="listProjects",
     summary="List projects",
-    response_description="A page of build projects.",
+    response_description="A page of builds.",
 )
 def list_projects(
     response: Response,

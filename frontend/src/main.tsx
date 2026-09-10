@@ -116,7 +116,7 @@ export default function App() {
     )
       .then(() => {
         room.setNotice(
-          `${ids.length} evaluation run${ids.length === 1 ? "" : "s"} deleted`,
+          `${ids.length} run${ids.length === 1 ? "" : "s"} deleted`,
           "success",
         );
         return room.refresh();
