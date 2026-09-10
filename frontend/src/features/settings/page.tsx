@@ -1,18 +1,22 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Database, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
-import type { Settings } from "../../domain/models";
+import { SectionInfo } from "../../components/ui/section-info";
+import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { ProfileForm, type ProfileFormCopy } from "../builds/page";
+import { OrbitLogs } from "./orbit-logs";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
+  manager_output_locale: string;
   chat_model_profile_name: string;
 };
+type ApplicationData = { path: string; size_bytes: number };
 
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
@@ -26,7 +30,13 @@ const profileBlank: Settings = {
   aws_profile: "",
 };
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
-type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; profileForm: ProfileFormCopy };
+type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
+type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; storage: StorageCopy; profileForm: ProfileFormCopy };
+const bytes = (value: number) => {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = value ? Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1) : 0;
+  return `${(value / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+};
 
 export function SettingsPage({
   locale,
@@ -39,6 +49,7 @@ export function SettingsPage({
   test,
   save,
   tested,
+  logs,
   onDeleteProfile,
 }: {
   locale: Locale;
@@ -51,15 +62,22 @@ export function SettingsPage({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  logs: OrbitLog[];
   onDeleteProfile: (profileName: string) => void;
 }) {
   const t = locales[locale].common,
     settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
     l = settingsCopy.manager,
     p = settingsCopy.profiles,
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     evaluation = locales[locale].evaluation;
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
+    [dataPath, setDataPath] = useState(""),
+    [dataPathDraft, setDataPathDraft] = useState(""),
+    [dataSize, setDataSize] = useState<number | null>(null),
+    [dataLoading, setDataLoading] = useState(true),
+    [dataEditing, setDataEditing] = useState(false),
     [open, setOpen] = useState(false),
     [profileOpen, setProfileOpen] = useState(false);
   const { pushToast } = useToast();
@@ -68,8 +86,26 @@ export function SettingsPage({
       .then((values) => {
         setPrompt(values.manager_prompt_template);
         setChatProfile(values.chat_model_profile_name);
+        if (values.manager_output_locale !== locale) {
+          return api<ApplicationSettings>("/api/application-settings", "PUT", {
+            manager_output_locale: locale,
+          });
+        }
       })
       .catch(() => pushToast("Unable to load operational prompt."));
+  }, [locale, pushToast]);
+  useEffect(() => {
+    let mounted = true;
+    api<ApplicationData>("/api/application-data")
+      .then((values) => {
+        if (!mounted) return;
+        setDataPath(values.path);
+        setDataPathDraft(values.path);
+        setDataSize(values.size_bytes);
+      })
+      .catch((error) => mounted && pushToast(error.message))
+      .finally(() => mounted && setDataLoading(false));
+    return () => { mounted = false; };
   }, [pushToast]);
   const saveApplication = () =>
     api<ApplicationSettings>("/api/application-settings", "PUT", {
@@ -94,10 +130,30 @@ export function SettingsPage({
       })
       .catch((error) => pushToast(error.message));
   const saveProfile = () => save().then(() => setProfileOpen(false));
+  const saveDataLocation = () => {
+    setDataLoading(true);
+    api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
+      .then((values) => {
+        setDataPath(values.path);
+        setDataPathDraft(values.path);
+        setDataSize(values.size_bytes);
+        pushToast(settingsCopy.storage.saved, "success");
+        setDataEditing(false);
+      })
+      .catch((error) => pushToast(error.message))
+      .finally(() => setDataLoading(false));
+  };
+  const setLanguage = (nextLocale: Locale) => {
+    setLocale(nextLocale);
+    api<ApplicationSettings>("/api/application-settings", "PUT", {
+      manager_output_locale: nextLocale,
+    }).catch((error) => pushToast(error.message));
+  };
   return (
     <>
       <section className="panel app-settings">
-        <PanelHeader title={t.applicationSettings} />
+        <PanelHeader title={<SectionInfo title={t.applicationSettings} description={sectionDetails.applicationSettings} />} />
+        <p className="hint section-description">{t.applicationSettingsDescription}</p>
         <label className="setting-row">
           <span>
             <strong>{t.language}</strong>
@@ -105,7 +161,7 @@ export function SettingsPage({
           </span>
           <select
             value={locale}
-            onChange={(event) => setLocale(event.target.value as Locale)}
+            onChange={(event) => setLanguage(event.target.value as Locale)}
           >
               {localeOptions.map((language) => <option key={language.id} value={language.id}>{language.label}</option>)}
           </select>
@@ -124,9 +180,49 @@ export function SettingsPage({
           </select>
         </label>
       </section>
+      <section className="panel app-settings app-data-settings">
+        <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
+        <p className="hint section-description">{settingsCopy.storage.description}</p>
+        <div className="setting-row">
+          <span>
+            <strong>{settingsCopy.storage.location}</strong>
+            <small>{settingsCopy.storage.locationHint}</small>
+          </span>
+          {dataEditing ? (
+            <div className="app-data-path-actions">
+              <input value={dataPathDraft} onChange={(event) => setDataPathDraft(event.target.value)} />
+              <div className="app-data-edit-actions">
+                <button className="ghost" onClick={() => { setDataPathDraft(dataPath); setDataEditing(false); }}>
+                  {l.cancel}
+                </button>
+                <button className="approve" disabled={!dataPathDraft || dataLoading} onClick={saveDataLocation}>
+                  <Save size={14} />
+                  {settingsCopy.storage.save}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="app-data-path-actions">
+              <p className="setting-prompt-preview app-data-path">{dataPath}</p>
+              <button className="approve" onClick={() => { setDataPathDraft(dataPath); setDataEditing(true); }}>
+                <Pencil size={14} />
+                {l.edit}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="app-data-size" aria-live="polite">
+          <Database size={16} />
+          <span>{settingsCopy.storage.size}</span>
+          <strong>{dataLoading ? settingsCopy.storage.calculating : bytes(dataSize ?? 0)}</strong>
+        </div>
+      </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader title={p.title} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={p.title} description={sectionDetails.assetProfiles} />} />
+            <p className="hint section-description">{p.description}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {
@@ -169,7 +265,8 @@ export function SettingsPage({
         </div>
       </section>
       <section className="panel app-settings">
-        <PanelHeader title={p.chatProfile} description={p.chatProfileHint} />
+        <PanelHeader title={<SectionInfo title={p.chatProfile} description={sectionDetails.systemAiModel} />} />
+        <p className="hint section-description">{p.chatProfileHint}</p>
         <label className="setting-row">
           <span>
             <strong>{p.selectChatProfile}</strong>
@@ -200,7 +297,10 @@ export function SettingsPage({
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader title={l.title} />
+          <div className="panel-title-action__copy">
+            <PanelHeader title={l.title} description={sectionDetails.managerPrompt} />
+            <p className="hint section-description">{l.description}</p>
+          </div>
           <button className="approve" onClick={() => setOpen(true)}>
             <Pencil size={14} />
             {l.edit}
@@ -212,6 +312,7 @@ export function SettingsPage({
         </p>
         <p className="setting-prompt-preview">{prompt || l.empty}</p>
       </section>
+      <OrbitLogs logs={logs} locale={locale} />
       <Modal open={open} title={l.title} onClose={() => setOpen(false)}>
         <div className="modal-form">
           <label className="modal-setting-row">

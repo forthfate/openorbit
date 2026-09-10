@@ -1,3 +1,4 @@
+import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Area,
@@ -17,7 +18,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   ImprovementAnalytics,
+  ImprovementIterationData,
+  Build,
   ProposalLifecycle,
+  SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
@@ -28,9 +32,13 @@ import {
   localeMessageMap,
   localeMessages,
   locales,
+  intlLocales,
   resolveLocale,
   type Locale,
 } from "../../locales";
+import "./saved-data-files.css";
+import { FeedbackTrends } from "../dashboard/feedback-trends";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 type ImprovementCopy = {
   improvement: string;
@@ -54,6 +62,10 @@ type ImprovementCopy = {
   decisionReason: string;
   timeline: string;
   noProposals: string;
+  savedDataFiles: string;
+  fileName: string;
+  copyFileName: string;
+  copyPath: string;
   iteration: string;
   run: string;
   feedbackCount: string;
@@ -68,6 +80,15 @@ type ImprovementCopy = {
   failed: string;
   cancelled: string;
   running: string;
+  selectBuild: string;
+};
+type ChartHints = {
+  feedbackByBuild: string;
+  activeRuns: string;
+  iterationTrend: string;
+  feedbackStatus: string;
+  issueSeverity: string;
+  runHealth: string;
 };
 const copy = localeMessageMap<ImprovementCopy>("improvementPage");
 const tick = (value: string) =>
@@ -75,28 +96,32 @@ const tick = (value: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-const timestamp = (value?: string) =>
-  value ? new Date(value).toLocaleString() : "—";
-function Card({ title, children }: { title: string; children: ReactNode }) {
-  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
-    chartHints = localeMessages<Record<string, string>>(locale, "chartHints"),
-    description = chartHints[title];
+const timestamp = (locale: Locale, value?: string) =>
+  value ? new Date(value).toLocaleString(intlLocales[locale]) : "—";
+function Card({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
   return (
     <article className="analytics-chart">
       <h3>
-        {description ? (
-          <SectionInfo title={title} description={description} />
-        ) : (
-          title
-        )}
+        <SectionInfo title={title} description={description} />
       </h3>
       {children}
     </article>
   );
 }
 
-function Trends({ t }: { t: (typeof copy)["en"] }) {
-  const [hours, setHours] = useState(24),
+export function Trends({ t }: { t: (typeof copy)["en"] }) {
+  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
+    chartHints = localeMessages<ChartHints>(locale, "chartHints"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
+    [hours, setHours] = useState(24),
     [build, setBuild] = useState(""),
     [data, setData] = useState<ImprovementAnalytics>();
   useEffect(() => {
@@ -119,7 +144,10 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
   return (
     <section className="panel improvement-trends">
       <div className="trend-head">
-        <PanelHeader title={t.trends} />
+        <PanelHeader
+          title={t.trends}
+          description={sectionDetails.iterationImprovementTrend}
+        />
         <label>
           {t.range}
           <select
@@ -134,7 +162,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
         </label>
       </div>
       <div className="analytics-grid">
-        <Card title={t.feedbackVolume}>
+        <Card title={t.feedbackVolume} description={chartHints.feedbackByBuild}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart
               data={data?.feedback_by_build ?? []}
@@ -153,7 +181,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
             </BarChart>
           </ResponsiveContainer>
         </Card>
-        <Card title={t.activeTrend}>
+        <Card title={t.activeTrend} description={chartHints.activeRuns}>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart
               data={data?.active_evaluations ?? []}
@@ -177,7 +205,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
           </ResponsiveContainer>
         </Card>
       </div>
-      <Card title={t.iterationTrend}>
+      <Card title={t.iterationTrend} description={chartHints.iterationTrend}>
         <div className="chart-select">
           <label>
             {t.evaluation}
@@ -220,7 +248,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
         )}
       </Card>
       <div className="analytics-grid">
-        <Card title={t.feedbackStatus}>
+        <Card title={t.feedbackStatus} description={chartHints.feedbackStatus}>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={data?.feedback_status ?? []} margin={{ left: -18 }}>
               <CartesianGrid vertical={false} />
@@ -234,7 +262,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
             </BarChart>
           </ResponsiveContainer>
         </Card>
-        <Card title={t.issueSeverity}>
+        <Card title={t.issueSeverity} description={chartHints.issueSeverity}>
           <ResponsiveContainer width="100%" height={250}>
             <AreaChart data={data?.issue_severity ?? []} margin={{ left: -18 }}>
               <XAxis dataKey="time" tickFormatter={tick} />
@@ -279,7 +307,7 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
           </ResponsiveContainer>
         </Card>
       </div>
-      <Card title={t.runHealth}>
+      <Card title={t.runHealth} description={chartHints.runHealth}>
         <ResponsiveContainer width="100%" height={250}>
           <BarChart data={data?.run_health ?? []} margin={{ left: -18 }}>
             <CartesianGrid vertical={false} />
@@ -298,38 +326,158 @@ function Trends({ t }: { t: (typeof copy)["en"] }) {
   );
 }
 
+function SavedDataFiles({
+  files,
+  t,
+}: {
+  files: SavedDataFile[];
+  t: (typeof copy)["en"];
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const displayedFiles = [...new Map(files.map((file) => [file.path, file])).values()];
+  if (!displayedFiles.length) return null;
+  const copyValue = async (value: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(key);
+      window.setTimeout(
+        () => setCopied((current) => (current === key ? null : current)),
+        1_500,
+      );
+    } catch {
+      setCopied(null);
+    }
+  };
+  return (
+    <section className="saved-data-files">
+      <strong>{t.savedDataFiles}</strong>
+      <div className="saved-data-files__list">
+        {displayedFiles.map((file, index) => (
+          <article key={`${file.path}-${index}`}>
+            <strong>{file.label || file.filename}</strong>
+            {file.label && (
+              <small>
+                {t.fileName}: {file.filename}
+              </small>
+            )}
+            <div>
+              <code>{file.path}</code>
+              <button
+                className="ghost icon-button"
+                type="button"
+                onClick={() => copyValue(file.path, `path-${index}`)}
+                aria-label={t.copyPath}
+                title={t.copyPath}
+              >
+                {copied === `path-${index}` ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            </div>
+            <button
+              className="ghost saved-data-files__copy-name"
+              type="button"
+              onClick={() => copyValue(file.filename, `name-${index}`)}
+            >
+              {copied === `name-${index}` ? <Check size={14} /> : <Copy size={14} />}
+              {t.copyFileName}
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function iterationDataFiles(items: ProposalLifecycle[]): SavedDataFile[] {
+  return [
+    ...new Map(
+      items
+        .flatMap((item) => item.data_files ?? [])
+        .map((file) => [file.path, file]),
+    ).values(),
+  ];
+}
+
 function ProposalHistory({
   t,
+  locale,
   buildId,
 }: {
   t: (typeof copy)["en"];
+  locale: Locale;
   buildId?: string;
 }) {
   const [items, setItems] = useState<ProposalLifecycle[]>([]),
+    [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
     [selected, setSelected] = useState<ProposalLifecycle | null>(null);
   useEffect(() => {
     api<ProposalLifecycle[]>("/api/v1/improvements/proposals")
       .then(setItems)
       .catch(() => setItems([]));
+    api<ImprovementIterationData[]>("/api/v1/improvements/iterations")
+      .then(setIterationData)
+      .catch(() => setIterationData([]));
   }, []);
   const tree = useMemo(() => {
     const builds = new Map<
       string,
-      { name: string; runs: Map<string, { items: ProposalLifecycle[] }> }
+      {
+        name: string;
+        runs: Map<
+          string,
+          {
+            iterations: Map<
+              number,
+              { items: ProposalLifecycle[]; dataFiles: SavedDataFile[]; recordedAt?: string }
+            >;
+          }
+        >;
+      }
     >();
-    for (const item of items.filter(
-      (item) => !buildId || item.evaluation_build_id === buildId,
+    const iteration = (
+      buildId: string | undefined,
+      buildName: string | undefined,
+      runId: string | undefined,
+      value: number | undefined,
+      recordedAt?: string,
+    ) => {
+      const resolvedBuildId = buildId || "unassigned";
+      const build = builds.get(resolvedBuildId) || {
+        name: buildName || resolvedBuildId,
+        runs: new Map(),
+      };
+      const resolvedRunId = runId || "unknown-run";
+      const run = build.runs.get(resolvedRunId) || { iterations: new Map() };
+      const resolvedIteration = value ?? 0;
+      const group = run.iterations.get(resolvedIteration) || {
+        items: [],
+        dataFiles: [],
+        recordedAt,
+      };
+      if (!group.recordedAt && recordedAt) group.recordedAt = recordedAt;
+      run.iterations.set(resolvedIteration, group);
+      build.runs.set(resolvedRunId, run);
+      builds.set(resolvedBuildId, build);
+      return group;
+    };
+    for (const item of items.filter((item) => !buildId || item.build_id === buildId)) {
+      iteration(
+        item.build_id,
+        item.build_name,
+        item.run_id,
+        item.iteration,
+        item.recorded_at,
+      ).items.push(item);
+    }
+    for (const item of iterationData.filter(
+      (item) => !buildId || item.build_id === buildId,
     )) {
-      const buildId = item.evaluation_build_id || "unassigned",
-        build = builds.get(buildId) || {
-          name: item.evaluation_build_name || buildId,
-          runs: new Map(),
-        },
-        runId = item.run_id || "unknown-run",
-        run = build.runs.get(runId) || { items: [] };
-      run.items.push(item);
-      build.runs.set(runId, run);
-      builds.set(buildId, build);
+      iteration(
+        item.build_id,
+        item.build_name,
+        item.run_id,
+        item.iteration,
+        item.recorded_at,
+      ).dataFiles.push(...item.data_files);
     }
     return [...builds.entries()].map(([id, build]) => ({
       id,
@@ -337,32 +485,18 @@ function ProposalHistory({
       runs: [...build.runs.entries()]
         .map(([runId, run]) => ({
           runId,
-          iterations: [
-            ...new Map(
-              run.items.map((item) => [
-                item.iteration ?? 0,
-                [] as ProposalLifecycle[],
-              ]),
-            ).entries(),
-          ]
-            .map(([iteration]) => ({
-              iteration,
-              items: run.items.filter(
-                (item) => (item.iteration ?? 0) === iteration,
-              ),
-            }))
+          iterations: [...run.iterations.entries()]
+            .map(([iteration, group]) => ({ iteration, ...group }))
             .sort((a, b) => a.iteration - b.iteration),
         }))
         .sort(
           (a, b) =>
             b.iterations
               .at(-1)
-              ?.items[0]?.recorded_at?.localeCompare(
-                a.iterations.at(-1)?.items[0]?.recorded_at || "",
-              ) || 0,
+              ?.recordedAt?.localeCompare(a.iterations.at(-1)?.recordedAt || "") || 0,
         ),
     }));
-  }, [items, buildId]);
+  }, [items, iterationData, buildId]);
   const statusLabel = (value: string) =>
     value === "rejected"
       ? t.rejected
@@ -409,7 +543,7 @@ function ProposalHistory({
                             {t.iteration} #{group.iteration}
                           </strong>
                           <small>
-                            {timestamp(group.items[0]?.recorded_at)}
+                            {timestamp(locale, group.recordedAt)}
                           </small>
                         </span>
                         <span className="proposal-tree__iteration-meta">
@@ -441,6 +575,13 @@ function ProposalHistory({
                             </span>
                           </button>
                         ))}
+                        <SavedDataFiles
+                          files={[
+                            ...group.dataFiles,
+                            ...iterationDataFiles(group.items),
+                          ]}
+                          t={t}
+                        />
                       </div>
                     </details>
                   ))}
@@ -466,8 +607,8 @@ function ProposalHistory({
                 label={statusLabel(selected.status)}
               />
               <span>
-                {selected.evaluation_build_name ||
-                  selected.evaluation_build_id ||
+                {selected.build_name ||
+                  selected.build_id ||
                   "—"}{" "}
                 · {t.iteration} #{selected.iteration ?? "—"}
               </span>
@@ -503,7 +644,7 @@ function ProposalHistory({
                       )}
                     />
                     <div>
-                      <strong>{timestamp(event.recorded_at)}</strong>
+                      <strong>{timestamp(locale, event.recorded_at)}</strong>
                       <small>
                         {t.iteration} #{event.iteration ?? "—"} ·{" "}
                         {event.phase || "—"}
@@ -520,9 +661,14 @@ function ProposalHistory({
   );
 }
 
-function CycleImprovementAI({ locale }: { locale: Locale }) {
+function CycleImprovementAI({
+  locale,
+  build,
+}: {
+  locale: Locale;
+  build: string;
+}) {
   const [data, setData] = useState<ImprovementAnalytics>(),
-    [build, setBuild] = useState(""),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
     t = locales[locale].cycle;
@@ -530,14 +676,6 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
     api<ImprovementAnalytics>("/api/improvement-analytics?hours=720")
       .then((next) => {
         setData(next);
-        setBuild(
-          (current) =>
-            current ||
-            next.iteration_trends.find((item) => item.points.length)
-              ?.build_id ||
-            next.iteration_trends[0]?.build_id ||
-            "",
-        );
       })
       .catch(() => setData(undefined));
   }, []);
@@ -556,7 +694,7 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
   const request = () => {
     setLoading(true);
     api<{ response: string }>("/api/cycle-improvements/analyze", "POST", {
-      evaluation_build_id: build,
+      build_id: build,
       locale,
     })
       .then((result) => setAnalysis(result.response))
@@ -569,22 +707,6 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
-        <label>
-          {t.build}
-          <select
-            value={build}
-            onChange={(event) => {
-              setBuild(event.target.value);
-              setAnalysis("");
-            }}
-          >
-            {data?.iteration_trends.map((item) => (
-              <option key={item.build_id} value={item.build_id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (
@@ -624,7 +746,7 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
               </div>
             )}
           </div>
-          <ProposalHistory t={copy[locale]} buildId={build} />
+          <ProposalHistory t={copy[locale]} locale={locale} buildId={build} />
         </>
       )}
     </section>
@@ -632,11 +754,32 @@ function CycleImprovementAI({ locale }: { locale: Locale }) {
 }
 export function ImprovementsPage() {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
-    t = copy[locale];
+    t = copy[locale],
+    [build, setBuild] = useState(""),
+    [builds, setBuilds] = useState<Build[]>([]),
+    [initialLoading, setInitialLoading] = useState(true);
+  useEffect(() => {
+    api<Build[]>("/api/builds")
+      .then((next) => {
+        setBuilds(next);
+        setBuild((current) => current || next[0]?.id || "");
+      })
+      .catch(() => setBuilds([]))
+      .finally(() => setInitialLoading(false));
+  }, []);
+  if (initialLoading) return <><SectionSkeleton rows={1} /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
   return (
     <>
-      <Trends t={t} />
-      <CycleImprovementAI locale={locale} />
+      <section className="improvements-build-selector">
+        <label>
+          {t.selectBuild}
+          <select value={build} onChange={(event) => setBuild(event.target.value)}>
+            {builds.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+      </section>
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
+      <CycleImprovementAI locale={locale} build={build} />
     </>
   );
 }

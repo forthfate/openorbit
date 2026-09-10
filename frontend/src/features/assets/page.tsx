@@ -2,12 +2,15 @@
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   FileUp,
   Languages,
   Plus,
   Trash2,
 } from "lucide-react";
-import { Children, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import type {
   ExecutionEnvironment,
   PromptTemplate,
@@ -24,6 +27,7 @@ import {
   localeMessageMap,
   localeMessages,
   locales,
+  intlLocales,
   type Locale,
 } from "../../locales";
 import { Modal } from "../../components/ui/modal";
@@ -35,7 +39,8 @@ import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm, type ProfileFormCopy } from "../evaluation-builds/page";
+import { ProfileForm, type ProfileFormCopy } from "../builds/page";
+import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 const text = localeMessageMap<Record<string, string>>("assetsText");
 const testBlank: TargetTestCaseSet = {
@@ -44,15 +49,20 @@ const testBlank: TargetTestCaseSet = {
   description: "",
   cases: [{ id: "case-1", name: "", prompt: "", acceptance: "" }],
 };
+
+function CatalogSkeleton() {
+  return <SectionSkeleton rows={3} />;
+}
+
 const fieldHelp = localeMessageMap<Record<string, string>>("assetsHelp");
 const runnerLabels = localeMessageMap<Record<string, string>>("runnerLabels");
 const phases: WorkflowStep["phase"][] = [
-  "init",
-  "setup",
-  "run",
-  "eval",
-  "teardown",
-  "finalize",
+  "before_all",
+  "before_each",
+  "execute",
+  "verify",
+  "after_each",
+  "after_all",
 ];
 const pipelineYaml = (workflow: Workflow | null | undefined) =>
   phases
@@ -73,40 +83,61 @@ const pipelineYaml = (workflow: Workflow | null | undefined) =>
 
 function Catalog({
   title,
+  tooltip,
   button,
   children,
   emptyHint,
   showRunners = false,
   runners,
   onRefresh,
+  loading = false,
   locale,
 }: {
   title: string;
+  tooltip: string;
   button: React.ReactNode;
   children: React.ReactNode;
   emptyHint: string;
   showRunners?: boolean;
   runners?: RunnerAsset[];
   onRefresh?: () => Promise<unknown>;
+  loading?: boolean;
   locale: Locale;
 }) {
-  const isLegacyWorkflowSection = title === text[locale].flows;
+  const isLegacyWorkflowSection = title === text[locale].flows,
+    [sort, setSort] = useState<{ key: "name" | "detail" | "createdAt"; direction: "asc" | "desc" }>({ key: "name", direction: "asc" }),
+    rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
+      const a = String((left.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
+      const b = String((right.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
+      const value = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      return sort.direction === "asc" ? value : -value;
+    }),
+    changeSort = (key: typeof sort.key) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" })),
+    icon = (key: typeof sort.key) => sort.key !== key ? ChevronsUpDown : sort.direction === "asc" ? ChevronUp : ChevronDown;
   return (
     <>
       {showRunners && runners && onRefresh && (
-        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} />
+        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} />
       )}{" "}
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
           <div className="panel-title-action">
-            <PanelHeader
-              title={<SectionInfo title={title} description={emptyHint} />}
-            />
+            <div className="panel-title-action__copy">
+              <PanelHeader
+                title={<SectionInfo title={title} description={tooltip} />}
+              />
+              <p className="hint section-description">{emptyHint}</p>
+            </div>
             {button}
           </div>
           <div className="catalog-list">
-            {Children.count(children) ? (
-              children
+            {loading ? <CatalogSkeleton /> : Children.count(children) ? (
+              <>
+                <div className="catalog-list__header">
+                  {(["name", "detail", "createdAt"] as const).map((key) => { const Icon = icon(key); return <button key={key} type="button" onClick={() => changeSort(key)}>{key === "createdAt" ? "Created" : key === "detail" ? "Details" : "Name"}<Icon size={13}/></button>; })}
+                </div>
+                {rows}
+              </>
             ) : (
               <p className="catalog-empty">{emptyHint}</p>
             )}
@@ -130,15 +161,17 @@ function PipelineYamlEditor({
   value,
   onChange,
   hint,
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
   hint: string;
+  label: string;
 }) {
   return (
     <div className="pipeline-yaml-editor">
       <p className="hint">{hint}</p>
-      <YamlEditor value={value} onChange={onChange} />
+      <YamlEditor value={value} onChange={onChange} label={label} />
     </div>
   );
 }
@@ -251,6 +284,7 @@ function WorkflowModal({
             value={workflowYaml}
             onChange={setWorkflowYaml}
             hint={l.pipelineHint}
+            label={l.steps}
           />
         )}
         <div className="modal-actions">
@@ -523,12 +557,16 @@ function RunnerTemplateCard({
 function AssetRow({
   name,
   detail,
+  createdAt,
+  locale,
   onClick,
   onDelete,
   deleteLabel = "Delete",
 }: {
   name: string;
   detail: string;
+  createdAt?: string;
+  locale?: Locale;
   onClick: () => void;
   onDelete: () => void;
   deleteLabel?: string;
@@ -539,6 +577,7 @@ function AssetRow({
         <strong>{name}</strong>
         <span>{detail}</span>
       </button>
+      {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
       <button
         className="icon-button danger"
         aria-label={deleteLabel}
@@ -574,6 +613,7 @@ function ProfileCatalog({
   test,
   save,
   tested,
+  loading,
   onDelete,
 }: {
   locale: Locale;
@@ -583,25 +623,25 @@ function ProfileCatalog({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  loading: boolean;
   onDelete: (id: string) => void;
 }) {
   const copy = localeMessages<{
       profiles: ProfileCatalogCopy;
       profileForm: ProfileFormCopy;
     }>(locale, "settingsPage"),
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     [open, setOpen] = useState(false);
   const saveProfile = () => save().then(() => setOpen(false));
   return (
     <section className="panel app-settings">
       <div className="panel-title-action">
-        <PanelHeader
-          title={
-            <SectionInfo
-              title={copy.profiles.title}
-              description={copy.profiles.description}
-            />
-          }
-        />
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={<SectionInfo title={copy.profiles.title} description={sectionDetails.assetProfiles} />}
+          />
+          <p className="hint section-description">{copy.profiles.description}</p>
+        </div>
         <button
           className="approve"
           onClick={() => {
@@ -614,12 +654,14 @@ function ProfileCatalog({
         </button>
       </div>
       <div className="catalog-list">
-        {profiles.length ? (
+        {loading ? <CatalogSkeleton /> : profiles.length ? (
           profiles.map((profile) => (
             <AssetRow
               key={profile.profile_name}
               name={profile.profile_name}
               detail={`${profile.provider} · ${profile.model || "—"}`}
+              createdAt={profile.created_at}
+              locale={locale}
               onClick={() => {
                 setSettings(profile);
                 setOpen(true);
@@ -657,27 +699,27 @@ function RunnerCatalog({
   locale,
   items,
   onRefresh,
+  loading,
 }: {
   locale: Locale;
   items: RunnerAsset[];
   onRefresh: () => Promise<unknown>;
+  loading: boolean;
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
-  const copy = runnerLabels[locale];
+  const copy = runnerLabels[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   const remove = (id: string) =>
     api(`/api/runners/${id}`, "DELETE").then(onRefresh);
   return (
     <section className="panel app-settings">
       <div className="panel-title-action">
-        <PanelHeader
-          title={
-            <SectionInfo
-              title={copy.title}
-              description={text[locale].emptyRunners}
-            />
-          }
-        />
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={<SectionInfo title={copy.title} description={sectionDetails.assetRunners} />}
+          />
+          <p className="hint section-description">{text[locale].emptyRunners}</p>
+        </div>
         <button
           className="approve"
           onClick={() => {
@@ -690,12 +732,14 @@ function RunnerCatalog({
         </button>
       </div>
       <div className="catalog-list">
-        {items.length ? (
+        {loading ? <CatalogSkeleton /> : items.length ? (
           items.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.description}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setEditing(item);
                 setOpen(true);
@@ -875,6 +919,7 @@ function LegacyAssetsPage({
   runners,
   promptTemplates,
   testCaseSets,
+  loading,
   onRefresh,
   onCreateWorkflow,
   onUpdateWorkflow,
@@ -885,6 +930,7 @@ function LegacyAssetsPage({
   runners: RunnerAsset[];
   promptTemplates: PromptTemplate[];
   testCaseSets: TargetTestCaseSet[];
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
@@ -934,8 +980,10 @@ function LegacyAssetsPage({
     <>
       <Catalog
         locale={locale}
+        loading={loading}
         emptyHint={l.emptyTemplates}
         title={l.templates}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetTemplates}
         button={
           <button
             className="approve"
@@ -958,6 +1006,8 @@ function LegacyAssetsPage({
             key={item.id}
             name={item.name}
             detail={`${item.id} · v${item.version}`}
+            createdAt={item.created_at}
+            locale={locale}
             onClick={() => setTemplate(item)}
             onDelete={() => onDelete("template", item.id)}
           />
@@ -965,8 +1015,10 @@ function LegacyAssetsPage({
       </Catalog>
       <Catalog
         locale={locale}
+        loading={loading}
         emptyHint={l.emptyTests}
         title={l.tests}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetTests}
         button={
           <button className="approve" onClick={() => setTestSet(testBlank)}>
             <Plus size={14} />
@@ -979,6 +1031,8 @@ function LegacyAssetsPage({
             key={item.id}
             name={item.name}
             detail={`${item.id} · ${item.cases.length}`}
+            createdAt={item.created_at}
+            locale={locale}
             onClick={() => setTestSet(item)}
             onDelete={() => onDelete("test-set", item.id)}
           />
@@ -986,11 +1040,13 @@ function LegacyAssetsPage({
       </Catalog>
       <Catalog
         locale={locale}
+        loading={loading}
         showRunners
         runners={runners}
         onRefresh={onRefresh}
         emptyHint={l.emptyFlows}
         title={l.flows}
+        tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetRunners}
         button={
           <button
             className="approve"
@@ -1267,6 +1323,7 @@ function EnvironmentAssets({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.executor.type}`}
+              createdAt={item.created_at}
               onClick={() => {
                 setExecution({
                   id: item.id,
@@ -1316,6 +1373,7 @@ function EnvironmentAssets({
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
+              createdAt={item.created_at}
               onClick={() => {
                 setTarget({
                   id: item.id,
@@ -1444,12 +1502,14 @@ function EnvironmentCatalog({
   locale,
   executionEnvironments,
   targetEnvironments,
+  loading,
   onRefresh,
   onDelete,
 }: {
   locale: Locale;
   executionEnvironments: ExecutionEnvironment[];
   targetEnvironments: TargetEnvironment[];
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onDelete: (
     kind: "execution-environment" | "target-environment",
@@ -1503,16 +1563,17 @@ function EnvironmentCatalog({
       pushToast(error instanceof Error ? error.message : "Asset save failed");
     }
   };
-  const help = fieldHelp[locale];
+  const help = fieldHelp[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   return (
     <>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader
-            title={
-              <SectionInfo title={t.execution} description={t.executionHint} />
-            }
-          />
+          <div className="panel-title-action__copy">
+            <PanelHeader
+              title={<SectionInfo title={t.execution} description={sectionDetails.executionEnvironment} />}
+            />
+            <p className="hint section-description">{t.executionHint}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {
@@ -1536,11 +1597,13 @@ function EnvironmentCatalog({
           </button>
         </div>
         <div className="catalog-list">
-          {executionEnvironments.map((item) => (
+          {loading ? <CatalogSkeleton /> : executionEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.executor.type}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setExecution({
                   id: item.id,
@@ -1563,9 +1626,12 @@ function EnvironmentCatalog({
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
-          <PanelHeader
-            title={<SectionInfo title={t.target} description={t.targetHint} />}
-          />
+          <div className="panel-title-action__copy">
+            <PanelHeader
+              title={<SectionInfo title={t.target} description={sectionDetails.targetEnvironment} />}
+            />
+            <p className="hint section-description">{t.targetHint}</p>
+          </div>
           <button
             className="approve"
             onClick={() => {
@@ -1584,11 +1650,13 @@ function EnvironmentCatalog({
           </button>
         </div>
         <div className="catalog-list">
-          {targetEnvironments.map((item) => (
+          {loading ? <CatalogSkeleton /> : targetEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
+              createdAt={item.created_at}
+              locale={locale}
               onClick={() => {
                 setTarget({
                   id: item.id,
@@ -1710,6 +1778,7 @@ export function AssetsPage({
   test,
   save,
   tested,
+  loading,
   onDelete,
   ...legacy
 }: {
@@ -1726,6 +1795,7 @@ export function AssetsPage({
   test: () => void;
   save: () => Promise<unknown>;
   tested: boolean;
+  loading: boolean;
   onRefresh: () => Promise<unknown>;
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
@@ -1740,6 +1810,14 @@ export function AssetsPage({
     id: string,
   ) => void;
 }) {
+  if (loading) return <>
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+  </>;
   return (
     <>
       <ProfileCatalog
@@ -1750,16 +1828,18 @@ export function AssetsPage({
         test={test}
         save={save}
         tested={tested}
+        loading={loading}
         onDelete={(id) => onDelete("profile", id)}
       />
       <EnvironmentCatalog
         locale={locale}
         executionEnvironments={executionEnvironments}
         targetEnvironments={targetEnvironments}
+        loading={loading}
         onRefresh={legacy.onRefresh}
         onDelete={onDelete}
       />
-      <LegacyAssetsPage {...legacy} locale={locale} onDelete={onDelete} />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} />
     </>
   );
 }

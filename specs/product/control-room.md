@@ -12,20 +12,27 @@ Provide one local web control room for configuring, running, observing and revie
 | --- | --- | --- |
 | Dashboard | build/run counts, recent evaluations, supervisor-health summary and local operational events | open a build or run; open quick-start flow |
 | Assets | reusable runners, prompts, test-case sets, execution environments and target environments | create, edit and delete assets |
-| Evaluation builds | repository, runner, prompt, model profile, test-case set, schedule and approval score | quick start, create, clone, edit, test, run and delete |
-| Evaluation runs | lifecycle phase, console output, supervisor findings, PID and trace ID | inspect, stop one run, emergency stop all |
-| Improvement results | retained supervisor feedback, scores, proposals and cycle analytics | inspect and filter evidence |
+| Builds | repository, runner, prompt, model profile, test-case set, schedule and approval score | quick start, create, clone, edit, test, run and delete |
+| Runs | lifecycle phase, console output, supervisor findings, PID and trace ID | inspect, stop one run, emergency stop all |
+| Improvements | retained supervisor feedback, scores, proposals and cycle analytics | inspect and filter evidence |
 | Settings | locale, theme, model profiles and application prompts | configure and test a model profile |
 
 The list-managed views are list-first. Detail is opened from a row and preserves a link back to the list state.
 
+## Loading states
+
+Every primary view provides an initial-load skeleton for its visible sections.
+Skeletons are not shown again during polling or a normal refresh. See the
+[control-room loading-state contract](loading-states.md) for the complete
+behavior, accessibility, and ownership rules.
+
 ## Planned work
 
-Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvement results.
+Add an approval queue and warnings to the dashboard; build enable/disable controls; and reviewed diff, commit and revert actions for improvements.
 
 ## Quick-start entry
 
-Evaluation-build creation begins with a choice between a quick start and manual
+Build creation begins with a choice between a quick start and manual
 configuration. The dashboard may open the same quick-start flow directly.
 Quick starts are specified by the [quick-start product contract](quick-starts.md).
 

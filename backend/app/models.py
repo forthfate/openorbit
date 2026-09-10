@@ -3,12 +3,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Legacy keys remain accepted when reading stored workflows and integrations.
+# New assets and run records always use these canonical, task-agnostic names.
+PHASE_ALIASES = {
+    "init": "before_all",
+    "setup": "before_each",
+    "run": "execute",
+    "eval": "verify",
+    "teardown": "after_each",
+    "finalize": "after_all",
+}
+LIFECYCLE_PHASES = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
 
 
 class Step(BaseModel):
     id: str
-    phase: Literal["init", "setup", "run", "eval", "teardown", "finalize"]
+    phase: Literal["before_all", "before_each", "execute", "verify", "after_each", "after_all"]
     name: str
     command: list[str]
     working_directory: str
@@ -16,6 +28,11 @@ class Step(BaseModel):
     approval: Literal["not_required", "required"] = "not_required"
     on_failure: Literal["stop", "continue"] = "stop"
     minimum_interval_seconds: int = Field(default=0, ge=0, le=86_400)
+
+    @field_validator("phase", mode="before")
+    @classmethod
+    def normalize_legacy_phase(cls, value: object) -> object:
+        return PHASE_ALIASES.get(value, value) if isinstance(value, str) else value
 
 
 class Workflow(BaseModel):
@@ -39,8 +56,8 @@ class Workflow(BaseModel):
     def lifecycle_is_complete(self, execution_mode: Literal["run", "test"] = "run") -> bool:
         phases = [step.phase for step in self.steps_for(execution_mode)]
         return phases in (
-            ["init", "setup", "run", "eval", "teardown"],
-            ["init", "setup", "run", "eval", "teardown", "finalize"],
+            ["before_all", "before_each", "execute", "verify", "after_each"],
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         )
 
 
@@ -48,8 +65,8 @@ class Run(BaseModel):
     id: str
     workflow_id: str
     workflow_name: str
-    evaluation_build_id: str | None = None
-    evaluation_build_name: str | None = None
+    build_id: str | None = None
+    build_name: str | None = None
     repository: str | None = None
     supervisor_profile_name: str | None = None
     prompt_source: str | None = None
@@ -57,10 +74,22 @@ class Run(BaseModel):
     execution_mode: Literal["run", "test"] = "run"
     execution_type: Literal["pipeline", "invoke"] = "pipeline"
     loop_limit: int = 1
+    timezone: str = "UTC"
+    schedule_enabled: bool = False
+    schedule_weekdays: list[int] = Field(default_factory=list)
+    schedule_start_time: str = "00:00"
+    schedule_end_time: str = "23:59"
+    start_iteration: int = 1
+    retry_of_run_id: str | None = None
+    retry_mode: Literal["restart", "resume"] | None = None
     iteration_strategy: Literal["linear", "score_select"] = "linear"
     candidates_per_iteration: int = 1
     iteration_candidates: list[dict[str, Any]] = Field(default_factory=list)
     repeat_interval_minutes: int = 0
+    cadence_mode: Literal["after_completion", "fixed"] = "after_completion"
+    overrun_policy: Literal["wait", "interrupt_eval"] = "wait"
+    iteration_deadline_at: datetime | None = None
+    advance_requested: bool = False
     approval_score: int | None = None
     status: Literal["queued", "awaiting_approval", "running", "succeeded", "failed", "cancelled"]
     created_at: datetime

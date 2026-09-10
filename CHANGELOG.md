@@ -5,6 +5,52 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-09-10
+
+### Added
+
+- Initial loading skeletons now match the layouts of Assets, Dashboard, Builds, Runs, Improvements, and Settings.
+- Runner workflow graphs now annotate lifecycle steps with execution information.
+- The runner lifecycle and sortable-list controls are generalized for reuse across workflows and catalog views.
+- Direct dependency license inventory is documented in the repository.
+
+### Changed
+
+- Evaluation Builds are now called Builds, and Improvement Results are now called Improvements, throughout the application, documentation, and localized UI.
+- Workflow lifecycle phases are standardized as `before_all`, `before_each`, `execute`, `verify`, `after_each`, and `after_all`.
+- Application-data path editing and localized help keys have clearer, more stable behavior.
+
+### Breaking changes
+
+- Build API routes now use `/api/builds` instead of `/api/evaluation-builds`; clients must update build create, read, update, delete, run, and test requests.
+- New workflow definitions and run records use the standardized lifecycle phases and `build_id` / `build_name` fields. Legacy lifecycle phase names remain readable for stored workflows and integrations.
+
+## [0.7.0] - 2026-09-10
+
+### Added
+
+- The Orbit Assistant can use workspace tools and an optional terminal mode, with configurable tool availability for local operation.
+- Evaluation runs now retain structured supervisor behavior traces, target logs, live phase output, retry controls, scheduled execution settings, prompt revision history, and commit-change evidence.
+- Evaluation result, workflow, log, and supervisor views now expose contextual data hints, line-numbered output, richer filtering, and independent display-only translation state.
+- Runner SDK documentation is bundled with the release, and SDK helpers can restore evaluation targets from retained Git snapshots and surface saved data files in proposal history.
+- Assets now show loading skeletons, reusable execution and target environments, and clearer catalog metadata and actions.
+- Improvement results include separate dashboard feedback trends and per-build iteration improvement trends, proposal history data files, and localized operational analytics.
+- The control room now provides detailed section descriptions and contextual tooltips across dashboard, evaluation, assets, and settings pages.
+
+### Changed
+
+- Evaluation-build scheduling, timing controls, and date/time displays consistently follow the selected Orbit locale.
+- Operational logs now format timestamps with the selected Orbit language rather than the browser default.
+- The operational manager prompt, application-data settings, model-profile settings, and asset catalogs have clearer descriptions, warnings, and aligned layout spacing.
+- The bundled frontend release label is verified against the package version during CI, and generated SDK documentation is included in release build artifacts.
+- UI accessibility and static copy are localized consistently across English, Korean, and Japanese.
+
+### Fixed
+
+- Evaluation detail hints remain visible in the run-detail modal, and asset metadata aligns with catalog-row actions.
+- Model profiles can be saved without a connection test when the profile configuration is otherwise valid.
+- Evaluation-build timing controls and retained evaluation detail data are localized correctly.
+
 ## [0.6.0] - 2026-09-08
 
 ### Added
@@ -148,3 +194,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.3.0]: https://github.com/forthfate/openorbit/releases/tag/v0.3.0
 [0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0
 [0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1
+[0.8.0]: https://github.com/forthfate/openorbit/releases/tag/v0.8.0

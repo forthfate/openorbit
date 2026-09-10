@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Run,
@@ -35,12 +35,12 @@ import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
 
 const phases = [
-  "init",
-  "setup",
-  "run",
-  "eval",
-  "teardown",
-  "finalize",
+  "before_all",
+  "before_each",
+  "execute",
+  "verify",
+  "after_each",
+  "after_all",
 ] as const;
 const time = (locale: Locale, value?: string) =>
   value
@@ -76,7 +76,7 @@ const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { behavior_summary?: string; summary?: string };
+    evaluation: { behavior_summary?: string; behavior_trace?: { purpose: string; rationale: string; observation: string; decision: string; next_action: string }; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };
@@ -96,6 +96,7 @@ function LineNumberedOutput({ value }: { value: string }) {
 export function EvaluationsPage({
   runs,
   onStop,
+  onRetry,
   onApprove,
   onReject,
   onEmergencyStop,
@@ -106,6 +107,7 @@ export function EvaluationsPage({
 }: {
   runs: Run[];
   onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onEmergencyStop: () => void;
@@ -119,7 +121,7 @@ export function EvaluationsPage({
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<RunDetailTab>("result"),
-    [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("init"),
+    [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("before_all"),
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
@@ -129,6 +131,7 @@ export function EvaluationsPage({
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
     [phaseFilter, setPhaseFilter] = useState(""),
+    [keywordFilter, setKeywordFilter] = useState(""),
     [activeOnly, setActiveOnly] = useState(false),
     [filtersOpen, setFiltersOpen] = useState(false),
     [draftStatuses, setDraftStatuses] = useState<Set<string>>(
@@ -139,6 +142,7 @@ export function EvaluationsPage({
       "all",
     ),
     [draftPhaseFilter, setDraftPhaseFilter] = useState(""),
+    [draftKeywordFilter, setDraftKeywordFilter] = useState(""),
     [draftActiveOnly, setDraftActiveOnly] = useState(false),
     [resultFiltersOpen, setResultFiltersOpen] = useState(false),
     [resultIterationFilter, setResultIterationFilter] = useState<"all" | "latest" | "range">("all"),
@@ -168,7 +172,9 @@ export function EvaluationsPage({
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
-    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
+  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
   const selected = initialSelectedRun ?? selectedInternal;
   const supervisorTranslationIds = useMemo(
     () =>
@@ -275,12 +281,12 @@ export function EvaluationsPage({
     () => [
       ...new Map(
         runs.map((run) => [
-          run.evaluation_build_id ?? run.workflow_id,
+          run.build_id ?? run.workflow_id,
           {
-            id: run.evaluation_build_id ?? run.workflow_id,
+            id: run.build_id ?? run.workflow_id,
             name:
-              run.evaluation_build_name ??
-              run.evaluation_build_id ??
+              run.build_name ??
+              run.build_id ??
               run.workflow_name,
           },
         ]),
@@ -292,9 +298,10 @@ export function EvaluationsPage({
     (run) =>
       statuses.has(run.status) &&
       (!buildFilter ||
-        (run.evaluation_build_id ?? run.workflow_id) === buildFilter) &&
+        (run.build_id ?? run.workflow_id) === buildFilter) &&
       (modeFilter === "all" || run.execution_mode === modeFilter) &&
       (!phaseFilter || run.current_phase === phaseFilter) &&
+      (!keywordFilter || [run.id, run.build_name, run.build_id, run.workflow_name, run.status, run.current_phase].some((value) => value?.includes(keywordFilter))) &&
       (!activeOnly || activeStatuses.has(run.status)),
   );
   const toggleStatus = (status: string) =>
@@ -309,6 +316,7 @@ export function EvaluationsPage({
     setDraftBuildFilter("");
     setDraftModeFilter("all");
     setDraftPhaseFilter("");
+    setDraftKeywordFilter("");
     setDraftActiveOnly(false);
   };
   const closeFilters = () => setFiltersOpen(false);
@@ -317,6 +325,7 @@ export function EvaluationsPage({
     setDraftBuildFilter(buildFilter);
     setDraftModeFilter(modeFilter);
     setDraftPhaseFilter(phaseFilter);
+    setDraftKeywordFilter(keywordFilter);
     setDraftActiveOnly(activeOnly);
     setFiltersOpen(true);
   };
@@ -325,6 +334,7 @@ export function EvaluationsPage({
     setBuildFilter(draftBuildFilter);
     setModeFilter(draftModeFilter);
     setPhaseFilter(draftPhaseFilter);
+    setKeywordFilter(draftKeywordFilter);
     setActiveOnly(draftActiveOnly);
     setPage(1);
     closeFilters();
@@ -379,7 +389,17 @@ export function EvaluationsPage({
     Number(Boolean(buildFilter)) +
     Number(modeFilter !== "all") +
     Number(Boolean(phaseFilter)) +
+    Number(Boolean(keywordFilter)) +
     Number(activeOnly);
+  const resultAppliedFilterCount =
+    Number(resultIterationFilter !== "all") +
+    Number(resultDecisions.size !== 4) +
+    Number(resultScoreBucket !== "all") +
+    Number(resultContent !== "all") +
+    Number(resultAttemptFilter !== "all") +
+    Number(resultImprovementStatus !== "all") +
+    Number(resultIssueSeverity !== "all") +
+    Number(resultIssueStatus !== "all");
   const totalPages = Math.max(1, Math.ceil(filteredRuns.length / pageSize)),
     currentPage = Math.min(page, totalPages),
     pagedRuns = filteredRuns.slice((currentPage - 1) * pageSize, currentPage * pageSize),
@@ -417,18 +437,20 @@ export function EvaluationsPage({
     {id:"select",header:<input aria-label="Select all runs on this page" type="checkbox" checked={allPageSelected} disabled={!selectableRuns.length} onChange={togglePage}/>,render:r=><input aria-label={`Select run ${r.id}`} type="checkbox" checked={selectedRunIds.has(r.id)} disabled={!terminal(r.status)} onChange={()=>toggleRun(r.id)}/>},
     {
       id: "build",
-      header: t.evaluationBuild,
+      header: t.build,
       render: (r) => (
         <span className="run-build">
-          <strong>{r.evaluation_build_name ?? r.evaluation_build_id}</strong>
+          <strong>{r.build_name ?? r.build_id}</strong>
           <code>{r.id}</code>
         </span>
       ),
+      sortValue: (r) => r.build_name ?? r.build_id ?? r.workflow_name,
     },
     {
       id: "started",
       header: t.started,
       render: (r) => time(locale, r.created_at),
+      sortValue: (r) => r.created_at ?? "",
     },
     {
       id: "elapsed",
@@ -438,6 +460,9 @@ export function EvaluationsPage({
           r.created_at,
           terminal(r.status) ? (r.finished_at ?? r.updated_at) : undefined,
         ),
+      sortValue: (r) => terminal(r.status) && r.finished_at
+        ? new Date(r.finished_at).getTime() - new Date(r.created_at ?? 0).getTime()
+        : 0,
     },
     {
       id: "phase",
@@ -447,23 +472,27 @@ export function EvaluationsPage({
           {finalPhase(r)}
         </span>
       ),
+      sortValue: (r) => finalPhase(r),
     },
-    { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—" },
+    { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—", sortValue: (r) => r.pid ?? r.last_pid ?? -1 },
     {
       id: "proposed",
       header: t.proposed,
       render: (r) => r.proposed_improvements ?? 0,
+      sortValue: (r) => r.proposed_improvements ?? 0,
     },
     {
       id: "approved",
       header: t.approved,
       render: (r) => r.approved_improvements ?? 0,
+      sortValue: (r) => r.approved_improvements ?? 0,
     },
-    { id: "issues", header: t.issues, render: (r) => r.reported_issues ?? 0 },
+    { id: "issues", header: t.issues, render: (r) => r.reported_issues ?? 0, sortValue: (r) => r.reported_issues ?? 0 },
     {
       id: "status",
       header: t.status,
       render: (r) => <StatusBadge value={r.status} label={label(r.status)} />,
+      sortValue: (r) => label(r.status),
     },
     {
       id: "actions",
@@ -490,6 +519,11 @@ export function EvaluationsPage({
               </button>
             </>
           )}
+          {["failed", "cancelled"].includes(r.status) && r.execution_type === "pipeline" && (
+            <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} onClick={(event) => { event.stopPropagation(); setRetryingRun(r); }}>
+              <RotateCcw size={16} />
+            </button>
+          )}
           <button
             className="icon-button danger"
             title={t.stop}
@@ -505,38 +539,40 @@ export function EvaluationsPage({
       ),
     },
   ];
-  columns[1].header = l.evaluation;
+  columns[1].header = l.task;
   columns.splice(4, 0, {
     id: "iteration",
     header: l.iteration,
-    render: (r) =>
-      Math.max(
+    render: (r) => {
+      const current = Math.max(
         0,
         ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
-      ) || "—",
+      );
+      return current ? `${current}/${r.loop_limit ?? current}` : "—";
+    },
+    sortValue: (r) => Math.max(0, ...(r.step_results ?? []).map((step) => step.loop_index ?? 0)),
   });
   const steps = selected?.step_results ?? [],
-    // `finalize` is bookkeeping after the last evaluation loop.  It must not
-    // become the default detail iteration because supervisor results belong to
-    // the actual run/eval loop.
+    // `after_all` is bookkeeping after the last loop. It must not become the
+    // default detail iteration because supervisor results belong to execute/verify.
     iterations = [
       ...new Set([
         ...steps
-          .filter((step) => ["run", "eval"].includes(step.phase ?? step.step_id ?? ""))
+          .filter((step) => ["execute", "verify"].includes(step.phase ?? step.step_id ?? ""))
           .map((step) => step.loop_index ?? 0)
           .filter((index) => index > 0),
         ...(selected?.supervisor_results ?? []).map((item) => item.iteration ?? 0).filter((index) => index > 0),
       ]),
     ].sort((a, b) => a - b),
-    // `init` and `finalize` are process-level steps, not evaluation iterations.
+    // `before_all` and `after_all` are process-level steps, not iterations.
     // Include them beside the relevant iteration so their evidence remains
     // visible without inventing a separate, misleading iteration.
     selectedSteps = steps.filter(
       (step) =>
         (!candidateTab || step.candidate_id === candidateTab) &&
         (step.loop_index === iterationTab ||
-          ((step.phase ?? step.step_id) === "init" && iterationTab === iterations[0]) ||
-          ((step.phase ?? step.step_id) === "finalize" && iterationTab === iterations.at(-1))),
+          ((step.phase ?? step.step_id) === "before_all" && iterationTab === iterations[0]) ||
+          ((step.phase ?? step.step_id) === "after_all" && iterationTab === iterations.at(-1))),
     ),
     availablePhases = phases.filter((phase) =>
       selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
@@ -665,37 +701,61 @@ export function EvaluationsPage({
         __iteration: record.iteration,
       })),
     );
-  const resultBehaviorSummaries = resultRecords
-    .map((record) => ({
+  const resultBehaviorTraces = resultRecords.flatMap((record) => {
+      const item = {
       iteration: record.iteration,
       recordedAt: record.recorded_at,
+      trace: translateResultResponse(record)?.evaluation?.behavior_trace,
       summary: translateResultResponse(record)?.evaluation?.behavior_summary,
-    }))
-    .filter(
-      (item): item is { iteration: number; recordedAt: string | undefined; summary: string } =>
-        Boolean(item.summary),
-    );
+      };
+      return item.trace || item.summary ? [item] : [];
+    });
   const iterationPosition = iterations.indexOf(iterationTab),
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
+  const iterationNavigator =
+    tab !== "result" && tab !== "prompt" && iterations.length > 0 ? (
+      <div className="iteration-navigator" aria-label={l.iteration}>
+        <button className="ghost icon-button" type="button" aria-label={ui.previousIteration} title={ui.previousIteration} disabled={previousIteration === undefined} onClick={() => {
+          if (previousIteration !== undefined) {
+            setIterationTab(previousIteration);
+            setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
+          }
+        }}><ChevronLeft size={16} /></button>
+        <select aria-label={l.iteration} value={iterationTab} onChange={(event) => {
+          const next = Number(event.target.value);
+          setIterationTab(next);
+          setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
+        }}>{[...iterations].reverse().map((iteration) => <option key={iteration} value={iteration}>#{iteration}</option>)}</select>
+        <button className="ghost icon-button" type="button" aria-label={ui.nextIteration} title={ui.nextIteration} disabled={nextIteration === undefined} onClick={() => {
+          if (nextIteration !== undefined) {
+            setIterationTab(nextIteration);
+            setCandidateTab(selected?.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
+          }
+        }}><ChevronRight size={16} /></button>
+      </div>
+    ) : undefined;
   return (
     <section className="panel active-evaluation-panel">
-      <PanelHeader
-        title={
-          <Tooltip content={t.runHistoryHint}>
-            <span className="panel-title-with-tooltip">
-              {l.title}
-              <Info size={15} />
-            </span>
-          </Tooltip>
-        }
-        action={
-          <button className="emergency" onClick={onEmergencyStop}>
-            <CircleStop size={15} />
-            {t.emergencyStop}
-          </button>
-        }
-      />
+      <div className="panel-title-action">
+        <div className="panel-title-action__copy">
+          <PanelHeader
+            title={
+              <Tooltip content={t.runHistoryHint}>
+                <span className="panel-title-with-tooltip">
+                  {l.title}
+                  <Info size={15} />
+                </span>
+              </Tooltip>
+            }
+          />
+          <p className="hint section-description">{t.runHistoryDescription}</p>
+        </div>
+        <button className="emergency" onClick={onEmergencyStop}>
+          <CircleStop size={15} />
+          {t.emergencyStop}
+        </button>
+      </div>
       <div className="run-filter-trigger" ref={filterMenu}>
         <button
           className="ghost run-filter-button"
@@ -704,7 +764,7 @@ export function EvaluationsPage({
         >
           <ListFilter size={15} />
           {ui.filter}
-          {appliedFilterCount > 0 && <span>{appliedFilterCount}</span>}
+          {appliedFilterCount > 0 && <span className="nav-run-count">{appliedFilterCount}</span>}
         </button>
         <PageSizeSelect locale={locale} value={pageSize} onChange={value=>{setPageSize(value);setPage(1)}}/>
         {filtersOpen && (
@@ -733,7 +793,11 @@ export function EvaluationsPage({
               </div>
             </fieldset>
             <label>
-              {ui.evaluationBuild}
+              {ui.keyword}
+              <input value={draftKeywordFilter} onChange={(event) => setDraftKeywordFilter(event.target.value)} placeholder={ui.keywordHint} />
+            </label>
+            <label>
+              {ui.build}
               <select
                 value={draftBuildFilter}
                 onChange={(event) => setDraftBuildFilter(event.target.value)}
@@ -811,13 +875,13 @@ export function EvaluationsPage({
           const latest = Math.max(
             1,
             ...(r.step_results ?? [])
-              .filter((step) => ["run", "eval"].includes(step.phase ?? step.step_id ?? ""))
+              .filter((step) => ["execute", "verify"].includes(step.phase ?? step.step_id ?? ""))
               .map((step) => step.loop_index ?? 0),
             ...(r.supervisor_results ?? []).map((item) => item.iteration ?? 0),
           );
           setSelected(r);
           setTab("result");
-          setPhaseTab("init");
+          setPhaseTab("before_all");
           setIterationTab(latest);
           setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
@@ -839,8 +903,8 @@ export function EvaluationsPage({
         >
           <div className="run-detail-evaluation">
             <strong>
-              {selected.evaluation_build_name ??
-                selected.evaluation_build_id ??
+              {selected.build_name ??
+                selected.build_id ??
                 selected.workflow_name}
             </strong>
             <code>{selected.id}</code>
@@ -891,51 +955,6 @@ export function EvaluationsPage({
           />
           {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
             <>
-            <div className="iteration-navigator" aria-label={l.iteration}>
-              <button
-                className="ghost icon-button"
-                type="button"
-                aria-label={ui.previousIteration}
-                title={ui.previousIteration}
-                disabled={previousIteration === undefined}
-                onClick={() => {
-                  if (previousIteration !== undefined) {
-                    setIterationTab(previousIteration);
-                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === previousIteration && candidate.selected)?.id ?? null);
-                  }
-                }}
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <select
-                aria-label={l.iteration}
-                value={iterationTab}
-                onChange={(event) => {
-                  const next = Number(event.target.value);
-                  setIterationTab(next);
-                  setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === next && candidate.selected)?.id ?? null);
-                }}
-              >
-                {[...iterations].reverse().map((iteration) => (
-                  <option key={iteration} value={iteration}>#{iteration}</option>
-                ))}
-              </select>
-              <button
-                className="ghost icon-button"
-                type="button"
-                aria-label={ui.nextIteration}
-                title={ui.nextIteration}
-                disabled={nextIteration === undefined}
-                onClick={() => {
-                  if (nextIteration !== undefined) {
-                    setIterationTab(nextIteration);
-                    setCandidateTab(selected.iteration_candidates?.find((candidate) => candidate.iteration === nextIteration && candidate.selected)?.id ?? null);
-                  }
-                }}
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
             {selected.iteration_strategy === "score_select" && (
               <div className="iteration-candidates">
                 {(selected.iteration_candidates ?? []).filter((candidate) => candidate.iteration === iterationTab).map((candidate) => (
@@ -948,7 +967,7 @@ export function EvaluationsPage({
             </>
           )}
           {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription}>
+            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint} action={iterationNavigator}>
               <div className="run-tabs phase-tabs">
                 {phases.map((phase) => (
                   <button
@@ -970,16 +989,18 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "logs" && (
-            <RunDetailTabPanel description={l.logsDescription}>
+            <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint} action={iterationNavigator}>
               <CombinedLogPanel
                 steps={selectedSteps}
                 locale={locale}
                 empty={l.noLogs}
+                orbitLogs={l.orbitLogs}
+                targetLogs={l.targetLogs}
               />
             </RunDetailTabPanel>
           )}
           {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription}>
+            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
               <PromptChangesPanel
                 key={selected.id}
                 revisions={promptRevisions}
@@ -989,12 +1010,12 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription}>
+            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint} action={iterationNavigator}>
               <CommitChangesPanel changes={commitChanges} l={l} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
-            <RunDetailTabPanel description={l.supervisorDescription}>
+            <RunDetailTabPanel description={l.supervisorDescription} hint={l.supervisorDataHint} action={iterationNavigator}>
               {supervisorTranslationId && (
                 <div className="supervisor-translation-action">
                   <button
@@ -1027,7 +1048,7 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "result" && (
-            <RunDetailTabPanel description={l.resultDescription}>
+            <RunDetailTabPanel description={l.resultDescription} hint={l.resultDataHint}>
               <div className="run-result">
               <div className="result-filter-trigger" ref={resultFilterMenu}>
                 <button
@@ -1039,6 +1060,7 @@ export function EvaluationsPage({
                 >
                   <ListFilter size={15} />
                   {l.filter}
+                  {resultAppliedFilterCount > 0 && <span className="nav-run-count">{resultAppliedFilterCount}</span>}
                 </button>
                 {resultTranslationIds.length > 0 && (
                   <button
@@ -1211,7 +1233,7 @@ export function EvaluationsPage({
               <EvaluationResultPanel
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
-                summaries={resultBehaviorSummaries}
+                summaries={resultBehaviorTraces}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}
@@ -1222,6 +1244,16 @@ export function EvaluationsPage({
           )}
         </Modal>
       )}
+      <Modal open={Boolean(retryingRun)} title={retryCopy.title} onClose={() => setRetryingRun(null)} className="modal--confirm">
+        <div className="modal-form retry-confirmation">
+          <p className="confirm-description">{retryCopy.warning}</p>
+          <div className="modal-actions">
+            <button className="ghost" onClick={() => setRetryingRun(null)}>{retryCopy.cancel}</button>
+            <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{retryCopy.resume}</button>
+            <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{retryCopy.restart}</button>
+          </div>
+        </div>
+      </Modal>
     </section>
   );
 }

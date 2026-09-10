@@ -1,6 +1,6 @@
 {
   "name": "openorbit",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "Open control plane for recurring AI automations",
   "license": "MIT",
   "type": "module",
@@ -15,7 +15,9 @@
   "workspaces": ["frontend"],
   "scripts": {
     "run": "node bin/orbit.mjs run",
-    "build": "pnpm --filter agent-improvement-console-ui run build",
+    "build": "pnpm run docs:build && pnpm --filter agent-improvement-console-ui run build",
+    "docs:build": "uv tool run --from 'mkdocs>=1.6' --with 'mkdocs-material>=9.6' --with 'mkdocstrings[python]>=0.28' mkdocs build --strict",
+    "docs:serve": "uv tool run --from 'mkdocs>=1.6' --with 'mkdocs-material>=9.6' --with 'mkdocstrings[python]>=0.28' mkdocs serve",
     "check": "pnpm --filter agent-improvement-console-ui run build",
     "prepack": "pnpm run build"
   },

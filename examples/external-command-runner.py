@@ -36,37 +36,37 @@ def invoke(ctx, action):
     return {"action": action, "output": output[-4_000:], "artifact": artifact}
 
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     result = invoke(ctx, "status")
     ctx.emit_result({"external_command": {"readiness": result}})
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
     result = invoke(ctx, "prepare")
     ctx.emit_result({"external_command": {"preparation": result}})
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     result = invoke(ctx, "run-once")
     ctx.emit_result({"external_command": {"execution": result}})
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     result = invoke(ctx, "collect-evidence")
     ctx.emit_result({"external_command": {"evidence": result}})
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     ctx.log("Completed the bounded external command")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     ctx.log("Finalized the external command evaluation")
 
 

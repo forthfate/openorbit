@@ -52,6 +52,7 @@ export function AppShell({
     repository: string;
     releases: string;
     openApi: string;
+    sdkDocs: string;
   }>(locale, "dashboardLinks");
   const navigation: [Page, ReactNode, string][] = [
     ["dashboard", <Activity size={17} />, t.dashboard],
@@ -90,6 +91,15 @@ export function AppShell({
         <Braces size={16} />
         {dashboardLinks.openApi}
       </a>
+      <a
+        className="dashboard-repository-link"
+        href="/sdk-docs/sdk/"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <BookOpen size={16} />
+        {dashboardLinks.sdkDocs}
+      </a>
     </>
   );
   const activeRunLabel = activeRunCount > 99 ? "99+" : String(activeRunCount);
@@ -101,7 +111,16 @@ export function AppShell({
     document.title = `${appMeta.title}${appMeta.titleSeparator}${pageDescriptions[page]}`;
     document.documentElement.lang = locale;
   }, [appMeta, locale, page, pageDescriptions]);
-  const sidebarLabel = collapsed ? "Expand navigation" : "Collapse navigation";
+  const navigationLabels = localeMessages<{
+    expandNavigation: string;
+    collapseNavigation: string;
+    activeRuns: string;
+    githubLabel: string;
+    githubTitle: string;
+  }>(locale, "navigationAccessibility");
+  const sidebarLabel = collapsed
+    ? navigationLabels.expandNavigation
+    : navigationLabels.collapseNavigation;
   return (
     <main
       className={collapsed ? "sidebar-collapsed" : undefined}
@@ -122,8 +141,8 @@ export function AppShell({
           <button
             className="brand brand--expand"
             type="button"
-            aria-label="Expand navigation"
-            title="Expand navigation"
+            aria-label={navigationLabels.expandNavigation}
+            title={navigationLabels.expandNavigation}
             onClick={() => setCollapsed(false)}
           >
             <Sparkles size={20} />
@@ -151,7 +170,7 @@ export function AppShell({
               {id === "runs" && activeRunCount > 0 && (
                 <span
                   className="nav-run-count"
-                  aria-label={`${activeRunCount} active runs`}
+                  aria-label={navigationLabels.activeRuns.replace("{count}", String(activeRunCount))}
                 >
                   {activeRunLabel}
                 </span>
@@ -179,8 +198,8 @@ export function AppShell({
             href="https://github.com/forthfate/openorbit"
             target="_blank"
             rel="noreferrer"
-            aria-label="OpenOrbit on GitHub"
-            title="OpenOrbit GitHub repository"
+            aria-label={navigationLabels.githubLabel}
+            title={navigationLabels.githubTitle}
           >
             <SiGithub size={18} />
           </a>
