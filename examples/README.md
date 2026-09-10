@@ -48,8 +48,9 @@ uv run python examples/inspect_behavior.py
 ```
 
 For every sample, adapt only the configuration and bounded work for your
-project. Keep lifecycle ownership with OpenOrbit: `init` and `finalize` run
-once per process; `setup`, `run`, `eval`, and `teardown` run once per iteration.
+project. Keep lifecycle ownership with OpenOrbit: `before_all` and `after_all`
+run once per process; `before_each`, `execute`, `verify`, and `after_each` run
+once per iteration.
 
 ## AI SLO and behavior-drift demo
 

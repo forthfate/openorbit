@@ -899,21 +899,25 @@ export function EvaluationBuildsPage(props: {
         id: "name",
         header: locales[locale].evaluation.name,
         render: (b) => b.name,
+        sortValue: (b) => b.name,
       },
       {
         id: "repository",
         header: ui.repository,
         render: (b) => b.repository_name ?? b.repository,
+        sortValue: (b) => b.repository_name ?? b.repository,
       },
       {
         id: "created",
         header: ui.created,
         render: (b) => formatDate(locale, b.created_at),
+        sortValue: (b) => b.created_at ?? "",
       },
       {
         id: "last-started",
         header: ui.lastStarted,
         render: (b) => formatDate(locale, b.last_run_at),
+        sortValue: (b) => b.last_run_at ?? "",
       },
       {
         id: "action",

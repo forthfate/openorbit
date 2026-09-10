@@ -265,8 +265,8 @@ Read the [API reference](docs/API.md) for endpoint details. To add reusable auto
 ```python
 from orbit_sdk import runner
 
-@runner.phase("run")
-def evaluate(ctx):
+@runner.phase("execute")
+def verify(ctx):
     ctx.log("Run one bounded evaluation step")
 
 if __name__ == "__main__":

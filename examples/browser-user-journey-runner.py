@@ -44,8 +44,8 @@ def focused_cases(ctx, state):
     return [ctx.test_cases[index]], "Rotating through fixed journeys."
 
 
-@runner.phase("init")
-def init(ctx):
+@runner.phase("before_all")
+def before_all(ctx):
     if not ctx.evaluation_build.get("browser_base_url"):
         raise ValueError("Set a browser base URL on the evaluation build")
     if not ctx.test_cases:
@@ -53,8 +53,8 @@ def init(ctx):
     ctx.log("Validated the browser journey configuration")
 
 
-@runner.phase("setup")
-def setup(ctx):
+@runner.phase("before_each")
+def before_each(ctx):
     state = load_state(ctx)
     cases, reason = focused_cases(ctx, state)
     state["plan"] = {"case_ids": [str(case.get("id")) for case in cases], "reason": reason}
@@ -63,8 +63,8 @@ def setup(ctx):
     ctx.log(reason)
 
 
-@runner.phase("run")
-def run(ctx):
+@runner.phase("execute")
+def execute(ctx):
     state = load_state(ctx)
     planned_ids = set((state.get("plan") or {}).get("case_ids", []))
     cases = [case for case in ctx.test_cases if str(case.get("id")) in planned_ids]
@@ -84,20 +84,20 @@ def run(ctx):
     ctx.emit_result({"user_journey": {"evidence": evidence, "handoff": handoff}})
 
 
-@runner.phase("eval")
-def evaluate(ctx):
+@runner.phase("verify")
+def verify(ctx):
     state = load_state(ctx)
     ctx.emit_result({"user_journey": {"next_iteration": state.get("history", [])[-1:]}})
     ctx.log("Published browser evidence and the next-iteration handoff")
 
 
-@runner.phase("teardown")
-def teardown(ctx):
+@runner.phase("after_each")
+def after_each(ctx):
     ctx.log("Completed one bounded browser journey")
 
 
-@runner.phase("finalize")
-def finalize(ctx):
+@runner.phase("after_all")
+def after_all(ctx):
     ctx.log("Finalized the user-journey evaluation")
 
 

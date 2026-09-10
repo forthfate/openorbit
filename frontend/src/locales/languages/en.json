@@ -178,7 +178,7 @@
       "iterationTimingAfterCompletion": "Wait after completion",
       "iterationTimingFixed": "Fixed interval",
       "iterationTimingWait": "Start as soon as the current work finishes",
-      "iterationTimingInterrupt": "End evaluation and continue with teardown",
+      "iterationTimingInterrupt": "End verification and continue with after_each",
       "runLimit": {
         "label": "Run limit",
         "hint": "Maximum number of runs to retain or schedule for this build."
@@ -589,7 +589,7 @@
       "detail": "Evaluation run detail",
       "workflow": "Workflow logs",
       "workflowDescription": "Review phase-by-phase execution logs and browser evidence.",
-      "workflowDataHint": "Entries appear when an init, setup, run, eval, teardown, or finalize phase leaves output or evidence.",
+      "workflowDataHint": "Entries appear when a before_all, before_each, execute, verify, after_each, or after_all phase leaves output or evidence.",
       "logs": "Logs",
       "logsDescription": "View all execution output together in chronological order.",
       "logsDataHint": "Entries appear when Orbit writes process output or a runner sends target logs with ctx.target_log().",

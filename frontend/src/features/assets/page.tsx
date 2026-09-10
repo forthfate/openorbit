@@ -2,12 +2,15 @@
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   FileUp,
   Languages,
   Plus,
   Trash2,
 } from "lucide-react";
-import { Children, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useRef, useState } from "react";
 import type {
   ExecutionEnvironment,
   PromptTemplate,
@@ -53,12 +56,12 @@ function CatalogSkeleton() {
 const fieldHelp = localeMessageMap<Record<string, string>>("assetsHelp");
 const runnerLabels = localeMessageMap<Record<string, string>>("runnerLabels");
 const phases: WorkflowStep["phase"][] = [
-  "init",
-  "setup",
-  "run",
-  "eval",
-  "teardown",
-  "finalize",
+  "before_all",
+  "before_each",
+  "execute",
+  "verify",
+  "after_each",
+  "after_all",
 ];
 const pipelineYaml = (workflow: Workflow | null | undefined) =>
   phases
@@ -100,7 +103,16 @@ function Catalog({
   loading?: boolean;
   locale: Locale;
 }) {
-  const isLegacyWorkflowSection = title === text[locale].flows;
+  const isLegacyWorkflowSection = title === text[locale].flows,
+    [sort, setSort] = useState<{ key: "name" | "detail" | "createdAt"; direction: "asc" | "desc" }>({ key: "name", direction: "asc" }),
+    rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
+      const a = String((left.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
+      const b = String((right.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
+      const value = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+      return sort.direction === "asc" ? value : -value;
+    }),
+    changeSort = (key: typeof sort.key) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" })),
+    icon = (key: typeof sort.key) => sort.key !== key ? ChevronsUpDown : sort.direction === "asc" ? ChevronUp : ChevronDown;
   return (
     <>
       {showRunners && runners && onRefresh && (
@@ -119,7 +131,12 @@ function Catalog({
           </div>
           <div className="catalog-list">
             {loading ? <CatalogSkeleton /> : Children.count(children) ? (
-              children
+              <>
+                <div className="catalog-list__header">
+                  {(["name", "detail", "createdAt"] as const).map((key) => { const Icon = icon(key); return <button key={key} type="button" onClick={() => changeSort(key)}>{key === "createdAt" ? "Created" : key === "detail" ? "Details" : "Name"}<Icon size={13}/></button>; })}
+                </div>
+                {rows}
+              </>
             ) : (
               <p className="catalog-empty">{emptyHint}</p>
             )}

@@ -62,7 +62,7 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
     runner = project / "runner.py"
     runner.write_text(
         "from orbit_sdk import runner\n"
-        "@runner.phase('run')\n"
+        "@runner.phase('execute')\n"
         "def run(ctx):\n"
         "    ctx.target_log('service started', source='target-api')\n"
         "    ctx.target_log('slow response', level='warn', source='target-api')\n"
@@ -87,9 +87,9 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
         "target-log-run",
         Step(
             id="run",
-            phase="run",
+            phase="execute",
             name="Run",
-            command=[sys.executable, str(runner), "--phase", "run"],
+            command=[sys.executable, str(runner), "--phase", "execute"],
             working_directory=str(project),
         ),
         loop_index=3,
@@ -103,7 +103,7 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
         ("warn", "target-api", "slow response"),
     ]
     assert all(entry["run_id"] == "target-log-run" for entry in step["target_logs"])
-    assert all(entry["iteration"] == 3 and entry["phase"] == "run" for entry in step["target_logs"])
+    assert all(entry["iteration"] == 3 and entry["phase"] == "execute" for entry in step["target_logs"])
 
 
 def test_runner_data_files_are_retained_for_the_iteration(tmp_path, monkeypatch):
@@ -115,7 +115,7 @@ def test_runner_data_files_are_retained_for_the_iteration(tmp_path, monkeypatch)
     runner = project / "runner.py"
     runner.write_text(
         "from orbit_sdk import runner\n"
-        "@runner.phase('run')\n"
+        "@runner.phase('execute')\n"
         "def run(ctx):\n"
         "    ctx.save_data_file('evidence/first.json', '{}', label='First result')\n"
         "    ctx.save_data_file('evidence/second.json', '{}', label='Second result')\n"
@@ -140,9 +140,9 @@ def test_runner_data_files_are_retained_for_the_iteration(tmp_path, monkeypatch)
         "data-file-run",
         Step(
             id="run",
-            phase="run",
+            phase="execute",
             name="Run",
-            command=[sys.executable, str(runner), "--phase", "run"],
+            command=[sys.executable, str(runner), "--phase", "execute"],
             working_directory=str(project),
         ),
         loop_index=3,
@@ -169,7 +169,7 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
         json.dumps({"evaluation_build": {"managed_prompt_path": "prompt.md"}}).encode()
     ).decode()
     update = RunnerContext(
-        phase="setup",
+        phase="before_each",
         target_repository=project,
         mode="run",
         loop_index=1,
@@ -188,13 +188,13 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
             updated_at=timestamp,
             step_results=[
                 {
-                    "phase": "setup",
+                    "phase": "before_each",
                     "loop_index": 1,
                     "ended_at": timestamp.isoformat(),
                     "result": {"file_update": update},
                 },
                 {
-                    "phase": "setup",
+                    "phase": "before_each",
                     "loop_index": 2,
                     "ended_at": timestamp.isoformat(),
                     "result": {
@@ -234,7 +234,7 @@ def test_commit_changes_returns_sdk_commit_range(tmp_path, monkeypatch):
             updated_at=timestamp,
             step_results=[
                 {
-                    "phase": "run",
+                    "phase": "execute",
                     "loop_index": 2,
                     "ended_at": timestamp.isoformat(),
                     "result": {
@@ -272,7 +272,7 @@ def test_commit_changes_includes_jgent_committed_source_candidate(tmp_path, monk
             updated_at=timestamp,
             step_results=[
                 {
-                    "phase": "setup",
+                    "phase": "before_each",
                     "loop_index": 1,
                     "ended_at": timestamp.isoformat(),
                     "result": {
@@ -319,8 +319,8 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
         kind="simulation",
         risk="low",
         steps=[
-            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
-            Step(id="teardown", phase="teardown", name="Teardown", command=[], working_directory="."),
+            Step(id="setup", phase="before_each", name="Setup", command=[], working_directory="."),
+            Step(id="teardown", phase="after_each", name="Teardown", command=[], working_directory="."),
         ],
     )
     monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
@@ -328,7 +328,7 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
 
     def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
         calls.append((step.phase, loop_index, allow_terminal))
-        if step.phase == "setup":
+        if step.phase == "before_each":
             current = store._load(run_id)
             current.status = terminal_status
             store._save(current)
@@ -337,7 +337,7 @@ def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypat
 
     store._execute(run.id)
 
-    assert calls == [("setup", 1, False), ("teardown", 1, True)]
+    assert calls == [("before_each", 1, False), ("after_each", 1, True)]
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
@@ -364,8 +364,8 @@ def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
         kind="simulation",
         risk="low",
         steps=[
-            Step(id="setup", phase="setup", name="Setup", command=[], working_directory="."),
-            Step(id="finalize", phase="finalize", name="Finalize", command=[], working_directory="."),
+            Step(id="setup", phase="before_each", name="Setup", command=[], working_directory="."),
+            Step(id="finalize", phase="after_all", name="Finalize", command=[], working_directory="."),
         ],
     )
     monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
@@ -373,7 +373,7 @@ def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
 
     def execute_step(run_id, step, loop_index=1, resources=None, *, allow_terminal=False):
         calls.append((step.phase, loop_index, allow_terminal))
-        if step.phase == "setup":
+        if step.phase == "before_each":
             current = store._load(run_id)
             current.status = terminal_status
             store._save(current)
@@ -382,15 +382,15 @@ def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
 
     store._execute(run.id)
 
-    assert calls == [("setup", 1, False), ("finalize", 2, True)]
+    assert calls == [("before_each", 1, False), ("after_all", 2, True)]
 
 
 def test_native_improvement_template_uses_repository_snapshot_lifecycle():
     source = store_module.NATIVE_IMPROVEMENT_CYCLE_TEMPLATE
 
-    assert "ctx.save_setup_snapshot()" in source
-    assert "ctx.save_first_teardown_snapshot()" in source
-    assert "ctx.restore_setup_snapshot()" in source
+    assert "ctx.save_before_each_snapshot()" in source
+    assert "ctx.save_first_after_each_snapshot()" in source
+    assert "ctx.restore_before_each_snapshot()" in source
 
 
 def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tmp_path, monkeypatch):
@@ -416,7 +416,7 @@ def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tm
         description="",
         kind="simulation",
         risk="low",
-        steps=[Step(id="run", phase="run", name="Run", command=[], working_directory=".")],
+        steps=[Step(id="run", phase="execute", name="Run", command=[], working_directory=".")],
     )
     monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
     calls = []
@@ -558,7 +558,7 @@ def test_runner_execution_plan_stops_when_its_run_phase_fails(tmp_path, monkeypa
             "id": "failing-runner",
             "name": "Failing runner",
             "description": "A runner used to verify lifecycle failure handling.",
-            "source": "from orbit_sdk import runner\n\n@runner.phase('run')\ndef run(ctx): pass\n",
+            "source": "from orbit_sdk import runner\n\n@runner.phase('execute')\ndef run(ctx): pass\n",
         }
     )
 
@@ -566,6 +566,24 @@ def test_runner_execution_plan_stops_when_its_run_phase_fails(tmp_path, monkeypa
 
     assert workflow.steps_for("run")[0].on_failure == "stop"
     assert workflow.steps_for("test")[0].on_failure == "stop"
+
+
+def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store_module.RUNNERS.mkdir()
+    (store_module.RUNNERS / "legacy.py").write_text(
+        "from orbit_sdk import runner\n@runner.phase('run')\ndef run(ctx): pass\n",
+        encoding="utf-8",
+    )
+    (store_module.RUNNERS / "legacy.json").write_text(
+        json.dumps({"id": "legacy", "name": "Legacy", "description": "Pre-generic lifecycle runner"}),
+        encoding="utf-8",
+    )
+
+    workflow = store_module.ConsoleStore()._runner_execution_plan("legacy")
+
+    assert [step.phase for step in workflow.steps] == ["execute"]
+    assert workflow.steps[0].command[-1] == "execute"
 
 
 def test_v1_openapi_contract_documents_project_and_pipeline_resources():
@@ -698,7 +716,7 @@ def test_native_improvement_cycle_evidence_triggers_supervision():
     class RunRecord:
         step_results = [
             {
-                "phase": "run",
+                "phase": "execute",
                 "result": {"improvement_cycle": {"candidate_fingerprint": "a" * 64}},
             }
         ]
@@ -721,12 +739,12 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
         updated_at=timestamp,
         step_results=[
             {
-                "phase": "setup",
+                "phase": "before_each",
                 "loop_index": 1,
                 "result": {"improvement_cycle": {"managed_prompt": {"content": "Prompt evidence"}}},
             },
             {
-                "phase": "run",
+                "phase": "execute",
                 "loop_index": 1,
                 "result": {"improvement_cycle": {"candidate_fingerprint": "a" * 64}},
             },
@@ -761,7 +779,7 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
     store._complete_supervision(run.id)
 
     assert len(captured_prompts) == 1
-    assert '"phase": "setup"' in captured_prompts[0]
+    assert '"phase": "before_each"' in captured_prompts[0]
     assert "Prompt evidence" in captured_prompts[0]
 
 
@@ -803,10 +821,10 @@ def test_runner_context_uses_the_supplied_model_profile_without_exposing_its_sec
 
 def test_direct_browser_and_site_exploration_evidence_trigger_supervision():
     class BrowserRun:
-        step_results = [{"phase": "run", "result": {"browser_journey": {"results": [{"passed": True}]}}}]
+        step_results = [{"phase": "execute", "result": {"browser_journey": {"results": [{"passed": True}]}}}]
 
     class SiteRun:
-        step_results = [{"phase": "run", "result": {"site_exploration": {"evidence": {"visited": [{}]}}}}]
+        step_results = [{"phase": "execute", "result": {"site_exploration": {"evidence": {"visited": [{}]}}}}]
 
     assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(BrowserRun()) is True
     assert store_module.ConsoleStore._latest_cycle_has_persona_evidence(SiteRun()) is True

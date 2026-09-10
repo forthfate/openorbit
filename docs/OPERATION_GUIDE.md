@@ -34,7 +34,7 @@ Orbit의 운영 흐름은 다음 세 단계를 분리하는 것을 원칙으로 
 ### 워크플로
 
 - 목적: 평가 파이프라인의 실행 생명주기와 셸 명령을 정의한다.
-- 구성: `init → setup → run → eval → teardown` 단계별 스크립트.
+- 구성: `before_all → before_each → execute → verify → after_each → after_all` 단계별 스크립트.
 - 생성: 첫 페이지에서 기본 정보와 기반 워크플로를 고르고, 두 번째 페이지에서 단계별 셸 스크립트를 입력한다.
 - 원칙: 워크플로 설명은 해당 실행의 태스크 지시문 역할을 한다.
 
@@ -91,7 +91,7 @@ Orbit의 운영 흐름은 다음 세 단계를 분리하는 것을 원칙으로 
 
 ```text
 워크플로 로그
-  init | setup | run | eval | teardown
+  before_all | before_each | execute | verify | after_each | after_all
 
 로그
 평가 결과

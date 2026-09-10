@@ -6,14 +6,14 @@ Status: accepted
 
 Runner assets declare the lifecycle phases they use. When all standard phases are present, their order is:
 
-1. `init`: acquire run ownership; validate input, repository, policy and approved paths.
-2. `setup`: prepare catalog, fixture, environment and recovery state.
-3. `run`: invoke bounded tools, models and target subprocesses.
-4. `eval`: collect evidence, score it and request a policy decision.
-5. `teardown`: persist per-iteration evidence and clean temporary resources.
-6. `finalize` (optional): perform process-level work after all iterations.
+1. `before_all`: acquire run ownership; validate input, repository, policy and approved paths.
+2. `before_each`: prepare the iteration's catalog, fixture, environment and recovery state.
+3. `execute`: invoke bounded tools, models and target subprocesses.
+4. `verify`: collect evidence, validate outcomes, score them when applicable, and request a policy decision.
+5. `after_each`: persist per-iteration evidence and clean temporary resources.
+6. `after_all` (optional): perform process-level work after all iterations.
 
-`teardown` currently runs in the normal loop. It is not yet guaranteed after failure, timeout, cancellation or emergency stop.
+`after_each` currently runs in the normal loop. It is not yet guaranteed after failure, timeout, cancellation or emergency stop.
 
 ## Process ownership
 
