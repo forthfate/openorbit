@@ -3,6 +3,14 @@
   "intlLocale": "en-US",
   "default": true,
   "messages": {
+    "promptDraft": {
+      "title": "Discard unsaved changes?",
+      "closeDescription": "Your prompt draft has unsaved changes. Discard them and close the editor?",
+      "switchDescription": "Your prompt draft has unsaved changes. Discard them and switch to the selected version?",
+      "cancel": "Keep editing",
+      "discard": "Discard changes",
+      "savedHint": "Your draft is saved locally. Saving creates a new version."
+    },
     "assetsText": {
       "profiles": "AI model profiles",
       "templates": "Manager prompt templates",

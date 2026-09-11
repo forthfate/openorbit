@@ -31,6 +31,7 @@ import {
   type Locale,
 } from "../../locales";
 import { Modal } from "../../components/ui/modal";
+import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
@@ -764,18 +765,24 @@ function RunnerCatalog({
 }
 
 function PromptTemplateEditor({
+  locale,
   template,
   onClose,
   onSaved,
   l,
   help,
 }: {
+  locale: Locale;
   template: PromptTemplate;
   onClose: () => void;
   onSaved: () => Promise<unknown>;
   l: Record<string, string>;
   help: Record<string, string>;
 }) {
+  const copy = localeMessages<Record<string, string>>(locale, "promptDraft");
+  const [pendingAction, setPendingAction] = useState<
+    { type: "close" } | { type: "version"; version: number } | null
+  >(null);
   const draftKey = `orbit.prompt-template-draft.${template.id}`,
     versions = template.versions?.length
       ? template.versions
@@ -784,37 +791,41 @@ function PromptTemplateEditor({
       const saved = localStorage.getItem(draftKey);
       return saved ? (JSON.parse(saved) as PromptTemplate) : { ...template };
     }),
-    [selectedVersion, setSelectedVersion] = useState(template.version),
+    [selectedVersion, setSelectedVersion] = useState(draft.version),
     [notice, setNotice] = useState("");
+  const selectedContent =
+    versions.find((item) => item.version === selectedVersion)?.content ??
+    template.content;
   const dirty =
     draft.name !== template.name ||
-    draft.content !== template.content ||
+    draft.content !== selectedContent ||
     draft.id !== template.id;
   useEffect(() => {
     if (dirty) localStorage.setItem(draftKey, JSON.stringify(draft));
     else localStorage.removeItem(draftKey);
   }, [draft, dirty, draftKey]);
   const close = () => {
-    if (
-      !dirty ||
-      window.confirm("저장하지 않은 수정 내용이 있습니다. 닫을까요?")
-    )
-      onClose();
+    if (dirty) setPendingAction({ type: "close" });
+    else onClose();
   };
-  const selectVersion = (version: number) => {
-    if (
-      dirty &&
-      !window.confirm(
-        "저장하지 않은 수정 내용이 있습니다. 선택한 버전으로 전환할까요?",
-      )
-    )
-      return;
+  const applyVersion = (version: number) => {
     const selected = versions.find((item) => item.version === version);
     if (selected) {
       setSelectedVersion(version);
       setDraft({ ...template, content: selected.content, version });
       localStorage.removeItem(draftKey);
     }
+  };
+  const selectVersion = (version: number) => {
+    if (dirty) setPendingAction({ type: "version", version });
+    else applyVersion(version);
+  };
+  const discard = () => {
+    if (!pendingAction) return;
+    localStorage.removeItem(draftKey);
+    if (pendingAction.type === "close") onClose();
+    else applyVersion(pendingAction.version);
+    setPendingAction(null);
   };
   const save = () =>
     api<PromptTemplate>(
@@ -831,63 +842,74 @@ function PromptTemplateEditor({
       })
       .catch((error) => setNotice(error.message));
   return (
-    <Modal open title={l.addTemplate} onClose={close}>
-      <div className="modal-form">
-        <label className="modal-setting-row">
-          <FieldLabel label={l.id} description={help.id} />
-          <input
-            disabled={template.version > 0}
-            value={draft.id}
-            onChange={(event) => setDraft({ ...draft, id: event.target.value })}
-          />
-        </label>
-        <label className="modal-setting-row">
-          <FieldLabel label={l.name} description={help.name} />
-          <input
-            value={draft.name}
-            onChange={(event) =>
-              setDraft({ ...draft, name: event.target.value })
-            }
-          />
-        </label>
-        <label className="modal-setting-row">
-          <FieldLabel label={l.version} description={help.version} />
-          <select
-            value={selectedVersion}
-            onChange={(event) => selectVersion(Number(event.target.value))}
-          >
-            {[...versions]
-              .sort((a, b) => b.version - a.version)
-              .map((item) => (
-                <option key={item.version} value={item.version}>
-                  v{item.version}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label className="modal-setting-row">
-          <FieldLabel label={l.body} description={help.content} />
-          <textarea
-            rows={14}
-            value={draft.content}
-            onChange={(event) =>
-              setDraft({ ...draft, content: event.target.value })
-            }
-          />
-        </label>
-        {dirty && (
-          <small className="hint">
-            수정 중인 내용이 저장되어 있습니다. 저장하면 새 버전이 생성됩니다.
-          </small>
-        )}
-        <div className="modal-actions">
-          {notice && <small className="hint">{notice}</small>}
-          <button className="approve" onClick={save}>
-            {l.save}
-          </button>
+    <>
+      <Modal open={!pendingAction} title={l.addTemplate} onClose={close}>
+        <div className="modal-form">
+          <label className="modal-setting-row">
+            <FieldLabel label={l.id} description={help.id} />
+            <input
+              disabled={template.version > 0}
+              value={draft.id}
+              onChange={(event) => setDraft({ ...draft, id: event.target.value })}
+            />
+          </label>
+          <label className="modal-setting-row">
+            <FieldLabel label={l.name} description={help.name} />
+            <input
+              value={draft.name}
+              onChange={(event) =>
+                setDraft({ ...draft, name: event.target.value })
+              }
+            />
+          </label>
+          <label className="modal-setting-row">
+            <FieldLabel label={l.version} description={help.version} />
+            <select
+              value={selectedVersion}
+              onChange={(event) => selectVersion(Number(event.target.value))}
+            >
+              {[...versions]
+                .sort((a, b) => b.version - a.version)
+                .map((item) => (
+                  <option key={item.version} value={item.version}>
+                    v{item.version}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="modal-setting-row">
+            <FieldLabel label={l.body} description={help.content} />
+            <textarea
+              rows={14}
+              value={draft.content}
+              onChange={(event) =>
+                setDraft({ ...draft, content: event.target.value })
+              }
+            />
+          </label>
+          {dirty && (
+            <small className="hint">
+              {copy.savedHint}
+            </small>
+          )}
+          <div className="modal-actions">
+            {notice && <small className="hint">{notice}</small>}
+            <button className="approve" onClick={save}>
+              {l.save}
+            </button>
+          </div>
         </div>
-      </div>
-    </Modal>
+      </Modal>
+      <ConfirmDialog
+        open={pendingAction !== null}
+        title={copy.title}
+        description={pendingAction?.type === "version" ? copy.switchDescription : copy.closeDescription}
+        cancelLabel={copy.cancel}
+        confirmLabel={copy.discard}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={discard}
+      />
+    </>
   );
 }
 
@@ -1053,6 +1075,7 @@ function LegacyAssetsPage({
       </Catalog>
       {template && (
         <PromptTemplateEditor
+          locale={locale}
           template={template}
           onClose={() => setTemplate(null)}
           onSaved={onRefresh}

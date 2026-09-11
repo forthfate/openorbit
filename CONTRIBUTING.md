@@ -1,3 +1,5 @@
+*Read this in other languages: [한국어](i18n\ko\CONTRIBUTING.md)*
+
 # Contributing
 
 ## Development
