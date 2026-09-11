@@ -1,6 +1,9 @@
 import base64
 import json
 import sys
+import threading
+import time
+from types import SimpleNamespace
 
 import orbit_sdk as sdk
 import pytest
@@ -104,6 +107,54 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
     ]
     assert all(entry["run_id"] == "target-log-run" for entry in step["target_logs"])
     assert all(entry["iteration"] == 3 and entry["phase"] == "execute" for entry in step["target_logs"])
+
+
+def test_running_workflow_function_is_retained_before_its_step_finishes(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    project = tmp_path / "target"
+    project.mkdir()
+    runner = project / "runner.py"
+    runner.write_text(
+        "import time\n"
+        "from orbit_sdk import runner\n"
+        "@runner.phase('execute')\n"
+        "def run(ctx):\n"
+        "    with ctx.function('collect-source-evidence'):\n"
+        "        time.sleep(1)\n"
+        "if __name__ == '__main__': runner.main()\n",
+        encoding="utf-8",
+    )
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="live-function-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+    step = Step(
+        id="run",
+        phase="execute",
+        name="Run",
+        command=[sys.executable, str(runner), "--phase", "execute"],
+        working_directory=str(project),
+    )
+
+    thread = threading.Thread(target=store._execute_step, args=("live-function-run", step, 1))
+    thread.start()
+    for _ in range(20):
+        results = store._load("live-function-run").step_results
+        if results and results[-1].get("result", {}).get("workflow_functions"):
+            break
+        time.sleep(0.1)
+    thread.join()
+
+    assert results[-1]["result"]["workflow_functions"][0]["status"] == "running"
 
 
 def test_runner_data_files_are_retained_for_the_iteration(tmp_path, monkeypatch):
@@ -487,6 +538,42 @@ def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     store.delete_run("completed-run")
 
     assert not (store_module.RUNS / "completed-run.json").exists()
+
+
+def test_completed_pipeline_run_can_be_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    store._save(
+        Run(
+            id="completed-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            execution_type="pipeline",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            finished_at=timestamp,
+            step_results=[{"step_id": "execute", "loop_index": 1, "output": "previous output"}],
+            supervisor_results=[{"iteration": 1, "response": {"evaluation": {"score": 8}}}],
+            runner_output="previous runner output",
+        )
+    )
+    monkeypatch.setattr(
+        store, "_runner_execution_plan", lambda runner_id: SimpleNamespace(id=runner_id, name="Workflow")
+    )
+    monkeypatch.setattr(store, "_runner_graph_definition", lambda *_: None)
+    monkeypatch.setattr(store, "_start", lambda _: None)
+
+    retried = store.retry("completed-run", restart_from_first=True)
+
+    assert retried.id == "completed-run"
+    assert retried.retry_of_run_id is None
+    assert retried.retry_mode == "restart"
+    assert retried.status == "queued"
+    assert retried.step_results == []
+    assert retried.supervisor_results == []
+    assert retried.runner_output == ""
 
 
 def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):

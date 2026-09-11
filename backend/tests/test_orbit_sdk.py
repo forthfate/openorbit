@@ -94,6 +94,18 @@ def test_graph_step_automatically_traces_failures(tmp_path, capsys):
     assert '"status": "failed"' in output
 
 
+def test_nested_function_trace_for_the_same_node_is_emitted_once(tmp_path, capsys):
+    ctx = context(tmp_path, iteration=1)
+
+    with ctx.function("collect-source-evidence"):
+        with ctx.function("collect-source-evidence"):
+            pass
+
+    output = capsys.readouterr().out
+    assert output.count('"status": "running"') == 1
+    assert output.count('"status": "succeeded"') == 1
+
+
 def context(project, *, iteration: int, run_id: str = "run-123"):
     return sdk.RunnerContext(
         phase="execute",

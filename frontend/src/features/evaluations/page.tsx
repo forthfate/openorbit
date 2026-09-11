@@ -524,7 +524,7 @@ export function EvaluationsPage({
               </button>
             </>
           )}
-          {["failed", "cancelled"].includes(r.status) && r.execution_type === "pipeline" && (
+          {terminal(r.status) && r.execution_type === "pipeline" && (
             <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} onClick={(event) => { event.stopPropagation(); setRetryingRun(r); }}>
               <RotateCcw size={16} />
             </button>
@@ -591,23 +591,26 @@ export function EvaluationsPage({
   const workflowGraph = useMemo(() => {
     const definition = selected?.workflow_graph;
     if (!definition?.nodes.length) return null;
-    const hasFunctionTrace = steps.some((step) => Array.isArray(step.result?.workflow_functions));
     return {
       ...definition,
       nodes: definition.nodes.map((node) => {
         const phaseSteps = steps.filter((step) => (step.phase ?? step.step_id) === node.phase);
         const latestStep = phaseSteps.at(-1);
+        const phaseHasFunctionTrace = phaseSteps.some((step) => Array.isArray(step.result?.workflow_functions));
+        const firstNodeInPhase = definition.nodes.find((candidate) => candidate.phase === node.phase);
         const functionTrace = [...steps].reverse().flatMap((step) => {
           const traces = step.result?.workflow_functions;
-          return Array.isArray(traces) ? traces : [];
+          return Array.isArray(traces) ? [...traces].reverse() : [];
         }).find((trace) => typeof trace === "object" && trace !== null && trace.id === node.id) as { status?: WorkflowGraphNode["status"] } | undefined;
         const status: WorkflowGraphNode["status"] = functionTrace?.status
             ? functionTrace.status
-          : selected?.status === "running" && node.phase === selected.current_phase && !hasFunctionTrace
+          : selected?.status === "running" && node.phase === selected.current_phase && !phaseHasFunctionTrace && firstNodeInPhase?.id === node.id
             ? "running"
+          : latestStep?.in_progress
+            ? "idle"
           : latestStep?.error || (latestStep?.exit_code ?? 0) !== 0
-            ? "failed"
-            : latestStep
+            ? phaseHasFunctionTrace ? "idle" : "failed"
+          : latestStep
               ? "succeeded"
               : "idle";
         return { ...node, status };
@@ -932,6 +935,10 @@ export function EvaluationsPage({
             onSelectedRunClose?.();
           }}
           className="modal--run-detail"
+          headerActions={<>
+            <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} disabled={!terminal(selected.status) || selected.execution_type !== 'pipeline'} onClick={() => setRetryingRun(selected)}><RotateCcw size={16} /></button>
+            <button className="icon-button danger" title={t.stop} aria-label={t.stop} disabled={!activeStatuses.has(selected.status)} onClick={() => onStop(selected.id)}><CircleStop size={16} /></button>
+          </>}
         >
           <div className="run-detail-evaluation">
             <strong>

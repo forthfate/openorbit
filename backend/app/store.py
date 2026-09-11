@@ -4575,6 +4575,21 @@ if __name__ == "__main__":
                 captured_lines: list[tuple[str, str]] = []
                 live_step_key = f"{step.id}:{loop_index}:{candidate_id or '-'}:{started}"
 
+                def live_workflow_functions() -> list[dict[str, Any]]:
+                    functions: list[dict[str, Any]] = []
+                    for _, line in captured_lines:
+                        if not line.startswith("__ORBIT_RESULT__"):
+                            continue
+                        try:
+                            emitted = json.loads(line.removeprefix("__ORBIT_RESULT__"))
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(emitted, dict) and isinstance(emitted.get("workflow_functions"), list):
+                            functions.extend(
+                                item for item in emitted["workflow_functions"] if isinstance(item, dict)
+                            )
+                    return functions
+
                 def retained_visible_lines() -> list[tuple[str, str]]:
                     retained: list[tuple[str, str]] = []
                     retained_size = 0
@@ -4602,6 +4617,9 @@ if __name__ == "__main__":
                             item["log_lines"] = [
                                 {"timestamp": timestamp, "value": line} for timestamp, line in retained
                             ]
+                            functions = live_workflow_functions()
+                            if functions:
+                                item["result"] = {"workflow_functions": functions}
                             current.updated_at = now()
                             self._save(current)
                             return
@@ -4638,6 +4656,7 @@ if __name__ == "__main__":
                     }
                 )
                 self._save(run)
+                persist_live_output()
                 span.set_attribute("process.pid", process.pid)
                 process.wait(timeout=step.timeout_seconds)
                 if interruption_timer:
@@ -4834,8 +4853,8 @@ if __name__ == "__main__":
 
     def retry(self, run_id: str, restart_from_first: bool) -> Run:
         run = self._load(run_id)
-        if run.execution_type != "pipeline" or run.status not in {"failed", "cancelled"}:
-            raise ValueError("Only failed or cancelled pipeline runs can be retried")
+        if run.execution_type != "pipeline" or run.status not in {"succeeded", "failed", "cancelled"}:
+            raise ValueError("Only completed, failed, or cancelled pipeline runs can be retried")
         latest_iteration = max(
             (
                 int(item.get("loop_index", 0))
@@ -4844,31 +4863,32 @@ if __name__ == "__main__":
             ),
             default=1,
         )
-        return self.create_run(
-            run.workflow_id,
-            execution_mode=run.execution_mode,
-            build_id=run.build_id,
-            build_name=run.build_name,
-            supervisor_profile_name=run.supervisor_profile_name,
-            prompt_source=run.prompt_source,
-            prompt_snapshot=run.prompt_snapshot,
-            loop_limit=run.loop_limit,
-            timezone=run.timezone,
-            schedule_enabled=run.schedule_enabled,
-            schedule_weekdays=run.schedule_weekdays,
-            schedule_start_time=run.schedule_start_time,
-            schedule_end_time=run.schedule_end_time,
-            start_iteration=1 if restart_from_first else min(latest_iteration, run.loop_limit),
-            repeat_interval_minutes=run.repeat_interval_minutes,
-            cadence_mode=run.cadence_mode,
-            overrun_policy=run.overrun_policy,
-            approval_score=run.approval_score,
-            iteration_strategy=run.iteration_strategy,
-            candidates_per_iteration=run.candidates_per_iteration,
-            repository=run.repository,
-            retry_of_run_id=run.id,
-            retry_mode="restart" if restart_from_first else "resume",
-        )
+        restarted_at = now()
+        run.created_at = restarted_at
+        run.updated_at = restarted_at
+        run.finished_at = None
+        run.status = "queued"
+        run.start_iteration = 1 if restart_from_first else min(latest_iteration, run.loop_limit)
+        run.retry_of_run_id = None
+        run.retry_mode = "restart" if restart_from_first else "resume"
+        run.iteration_candidates = []
+        run.iteration_deadline_at = None
+        run.advance_requested = False
+        run.current_step = None
+        run.current_phase = None
+        run.pid = None
+        run.last_pid = None
+        run.telemetry_trace_id = None
+        run.supervisor_status = "pending"
+        run.supervisor_response = None
+        run.supervisor_error = None
+        run.supervisor_results = []
+        run.runner_output = ""
+        run.step_results = []
+        run.approval_reason = None
+        self._save(run)
+        self._start(run.id)
+        return self._load(run.id)
 
     def emergency_stop(self) -> list[Run]:
         stopped = []

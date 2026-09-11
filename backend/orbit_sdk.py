@@ -246,6 +246,7 @@ class RunnerContext:
     mode: str
     loop_index: int
     environment: dict[str, str] = field(default_factory=lambda: dict(os.environ))
+    _active_workflow_functions: set[str] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.phase = canonical_phase(self.phase)
@@ -255,6 +256,10 @@ class RunnerContext:
         """Record one graph-annotated function's outcome within this lifecycle phase."""
         if not function_id.strip():
             raise ValueError("function_id must not be empty")
+        if function_id in self._active_workflow_functions:
+            yield
+            return
+        self._active_workflow_functions.add(function_id)
         started = datetime.now(UTC)
         self.log(f"workflow function started: {function_id}")
         self.emit_result(
@@ -299,6 +304,8 @@ class RunnerContext:
                     ]
                 }
             )
+        finally:
+            self._active_workflow_functions.discard(function_id)
 
     @property
     def resources(self) -> dict[str, object]:
