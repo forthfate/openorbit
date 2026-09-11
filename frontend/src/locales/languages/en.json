@@ -596,6 +596,8 @@
       "evaluation": "Result",
       "iteration": "Iteration",
       "detail": "Run detail",
+      "workflowGraph": "Workflow graph",
+      "noWorkflowGraph": "This task has no declared workflow to display.",
       "workflow": "Workflow logs",
       "workflowDescription": "Review phase-by-phase execution logs and browser evidence.",
       "workflowDataHint": "Entries appear when a before_all, before_each, execute, verify, after_each, or after_all phase leaves output or evidence.",

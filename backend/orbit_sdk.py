@@ -14,6 +14,7 @@ import os
 import subprocess
 import tempfile
 import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -95,10 +96,11 @@ class Graph:
             node_id = id or handler.__name__
             if not node_id or node_id in self._nodes:
                 raise ValueError(f"graph node ID must be unique: {node_id!r}")
+            node_phase = canonical_phase(phase or getattr(handler, "__orbit_phase__", "")) or None
             node = GraphNode(
                 id=node_id,
                 title=title or handler.__name__.replace("_", " ").title(),
-                phase=phase,
+                phase=node_phase,
                 inputs=tuple(inputs),
                 outputs=tuple(outputs),
                 description=description,
@@ -232,6 +234,42 @@ class RunnerContext:
 
     def __post_init__(self) -> None:
         self.phase = canonical_phase(self.phase)
+
+    @contextmanager
+    def function(self, function_id: str):
+        """Record one graph-annotated function's outcome within this lifecycle phase."""
+        if not function_id.strip():
+            raise ValueError("function_id must not be empty")
+        started = datetime.now(UTC)
+        try:
+            yield
+        except BaseException:
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "failed",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
+            raise
+        else:
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "succeeded",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
 
     @property
     def resources(self) -> dict[str, object]:
@@ -1455,7 +1493,9 @@ class Runner:
         """
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
-            self._handlers[canonical_phase(name)] = handler
+            phase = canonical_phase(name)
+            self._handlers[phase] = handler
+            setattr(handler, "__orbit_phase__", phase)
             return handler
 
         return register
@@ -1468,8 +1508,13 @@ class Runner:
         process environment; callers should not invoke this method directly.
         """
         parser = argparse.ArgumentParser(description="Orbit runner phase")
-        parser.add_argument("--phase", required=True)
+        command = parser.add_mutually_exclusive_group(required=True)
+        command.add_argument("--phase")
+        command.add_argument("--graph", action="store_true")
         args = parser.parse_args()
+        if args.graph:
+            print(json.dumps(graph.definition(), ensure_ascii=False))
+            return
         phase = canonical_phase(args.phase)
         handler = self._handlers.get(phase)
         if handler is None:
