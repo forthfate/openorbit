@@ -12,7 +12,9 @@ const lifecyclePhases = ["before_all", "before_each", "execute", "verify", "afte
 const NodeMeasurementContext = createContext<(id: string, size: NodeSize) => void>(() => undefined);
 function LoopEdge({ sourceX, sourceY, targetX, targetY, label, labelStyle, markerEnd, style }: EdgeProps) {
   const routeY = Math.min(sourceY, targetY) - 160;
-  const path = `M ${sourceX},${sourceY} L ${sourceX},${routeY} L ${targetX},${routeY} L ${targetX},${targetY}`;
+  const outletX = sourceX + 40;
+  const inletX = targetX - 40;
+  const path = `M ${sourceX},${sourceY} L ${outletX},${sourceY} L ${outletX},${routeY} L ${inletX},${routeY} L ${inletX},${targetY} L ${targetX},${targetY}`;
   return <><BaseEdge path={path} markerEnd={markerEnd} style={style} /><EdgeLabelRenderer>{label && <div className="nodrag nopan" style={{ position: "absolute", transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px,${routeY}px)`, ...labelStyle, background: "var(--surface-raised)", border: "1px solid var(--line)", borderRadius: 4, padding: "3px 5px", pointerEvents: "all" }}>{label}</div>}</EdgeLabelRenderer></>;
 }
 function OrbitNode({ id, data }: NodeProps<Node<GraphNodeData>>) {
