@@ -17,6 +17,7 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -107,7 +108,21 @@ class Graph:
             )
             self._nodes[node_id] = node
             setattr(handler, "__orbit_graph_node__", node)
-            return handler
+
+            @wraps(handler)
+            def instrumented(*args: Any, **kwargs: Any) -> Any:
+                context = next(
+                    (value for value in (*args, *kwargs.values()) if isinstance(value, RunnerContext)),
+                    None,
+                )
+                if context is None:
+                    return handler(*args, **kwargs)
+                with context.function(node_id):
+                    return handler(*args, **kwargs)
+
+            setattr(instrumented, "__orbit_graph_node__", node)
+            setattr(handler, "__orbit_graph_wrapper__", instrumented)
+            return instrumented
 
         return register
 
@@ -241,6 +256,7 @@ class RunnerContext:
         if not function_id.strip():
             raise ValueError("function_id must not be empty")
         started = datetime.now(UTC)
+        self.log(f"workflow function started: {function_id}")
         self.emit_result(
             {
                 "workflow_functions": [
@@ -255,6 +271,7 @@ class RunnerContext:
         try:
             yield
         except BaseException:
+            self.log(f"workflow function failed: {function_id}")
             self.emit_result(
                 {
                     "workflow_functions": [
@@ -269,6 +286,7 @@ class RunnerContext:
             )
             raise
         else:
+            self.log(f"workflow function succeeded: {function_id}")
             self.emit_result(
                 {
                     "workflow_functions": [
@@ -1536,6 +1554,7 @@ class Runner:
             os.environ.get("ORBIT_EXECUTION_MODE", "run"),
             int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
         )
+        handler = getattr(handler, "__orbit_graph_wrapper__", handler)
         before = context.git_head()
         try:
             handler(context)

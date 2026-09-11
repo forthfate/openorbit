@@ -6,6 +6,7 @@ import sys
 from base64 import b64encode
 
 import orbit_sdk as sdk
+import pytest
 
 
 def test_graph_declarations_export_nodes_and_typed_edges():
@@ -60,6 +61,37 @@ def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
         pass
 
     assert "collect-source-evidence" in capsys.readouterr().out
+
+
+def test_graph_step_automatically_traces_its_execution(tmp_path, capsys):
+    graph = sdk.Graph()
+
+    @graph.step("collect-source-evidence")
+    def collect(ctx) -> None:
+        ctx.log("Collected source evidence")
+
+    collect(context(tmp_path, iteration=1))
+
+    output = capsys.readouterr().out
+    assert "workflow function started: collect-source-evidence" in output
+    assert "workflow function succeeded: collect-source-evidence" in output
+    assert '"status": "running"' in output
+    assert '"status": "succeeded"' in output
+
+
+def test_graph_step_automatically_traces_failures(tmp_path, capsys):
+    graph = sdk.Graph()
+
+    @graph.step("collect-source-evidence")
+    def collect(ctx) -> None:
+        raise RuntimeError("evidence unavailable")
+
+    with pytest.raises(RuntimeError, match="evidence unavailable"):
+        collect(context(tmp_path, iteration=1))
+
+    output = capsys.readouterr().out
+    assert "workflow function failed: collect-source-evidence" in output
+    assert '"status": "failed"' in output
 
 
 def context(project, *, iteration: int, run_id: str = "run-123"):
