@@ -4,7 +4,7 @@
   코드 블록, 명령어, URL, 경로, 식별자는 원문 그대로 유지합니다.
 -->
 
-*Read this in other languages: [English](README.md)*
+*Read this in other languages: [English](../../README.md)*
 
 # OpenOrbit
 
@@ -18,7 +18,7 @@ OpenOrbit는 단순히 작업을 자동화하기 위해 AI를 사용하지 않�
 
 Quick Start로 시작해 평가 루프가 만들어지는 과정을 지켜보고, 증거에 기반한 개선 결과를 한곳에서 검토하세요.
 
-![OpenOrbit dashboard opening the Agent self-improvement Quick Start](docs/images/openorbit-quick-start.gif)
+![OpenOrbit dashboard opening the Agent self-improvement Quick Start](../../docs/images/openorbit-quick-start.gif)
 
 ## 왜 OpenOrbit인가?
 
@@ -60,19 +60,19 @@ OpenOrbit는 각 단계에서 운영자가 필요로 하는 정보를 중심으�
 
 보존된 실행(run)을 열어 각 반복에서 평가된 AI로부터 관찰된 동작을 검토하세요. 그런 다음 그 동작을 제안된 개선안 및 이를 뒷받침하는 증거와 비교하세요.
 
-![OpenOrbit Evaluation result showing observed target-AI behavior across two iterations and an adopted prompt improvement](docs/images/evaluation-result-approved.png)
+![OpenOrbit Evaluation result showing observed target-AI behavior across two iterations and an adopted prompt improvement](../../docs/images/evaluation-result-approved.png)
 
 ### 개선 사이클 전반의 증거 검토하기
 
 여러 빌드에 걸쳐 피드백 양, 채택된 변경, 점수, 실행 건강도를 비교하세요. 이 이력은 운영 사이클이 시간이 지나며 AI 시스템을 개선하고 있는지 분명하게 보여줍니다.
 
-![OpenOrbit improvements with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
+![OpenOrbit improvements with feedback trends and proposal-decision history](../../docs/images/improvement-cycle-healthy.png)
 
 ### 다음에 무엇을 할지 AI 어시스턴트에게 묻기
 
 System AI 모델을 구성하면 내장 Chat Assistant를 사용해 평가 작업, 러너, 컨트롤룸에 관해 질문할 수 있습니다. 여러분 자신의 AI 에이전트도 OpenOrbit의 버전 관리 API를 통해 동일한 로컬 운영 데이터와 함께 작업할 수 있습니다.
 
-![OpenOrbit Chat Assistant asking what to improve next for a build](docs/images/chat-assistant-question.png)
+![OpenOrbit Chat Assistant asking what to improve next for a build](../../docs/images/chat-assistant-question.png)
 
 ## 개발 파트너
 
@@ -80,7 +80,7 @@ System AI 모델을 구성하면 내장 Chat Assistant를 사용해 평가 작�
   <tr>
     <td align="center" width="240">
       <a href="https://insighta.cloud">
-        <img src="docs/images/insighta-cloud-icon.png" width="72" alt="insighta cloud Inc. logo" />
+        <img src="../../docs/images/insighta-cloud-icon.png" width="72" alt="insighta cloud Inc. logo" />
         <br /><br />
         <strong>insighta cloud Inc.</strong>
         <br />
@@ -237,7 +237,7 @@ OpenOrbit는 로컬의, 버전이 관리되는 API를 노출합니다.
 - OpenAPI 문서: `http://localhost:3000/api/openapi.json`
 - API base: `http://localhost:3000/api/v1`
 
-엔드포인트 세부 정보는 [API 레퍼런스](docs/API.md)를 참고하세요. 재사용 가능한 자동화를 추가하려면 명시적인 라이프사이클 단계를 갖는 Python 러너를 생성하세요.
+엔드포인트 세부 정보는 [API 레퍼런스](../../docs/API.md)를 참고하세요. 재사용 가능한 자동화를 추가하려면 명시적인 라이프사이클 단계를 갖는 Python 러너를 생성하세요.
 
 ```python
 from orbit_sdk import runner
@@ -269,4 +269,4 @@ pnpm --filter agent-improvement-console-ui run build
 
 Copyright © 2026 forthfate and insighta cloud Inc.
 
-[MIT License](LICENSE)로 배포됩니다.
+[MIT License](../../LICENSE)로 배포됩니다.

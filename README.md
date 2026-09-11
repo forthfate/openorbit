@@ -1,4 +1,4 @@
-*Read this in other languages: [한국어](README.ko.md)*
+*Read this in other languages: [한국어](i18n\ko\README.md)*
 
 # OpenOrbit
 

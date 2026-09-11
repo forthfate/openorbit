@@ -5,7 +5,7 @@
   명령어, 경로, 파일명, 식별자는 원문 그대로 유지합니다.
 -->
 
-*Read this in other languages: [English](CONTRIBUTING.md)*
+*Read this in other languages: [English](../../CONTRIBUTING.md)*
 
 # 기여 가이드 (한국어 요약)
 
