@@ -4682,7 +4682,25 @@ if __name__ == "__main__":
                                             "content_type": str(entry.get("content_type") or ""),
                                         }
                                     )
-                            structured_result = {**(structured_result or {}), **emitted}
+                            if structured_result is None:
+                                structured_result = emitted
+                            else:
+                                workflow_functions = emitted.get("workflow_functions")
+                                if isinstance(workflow_functions, list):
+                                    previous_functions = structured_result.get("workflow_functions", [])
+                                    if not isinstance(previous_functions, list):
+                                        previous_functions = []
+                                    structured_result["workflow_functions"] = [
+                                        *previous_functions,
+                                        *workflow_functions,
+                                    ]
+                                structured_result.update(
+                                    {
+                                        key: value
+                                        for key, value in emitted.items()
+                                        if key != "workflow_functions"
+                                    }
+                                )
                         except json.JSONDecodeError:
                             visible_lines.append((timestamp, line))
                     else:
