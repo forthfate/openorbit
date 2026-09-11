@@ -1,3 +1,5 @@
+*Read this in other languages: [한국어](i18n\ko\README.md)*
+
 # OpenOrbit
 
 > **The local control plane for continuously evaluating, supervising, and improving AI systems.**
