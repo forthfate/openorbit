@@ -57,10 +57,27 @@ export function DataTable<Row extends { id: string }>({
             className={`tr${onRowClick ? " tr--interactive" : ""}`}
             style={{ gridTemplateColumns: template }}
             key={row.id}
+            tabIndex={onRowClick ? 0 : undefined}
+            role={onRowClick ? "button" : undefined}
+            onKeyDown={
+              onRowClick
+                ? (event) => {
+                    if (
+                      (event.key === "Enter" || event.key === " ") &&
+                      !(event.target as HTMLElement).closest(
+                        "button,input,select,textarea,a",
+                      )
+                    ) {
+                      event.preventDefault();
+                      onRowClick(row);
+                    }
+                  }
+                : undefined
+            }
             onClick={(event) => {
               if (
                 !(event.target as HTMLElement).closest(
-                  "button,input,select,textarea",
+                  "button,input,select,textarea,a",
                 )
               )
                 onRowClick?.(row);
