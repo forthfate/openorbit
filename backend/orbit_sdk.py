@@ -241,6 +241,17 @@ class RunnerContext:
         if not function_id.strip():
             raise ValueError("function_id must not be empty")
         started = datetime.now(UTC)
+        self.emit_result(
+            {
+                "workflow_functions": [
+                    {
+                        "id": function_id,
+                        "status": "running",
+                        "started_at": started.isoformat(),
+                    }
+                ]
+            }
+        )
         try:
             yield
         except BaseException:

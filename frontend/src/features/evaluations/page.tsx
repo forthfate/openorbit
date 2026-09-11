@@ -177,7 +177,10 @@ export function EvaluationsPage({
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
     [retryingRun, setRetryingRun] = useState<Run | null>(null);
   const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
-  const selected = initialSelectedRun ?? selectedInternal;
+  const selectedSource = initialSelectedRun ?? selectedInternal;
+  const selected = selectedSource
+    ? runs.find((run) => run.id === selectedSource.id) ?? selectedSource
+    : null;
   const supervisorTranslationIds = useMemo(
     () =>
       (selected?.supervisor_results ?? [])
@@ -588,6 +591,7 @@ export function EvaluationsPage({
   const workflowGraph = useMemo(() => {
     const definition = selected?.workflow_graph;
     if (!definition?.nodes.length) return null;
+    const hasFunctionTrace = steps.some((step) => Array.isArray(step.result?.workflow_functions));
     return {
       ...definition,
       nodes: definition.nodes.map((node) => {
@@ -597,10 +601,10 @@ export function EvaluationsPage({
           const traces = step.result?.workflow_functions;
           return Array.isArray(traces) ? traces : [];
         }).find((trace) => typeof trace === "object" && trace !== null && trace.id === node.id) as { status?: WorkflowGraphNode["status"] } | undefined;
-        const status: WorkflowGraphNode["status"] = selected?.status === "running" && node.phase === selected.current_phase
-          ? "running"
-          : functionTrace?.status
+        const status: WorkflowGraphNode["status"] = functionTrace?.status
             ? functionTrace.status
+          : selected?.status === "running" && node.phase === selected.current_phase && !hasFunctionTrace
+            ? "running"
           : latestStep?.error || (latestStep?.exit_code ?? 0) !== 0
             ? "failed"
             : latestStep
