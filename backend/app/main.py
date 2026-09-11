@@ -65,6 +65,12 @@ WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
 
 
+@app.on_event("shutdown")
+def stop_active_runner_processes() -> None:
+    """Prevent browsers from outliving the local API process on reload."""
+    store.shutdown()
+
+
 def safely(action):
     try:
         return action()
