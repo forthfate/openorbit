@@ -26,7 +26,9 @@ pnpm install
 pnpm --filter agent-improvement-console-ui run build
 ```
 
-패키지형 로컬 앱 경로로 실행하려면 `orbit run`을 사용하세요.
+패키지형 로컬 앱 경로로 실행하려면 `orbit run [PATH]`를 사용하세요.
+`PATH`를 전달하면 컨트롤룸의 로컬 데이터는 `PATH/.orbit`에 저장되고,
+생략하면 기본 애플리케이션 데이터 디렉터리를 사용합니다.
 
 Windows에서는 `.venv\Scripts\Activate.ps1`로 환경을 활성화하고
 `.venv\Scripts\python.exe`를 사용하세요.
