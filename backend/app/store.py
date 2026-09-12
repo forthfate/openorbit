@@ -717,6 +717,23 @@ class ConsoleStore:
         self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
 
+    @staticmethod
+    def _stop_process_group(process: subprocess.Popen[str], *, force: bool = False) -> None:
+        """Stop a runner and every subprocess it spawned, including browsers."""
+        if process.poll() is not None:
+            return
+        if os.name == "nt":
+            (process.kill if force else process.terminate)()
+            return
+        os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+
+    def shutdown(self) -> None:
+        """Release child process groups before an API reload or shutdown."""
+        with self._lock:
+            processes = list(self._processes.values())
+        for process in processes:
+            self._stop_process_group(process)
+
     def _recover_interrupted_runs(self) -> None:
         """Do not present orphaned in-memory pipelines as still running.
 
@@ -4757,7 +4774,7 @@ if __name__ == "__main__":
                     self._fail(run, step.id, f"exit code {process.returncode}")
                     return
             except subprocess.TimeoutExpired:
-                process.kill()
+                self._stop_process_group(process, force=True)
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
                 if self._load(run_id).status == "cancelled":
                     return
@@ -4780,11 +4797,8 @@ if __name__ == "__main__":
         run = self._load(run_id)
         with self._lock:
             process = self._processes.get(run_id)
-        if process and process.poll() is None:
-            if os.name == "nt":
-                process.terminate()
-            else:
-                os.killpg(process.pid, signal.SIGTERM)
+        if process:
+            self._stop_process_group(process)
         run.status, run.pid, run.current_step, run.current_phase, run.updated_at, run.finished_at = (
             "cancelled",
             None,
