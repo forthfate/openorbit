@@ -246,6 +246,7 @@ class RunnerContext:
     mode: str
     loop_index: int
     environment: dict[str, str] = field(default_factory=lambda: dict(os.environ))
+    _active_workflow_functions: set[str] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.phase = canonical_phase(self.phase)
@@ -255,6 +256,10 @@ class RunnerContext:
         """Record one graph-annotated function's outcome within this lifecycle phase."""
         if not function_id.strip():
             raise ValueError("function_id must not be empty")
+        if function_id in self._active_workflow_functions:
+            yield
+            return
+        self._active_workflow_functions.add(function_id)
         started = datetime.now(UTC)
         self.log(f"workflow function started: {function_id}")
         self.emit_result(
@@ -299,6 +304,8 @@ class RunnerContext:
                     ]
                 }
             )
+        finally:
+            self._active_workflow_functions.discard(function_id)
 
     @property
     def resources(self) -> dict[str, object]:
@@ -1259,10 +1266,13 @@ class RunnerContext:
             aws_profile=str(profile.get("aws_profile", "")),
         )
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+        self.log(f"target model request started: {settings.provider}/{settings.model}")
+        response = provider.complete(settings, prompt)
+        self.log(f"target model request completed: {settings.provider}/{settings.model}")
         return {
             "profile_name": str(profile.get("profile_name", "")),
             "model": settings.model,
-            "response": provider.complete(settings, prompt),
+            "response": response,
         }
 
     @property
@@ -1396,6 +1406,7 @@ class RunnerContext:
         selected_cases = cases if cases is not None else self.test_cases
         if not selected_cases:
             raise ValueError("at least one fixed test case is required for a Playwright journey")
+        self.log(f"browser journey started: {len(selected_cases)} case(s) against {base_url}")
         artifacts = (
             self.app_data
             / "artifacts"
@@ -1438,6 +1449,8 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         except (json.JSONDecodeError, IndexError) as error:
             raise RuntimeError("Playwright did not return structured journey evidence") from error
         evidence["artifacts_directory"] = str(artifacts)
+        passed = sum(bool(item.get("passed")) for item in evidence.get("results", []))
+        self.log(f"browser journey completed: {passed}/{len(selected_cases)} case(s) passed")
         self.emit_result({"browser_journey": evidence})
         return evidence
 
@@ -1497,7 +1510,9 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             reader.join()
         output = "".join(lines)
         if process.returncode:
+            self.log(f"exec failed with exit code {process.returncode}: {' '.join(command)}")
             raise SystemExit(process.returncode)
+        self.log(f"exec completed: {' '.join(command)}")
         return output
 
 
