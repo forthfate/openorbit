@@ -147,6 +147,13 @@ orbit run
 
 wheel에는 번들된 컨트롤룸 UI가 이미 포함되어 있으므로, 런타임에 Node.js와 pnpm이 필요하지 않습니다.
 
+프로젝트나 원하는 디렉터리와 함께 하나의 컨트롤룸 운영 데이터를 보관하려면 `run`에 해당 디렉터리를 전달하세요. OpenOrbit는 그 안에 `.orbit` 하위 디렉터리를 만들어 사용합니다.
+
+```bash
+orbit run .            # 현재 디렉터리의 .orbit/에 저장
+orbit run ./my-project # ./my-project/.orbit/에 저장
+```
+
 > PyPI 배포는 insighta cloud Inc.의 지원으로 이루어집니다.
 
 최신 개발 버전을 사용하려면 OpenOrbit 메인 저장소에서 직접 설치하세요. 이 소스 설치에는 Node.js 24+와 pnpm이 필요합니다.
@@ -221,13 +228,13 @@ OpenOrbit는 독립 실행형(standalone)이며 로컬 우선(local-first) 컨�
 
 ## 안전성과 로컬 데이터
 
-OpenOrbit는 로컬 우선입니다. 운영 상태는 저장소 바깥, 플랫폼 AppData에 저장됩니다.
+OpenOrbit는 로컬 우선입니다. 기본적으로 운영 상태는 저장소 바깥, 플랫폼 AppData에 저장됩니다.
 
 - Windows: `%LOCALAPPDATA%\Orbit`
 - macOS: `~/Library/Application Support/Orbit`
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/orbit`
 
-다른 위치를 사용하려면 `ORBIT_APP_DATA`를 설정하세요. 모델 프로필은 비밀 값이 담긴 환경 변수의 이름을 저장하며, 비밀 값 자체는 절대 저장하지 않습니다. 프로덕션 AI 시스템을 연결하기 전에 워크플로 명령, 승인된 워크스페이스 경계, 네트워크 노출을 검토하세요.
+`orbit run PATH`를 사용하면 `PATH/.orbit`에 데이터를 보관합니다. 이 경로는 해당 실행에서 기존에 선택한 데이터 위치와 `ORBIT_APP_DATA`보다 우선합니다. Git으로 관리하지 않을 데이터라면 대상 프로젝트의 `.gitignore`에 `.orbit/`을 추가하세요. 명령줄 경로 없이 다른 위치를 사용하려면 `ORBIT_APP_DATA`를 설정하세요. 모델 프로필은 비밀 값이 담긴 환경 변수의 이름을 저장하며, 비밀 값 자체는 절대 저장하지 않습니다. 프로덕션 AI 시스템을 연결하기 전에 워크플로 명령, 승인된 워크스페이스 경계, 네트워크 노출을 검토하세요.
 
 ## API 및 확장성
 

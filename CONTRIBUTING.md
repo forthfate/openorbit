@@ -16,7 +16,9 @@ pnpm install
 pnpm --filter agent-improvement-console-ui run build
 ```
 
-For the packaged local-app path, run `orbit run`.
+For the packaged local-app path, run `orbit run [PATH]`. Supplying `PATH`
+stores the control room's local data in `PATH/.orbit`; omit it to use the
+default application-data directory.
 
 On Windows, activate the environment with `.venv\\Scripts\\Activate.ps1` and
 use `.venv\\Scripts\\python.exe`.

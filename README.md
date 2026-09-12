@@ -164,6 +164,15 @@ orbit run
 The wheel already includes the bundled control-room UI, so Node.js and pnpm are
 not required at runtime.
 
+To keep one control room's operational data with a project or another chosen
+directory, pass that directory to `run`. OpenOrbit creates and uses its
+`.orbit` subdirectory:
+
+```bash
+orbit run .            # Store data in the current directory's .orbit/
+orbit run ./my-project # Store data in ./my-project/.orbit/
+```
+
 > PyPI publication is made possible with the support of insighta cloud Inc.
 
 To use the latest development version, install directly from the main OpenOrbit
@@ -246,13 +255,21 @@ OpenOrbit, create assets, review runs, or use non-browser runners.
 
 ## Safety and local data
 
-OpenOrbit is local-first. Operational state is stored outside the repository in platform AppData:
+OpenOrbit is local-first. By default, operational state is stored outside the
+repository in platform AppData:
 
 - Windows: `%LOCALAPPDATA%\\Orbit`
 - macOS: `~/Library/Application Support/Orbit`
 - Linux: `${XDG_DATA_HOME:-~/.local/share}/orbit`
 
-Set `ORBIT_APP_DATA` to use another location. Model profiles store the name of the environment variable that contains a secret, never the secret itself. Review workflow commands, approved workspace boundaries, and network exposure before connecting a production AI system.
+Use `orbit run PATH` to keep the data in `PATH/.orbit`; this takes precedence
+over a previously selected data location and `ORBIT_APP_DATA` for that run. Add
+`.orbit/` to the target project's `.gitignore` when it is not meant to be
+version-controlled. Set `ORBIT_APP_DATA` to use another location without a
+command-line path. Model profiles store the name of the environment variable
+that contains a secret, never the secret itself. Review workflow commands,
+approved workspace boundaries, and network exposure before connecting a
+production AI system.
 
 ## API and extensibility
 
