@@ -965,6 +965,71 @@ def test_site_exploration_quick_start_uses_the_langgraph_runner():
     assert "logout|signout|delete" in runner["source"]
 
 
+@pytest.mark.parametrize(
+    ("quick_start_id", "phases"),
+    [
+        ("openorbit.user-journey-smoke-test", ["before_all", "execute", "verify", "after_all"]),
+        ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
+        (
+            "openorbit.agent-self-improvement",
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
+        (
+            "openorbit.ai-slo-drift-monitor",
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
+    ],
+)
+def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, quick_start_id, phases):
+    store = store_module.ConsoleStore()
+    quick_start = next(item for item in store._built_in_quick_starts() if item["id"] == quick_start_id)
+    monkeypatch.setattr(sdk, "graph", sdk.Graph())
+
+    exec(
+        compile(quick_start["assets"]["runner"]["source"], quick_start_id, "exec"),
+        {"__name__": quick_start_id},
+    )
+
+    definition = sdk.graph.definition()
+    assert [node["phase"] for node in definition["nodes"]] == phases
+    assert definition["edges"]
+
+
+@pytest.mark.parametrize(
+    ("template_id", "phases"),
+    [
+        ("user-journey-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "external-command-adapter",
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
+        (
+            "native-improvement-cycle",
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
+        ("site-exploration", ["before_all", "execute", "verify", "after_all"]),
+        ("json-agent-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "evidence-gated-probe-cycle",
+            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
+    ],
+)
+def test_runner_templates_publish_a_lifecycle_graph(monkeypatch, template_id, phases):
+    source = next(
+        template["source"]
+        for template in store_module.ConsoleStore.runner_templates()
+        if template["id"] == template_id
+    )
+    monkeypatch.setattr(sdk, "graph", sdk.Graph())
+
+    exec(compile(source, template_id, "exec"), {"__name__": template_id})
+
+    definition = sdk.graph.definition()
+    assert [node["phase"] for node in definition["nodes"]] == phases
+    assert definition["edges"]
+
+
 def test_ai_slo_drift_quick_start_uses_a_recurring_evidence_gate():
     store = store_module.ConsoleStore()
     quick_start = next(

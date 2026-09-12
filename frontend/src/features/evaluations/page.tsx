@@ -176,7 +176,7 @@ export function EvaluationsPage({
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
     [retryingRun, setRetryingRun] = useState<Run | null>(null);
-  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
+  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration" };
   const selectedSource = initialSelectedRun ?? selectedInternal;
   const selected = selectedSource
     ? runs.find((run) => run.id === selectedSource.id) ?? selectedSource
@@ -602,8 +602,19 @@ export function EvaluationsPage({
           const traces = step.result?.workflow_functions;
           return Array.isArray(traces) ? [...traces].reverse() : [];
         }).find((trace) => typeof trace === "object" && trace !== null && trace.id === node.id) as { status?: WorkflowGraphNode["status"] } | undefined;
-        const status: WorkflowGraphNode["status"] = functionTrace?.status
+        const supervisingEvidence = selected?.status === "running"
+          && selected.current_phase === "verify"
+          && selected.supervisor_status === "pending"
+          && node.phase === "verify"
+          && functionTrace?.status === "succeeded";
+        const interruptedFunction = selected && terminal(selected.status) && functionTrace?.status === "running";
+        const status: WorkflowGraphNode["status"] = interruptedFunction
+            ? "skipped"
+          : functionTrace?.status
+            && !supervisingEvidence
             ? functionTrace.status
+          : supervisingEvidence
+            ? "running"
           : selected?.status === "running" && node.phase === selected.current_phase && !phaseHasFunctionTrace && firstNodeInPhase?.id === node.id
             ? "running"
           : latestStep?.in_progress
@@ -1294,7 +1305,6 @@ export function EvaluationsPage({
         <div className="modal-form retry-confirmation">
           <p className="confirm-description">{retryCopy.warning}</p>
           <div className="modal-actions">
-            <button className="ghost" onClick={() => setRetryingRun(null)}>{retryCopy.cancel}</button>
             <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{retryCopy.resume}</button>
             <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{retryCopy.restart}</button>
           </div>

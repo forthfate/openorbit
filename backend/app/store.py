@@ -115,9 +115,16 @@ import hashlib
 import json
 import re
 
-from orbit_sdk import runner
+from orbit_sdk import graph, runner
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
+
+graph.connect("validate-target", "prepare-prompt")
+graph.connect("prepare-prompt", "exercise-target", label="managed prompt")
+graph.connect("exercise-target", "assess-candidate", kind="data", label="responses")
+graph.connect("assess-candidate", "retain-iteration")
+graph.connect("retain-iteration", "prepare-prompt", kind="loop", label="next evaluation")
+graph.connect("retain-iteration", "restore-baseline", kind="condition", label="completed")
 # Marker comments make replacement idempotent and preserve the surrounding
 # target prompt content that OpenOrbit does not own.
 PROMPT_BLOCK_START = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_START -->"
@@ -204,6 +211,7 @@ def managed_prompt_evidence(ctx):
     }
 
 
+@graph.step("validate-target", title="Validate target", phase="before_all", outputs=["evaluation_contract"])
 @runner.phase("before_all")
 def before_all(ctx):
     # Process-level validation runs once before the iteration loop begins.
@@ -215,6 +223,7 @@ def before_all(ctx):
     ctx.log("Validated an OpenOrbit-native target-AI prompt improvement cycle")
 
 
+@graph.step("prepare-prompt", title="Prepare prompt candidate", phase="before_each", inputs=["evaluation_contract"], outputs=["managed_prompt"])
 @runner.phase("before_each")
 def before_each(ctx):
     # Keep the target's complete pre-evaluation state outside commit history.
@@ -259,6 +268,7 @@ def before_each(ctx):
     ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
 
 
+@graph.step("exercise-target", title="Exercise target AI", phase="execute", inputs=["managed_prompt"], outputs=["target_responses"])
 @runner.phase("execute")
 def execute(ctx):
     # Exercise the evaluated AI with the current managed prompt. The raw reply
@@ -306,6 +316,7 @@ def execute(ctx):
     )
 
 
+@graph.step("assess-candidate", title="Assess candidate evidence", phase="verify", inputs=["target_responses"], outputs=["candidate_verdict"])
 @runner.phase("verify")
 def verify(ctx):
     # Promote a candidate only after the required number of stable evaluations.
@@ -340,6 +351,7 @@ def verify(ctx):
     ctx.log(f"Candidate verdict: {verdict}")
 
 
+@graph.step("retain-iteration", title="Retain iteration evidence", phase="after_each", inputs=["candidate_verdict"], outputs=["iteration_snapshot"])
 @runner.phase("after_each")
 def after_each(ctx):
     # Preserve the first evaluated state as a named recovery checkpoint.
@@ -348,6 +360,7 @@ def after_each(ctx):
     ctx.log("Retained prompt versions, decisions, and validation evidence")
 
 
+@graph.step("restore-baseline", title="Restore baseline", phase="after_all", inputs=["iteration_snapshot"], outputs=["restored_target"])
 @runner.phase("after_all")
 def after_all(ctx):
     # Return the target to its exact baseline without creating a Git commit.
@@ -372,7 +385,11 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 import orbit_sdk
-from orbit_sdk import runner
+from orbit_sdk import graph as orbit_graph, runner
+
+orbit_graph.connect("validate-site", "explore-site")
+orbit_graph.connect("explore-site", "review-evidence", kind="data", label="rendered pages")
+orbit_graph.connect("review-evidence", "finalize-review")
 
 
 class ExplorerState(TypedDict, total=False):
@@ -421,21 +438,108 @@ def graph(ctx):
     return workflow.compile()
 
 
+@orbit_graph.step("validate-site", title="Validate site", phase="before_all", outputs=["site_target"])
 @runner.phase("before_all")
 def before_all(ctx):
     if not ctx.build.get("browser_base_url"):
         raise ValueError("Set a browser base URL before exploring a site")
 
 
+@orbit_graph.step("explore-site", title="Explore rendered site", phase="execute", inputs=["site_target"], outputs=["rendered_pages"])
 @runner.phase("execute")
 def execute(ctx):
     result = graph(ctx).invoke({"base_url": ctx.build["browser_base_url"], "max_clicks": 3})
     ctx.emit_result({"site_exploration": {"opinion": result["opinion"], "evidence": result["evidence"]}})
 
 
+@orbit_graph.step("review-evidence", title="Review exploration evidence", phase="verify", inputs=["rendered_pages"], outputs=["product_review"])
+@runner.phase("verify")
+def verify(ctx):
+    ctx.log("Retained rendered exploration evidence for review")
+
+
+@orbit_graph.step("finalize-review", title="Finalize site review", phase="after_all", inputs=["product_review"], outputs=["completed_review"])
+@runner.phase("after_all")
+def after_all(ctx):
+    ctx.log("Finalized the bounded site exploration review")
+
+
 if __name__ == "__main__":
     runner.main()
 """
+
+EXTERNAL_COMMAND_ADAPTER_TEMPLATE = r'''"""Run a bounded external automation through its explicit action contract."""
+
+import json
+import os
+import shlex
+
+from orbit_sdk import ORBIT_PROJECT_PATH, graph, runner
+
+graph.connect("check-adapter", "prepare-adapter")
+graph.connect("prepare-adapter", "run-adapter", label="prepared target")
+graph.connect("run-adapter", "collect-adapter-evidence", kind="data", label="adapter output")
+graph.connect("collect-adapter-evidence", "close-adapter-cycle")
+graph.connect("close-adapter-cycle", "prepare-adapter", kind="loop", label="next cycle")
+graph.connect("close-adapter-cycle", "finalize-adapter", kind="condition", label="completed")
+
+
+def adapter_command():
+    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
+    if not configured:
+        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
+    if configured.startswith("["):
+        value = json.loads(configured)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")
+        return value
+    return shlex.split(configured)
+
+
+def invoke(ctx, action):
+    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)
+
+
+@graph.step("check-adapter", title="Check adapter readiness", phase="before_all", outputs=["adapter_status"])
+@runner.phase("before_all")
+def before_all(ctx):
+    ctx.emit_result({"external_adapter": {"status": invoke(ctx, "status")}})
+
+
+@graph.step("prepare-adapter", title="Prepare adapter cycle", phase="before_each", inputs=["adapter_status"], outputs=["prepared_target"])
+@runner.phase("before_each")
+def before_each(ctx):
+    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "prepared": invoke(ctx, "prepare")}})
+
+
+@graph.step("run-adapter", title="Run bounded adapter task", phase="execute", inputs=["prepared_target"], outputs=["adapter_result"])
+@runner.phase("execute")
+def execute(ctx):
+    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "result": invoke(ctx, "run-once")}})
+
+
+@graph.step("collect-adapter-evidence", title="Collect adapter evidence", phase="verify", inputs=["adapter_result"], outputs=["adapter_evidence"])
+@runner.phase("verify")
+def verify(ctx):
+    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "evidence": invoke(ctx, "collect-evidence")}})
+
+
+@graph.step("close-adapter-cycle", title="Close adapter cycle", phase="after_each", inputs=["adapter_evidence"], outputs=["cycle_complete"])
+@runner.phase("after_each")
+def after_each(ctx):
+    ctx.log("Completed one bounded external adapter cycle")
+
+
+@graph.step("finalize-adapter", title="Finalize external automation", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
+@runner.phase("after_all")
+def after_all(ctx):
+    ctx.log("Finalized the external automation evaluation")
+
+
+if __name__ == "__main__":
+    runner.main()
+'''
+
 
 JSON_AGENT_CYCLE_TEMPLATE = r'''"""Run a portable, bounded external agent cycle.
 
@@ -449,7 +553,14 @@ import json
 import os
 import shlex
 
-from orbit_sdk import runner
+from orbit_sdk import graph, runner
+
+graph.connect("check-agent", "record-inputs")
+graph.connect("record-inputs", "run-agent", label="bounded input")
+graph.connect("run-agent", "confirm-agent-state", kind="data", label="agent result")
+graph.connect("confirm-agent-state", "close-cycle")
+graph.connect("close-cycle", "record-inputs", kind="loop", label="next cycle")
+graph.connect("close-cycle", "finalize-agent", kind="condition", label="completed")
 
 
 def agent_command():
@@ -495,6 +606,7 @@ def invoke(ctx, action):
     return result
 
 
+@graph.step("check-agent", title="Check agent readiness", phase="before_all", outputs=["agent_status"])
 @runner.phase("before_all")
 def before_all(ctx):
     # Check availability once; later phases must not start an independent loop.
@@ -502,6 +614,7 @@ def before_all(ctx):
     ctx.emit_result({"agent_cycle": {"status": status}})
 
 
+@graph.step("record-inputs", title="Record cycle inputs", phase="before_each", inputs=["agent_status"], outputs=["cycle_input"])
 @runner.phase("before_each")
 def before_each(ctx):
     # Record the fixed inputs so every external action is auditable.
@@ -515,6 +628,7 @@ def before_each(ctx):
     )
 
 
+@graph.step("run-agent", title="Run bounded agent cycle", phase="execute", inputs=["cycle_input"], outputs=["agent_result"])
 @runner.phase("execute")
 def execute(ctx):
     # Exactly one unit of agent work; OpenOrbit schedules a future iteration.
@@ -522,6 +636,7 @@ def execute(ctx):
     ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": result}})
 
 
+@graph.step("confirm-agent-state", title="Confirm agent state", phase="verify", inputs=["agent_result"], outputs=["verified_status"])
 @runner.phase("verify")
 def verify(ctx):
     # Re-read status rather than assuming the prior action completed correctly.
@@ -529,12 +644,14 @@ def verify(ctx):
     ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "status": status}})
 
 
+@graph.step("close-cycle", title="Close cycle", phase="after_each", inputs=["verified_status"], outputs=["cycle_complete"])
 @runner.phase("after_each")
 def after_each(ctx):
     # The external process has already returned; no daemon cleanup is required.
     ctx.log("Completed one bounded external agent cycle")
 
 
+@graph.step("finalize-agent", title="Finalize agent evaluation", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the external agent evaluation")
@@ -557,7 +674,14 @@ import json
 import os
 import shlex
 
-from orbit_sdk import runner
+from orbit_sdk import graph, runner
+
+graph.connect("preflight-probes", "prepare-probes")
+graph.connect("prepare-probes", "run-probe-matrix", label="prepared inputs")
+graph.connect("run-probe-matrix", "collect-probe-evidence", kind="data", label="probe report")
+graph.connect("collect-probe-evidence", "close-probe-cycle")
+graph.connect("close-probe-cycle", "prepare-probes", kind="loop", label="next cycle")
+graph.connect("close-probe-cycle", "finalize-probe-monitor", kind="condition", label="completed")
 
 
 def probe_command():
@@ -603,6 +727,7 @@ def invoke(ctx, action):
     return result
 
 
+@graph.step("preflight-probes", title="Preflight probe matrix", phase="before_all", outputs=["probe_contract"])
 @runner.phase("before_all")
 def before_all(ctx):
     # A fixed probe set keeps the gate repeatable and its evidence comparable.
@@ -612,6 +737,7 @@ def before_all(ctx):
     ctx.emit_result({"probe_gate": {"preflight": preflight}})
 
 
+@graph.step("prepare-probes", title="Prepare probes", phase="before_each", inputs=["probe_contract"], outputs=["prepared_probes"])
 @runner.phase("before_each")
 def before_each(ctx):
     # Prepare disposable inputs without mutating the target repository.
@@ -619,6 +745,7 @@ def before_each(ctx):
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "prepared": prepared}})
 
 
+@graph.step("run-probe-matrix", title="Run probe matrix", phase="execute", inputs=["prepared_probes"], outputs=["probe_report"])
 @runner.phase("execute")
 def execute(ctx):
     # Run the complete fixed matrix once and retain the tool's structured report.
@@ -626,6 +753,7 @@ def execute(ctx):
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "report": report}})
 
 
+@graph.step("collect-probe-evidence", title="Collect probe evidence", phase="verify", inputs=["probe_report"], outputs=["evidence_gate"])
 @runner.phase("verify")
 def verify(ctx):
     # Collect final evidence separately so a supervisor can make an independent decision.
@@ -633,11 +761,13 @@ def verify(ctx):
     ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "evidence": evidence}})
 
 
+@graph.step("close-probe-cycle", title="Close probe cycle", phase="after_each", inputs=["evidence_gate"], outputs=["cycle_complete"])
 @runner.phase("after_each")
 def after_each(ctx):
     ctx.log("Completed one evidence-gated probe matrix")
 
 
+@graph.step("finalize-probe-monitor", title="Finalize drift monitor", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the evidence-gated probe evaluation")
@@ -733,6 +863,19 @@ class ConsoleStore:
             processes = list(self._processes.values())
         for process in processes:
             self._stop_process_group(process)
+        for run in self.runs():
+            if run.status not in {"queued", "running", "awaiting_approval"}:
+                continue
+            run.status, run.current_step, run.current_phase = "cancelled", None, None
+            run.updated_at, run.finished_at = now(), now()
+            run.step_results.append(
+                {
+                    "step_id": "orbit-shutdown",
+                    "error": "OpenOrbit stopped before this pipeline completed.",
+                    "ended_at": now(),
+                }
+            )
+            self._save(run)
 
     def _recover_interrupted_runs(self) -> None:
         """Do not present orphaned in-memory pipelines as still running.
@@ -799,7 +942,14 @@ class ConsoleStore:
 import json
 import re
 
-from orbit_sdk import runner
+from orbit_sdk import graph, runner
+
+graph.connect("validate-journey", "plan-journey")
+graph.connect("plan-journey", "run-journey", label="focused cases")
+graph.connect("run-journey", "review-journey", kind="data", label="browser evidence")
+graph.connect("review-journey", "retain-journey")
+graph.connect("retain-journey", "plan-journey", kind="loop", label="next iteration")
+graph.connect("retain-journey", "finalize-journey", kind="condition", label="completed")
 
 # Validate only configuration that the runner cannot safely infer. This runs
 # once when an evaluation process starts, before its iteration loop.
@@ -851,12 +1001,14 @@ def plan(ctx, state):
     reason = "Previously failed journeys require confirmation." if failed else "Rotate one fixed journey to retain broad, bounded coverage."
     return {"case_ids": [str(case.get("id")) for case in focused], "rules": rules, "reason": reason, "supervisor_feedback": feedback}
 
+@graph.step("validate-journey", title="Validate journey contract", phase="before_all", outputs=["journey_contract"])
 @runner.phase("before_all")
 def before_all(ctx):
     # Process-level preparation: run once before OpenOrbit starts repeating.
     validate(ctx)
     ctx.log("Validated the bounded user-journey contract")
 
+@graph.step("plan-journey", title="Plan focused journey", phase="before_each", inputs=["journey_contract"], outputs=["journey_plan"])
 @runner.phase("before_each")
 def before_each(ctx):
     # Iteration-level preparation: persist a plan that the execute phase consumes.
@@ -867,6 +1019,7 @@ def before_each(ctx):
     ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "case_count": len(ctx.test_cases), "plan": journey_plan}})
     ctx.log(f"Planned {len(journey_plan['case_ids'])} focused journey case(s): {journey_plan['reason']}")
 
+@graph.step("run-journey", title="Run browser journey", phase="execute", inputs=["journey_plan"], outputs=["journey_evidence"])
 @runner.phase("execute")
 def execute(ctx):
     # Execute only the focused fixed cases; Playwright returns screenshots and
@@ -887,14 +1040,17 @@ def execute(ctx):
     save_state(ctx, state)
     ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "plan": journey_plan, "passed": passed, "failed": len(results) - passed, "results": results, "evidence": evidence, "handoff": state["handoff"]}})
 
+@graph.step("review-journey", title="Review journey evidence", phase="verify", inputs=["journey_evidence"], outputs=["journey_handoff"])
 @runner.phase("verify")
 def verify(ctx):
     # Expose the persisted handoff as structured run output for supervision.
     state = load_state(ctx)
     ctx.emit_result({"user_journey": {"next_iteration": state.get("handoff", {}), "state_path": str(state_path(ctx))}})
     ctx.log("Stored the journey summary, reasons, and behavior rules for the next iteration")
+@graph.step("retain-journey", title="Retain journey result", phase="after_each", inputs=["journey_handoff"], outputs=["iteration_complete"])
 @runner.phase("after_each")
 def after_each(ctx): ctx.log("Closed this bounded browser journey")
+@graph.step("finalize-journey", title="Finalize journey evaluation", phase="after_all", inputs=["iteration_complete"], outputs=["final_status"])
 @runner.phase("after_all")
 def after_all(ctx): ctx.log("Finalized the user-journey evaluation")
 
@@ -914,6 +1070,7 @@ if __name__ == "__main__": runner.main()
                 "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("execute")\ndef execute(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("verify")\ndef verify(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("after_each")\ndef after_each(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("after_all")\ndef after_all(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
             },
         ]
+        templates[1]["source"] = EXTERNAL_COMMAND_ADAPTER_TEMPLATE
         templates[-1] = {
             "id": "native-improvement-cycle",
             "name": "Prompt improvement validation",
@@ -1121,22 +1278,34 @@ if __name__ == "__main__": runner.main()
 
     @staticmethod
     def _quick_start_browser_runner() -> str:
-        return """from orbit_sdk import runner
+        return """from orbit_sdk import graph, runner
 
+graph.connect("validate-browser", "run-browser-journey")
+graph.connect("run-browser-journey", "verify-browser-evidence", kind="data", label="journey evidence")
+graph.connect("verify-browser-evidence", "finalize-browser-evaluation")
+
+@graph.step("validate-browser", title="Validate browser target", phase="before_all", outputs=["browser_target"])
 @runner.phase("before_all")
 def before_all(ctx):
     if not ctx.build.get("browser_base_url"):
         raise ValueError("Quick start browser evaluation requires a browser base URL")
 
+@graph.step("run-browser-journey", title="Run browser journey", phase="execute", inputs=["browser_target"], outputs=["journey_evidence"])
 @runner.phase("execute")
 def execute(ctx):
     evidence = ctx.playwright_journey()
     if not all(item["passed"] for item in evidence["results"]):
         raise SystemExit("A browser journey failed")
 
+@graph.step("verify-browser-evidence", title="Verify journey evidence", phase="verify", inputs=["journey_evidence"], outputs=["journey_verdict"])
 @runner.phase("verify")
 def verify(ctx):
     ctx.log("Quick start browser evaluation completed")
+
+@graph.step("finalize-browser-evaluation", title="Finalize browser evaluation", phase="after_all", inputs=["journey_verdict"], outputs=["completed_evaluation"])
+@runner.phase("after_all")
+def after_all(ctx):
+    ctx.log("Finalized the one-shot browser evaluation")
 
 if __name__ == "__main__":
     runner.main()
@@ -1147,7 +1316,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.user-journey-smoke-test",
-                "version": "1.0.1",
+                "version": "1.0.2",
                 "name": "User journey smoke test",
                 "description": "Create a browser-based smoke test. Requires a running app and Playwright browser.",
                 "publisher": {"name": "OpenOrbit"},
@@ -1315,7 +1484,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.site-exploration-review",
-                "version": "1.0.0",
+                "version": "1.0.1",
                 "name": "Site exploration review",
                 "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph.",
                 "publisher": {"name": "OpenOrbit"},
@@ -1450,7 +1619,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.agent-self-improvement",
-                "version": "1.1.0",
+                "version": "1.1.1",
                 "name": "Agent self-improvement",
                 "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
                 "publisher": {"name": "OpenOrbit"},
@@ -1610,7 +1779,7 @@ if __name__ == "__main__":
             {
                 "schema_version": 1,
                 "id": "openorbit.ai-slo-drift-monitor",
-                "version": "1.0.0",
+                "version": "1.0.1",
                 "name": "AI SLO and behavior drift monitor",
                 "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
                 "publisher": {"name": "OpenOrbit"},
@@ -4108,12 +4277,6 @@ if __name__ == "__main__":
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
                 if (
-                    self._load(run_id).status == "running"
-                    and run.execution_mode == "run"
-                    and self._latest_cycle_has_persona_evidence(self._load(run_id))
-                ):
-                    self._complete_supervision(run_id)
-                if (
                     loop_index < run.loop_limit
                     and run.repeat_interval_minutes
                     and run.execution_mode == "run"
@@ -4147,6 +4310,12 @@ if __name__ == "__main__":
                     now(),
                 )
                 self._save(run)
+            if (
+                run.status == "succeeded"
+                and run.execution_mode == "run"
+                and self._latest_cycle_has_persona_evidence(run)
+            ):
+                self._complete_supervision(run_id)
 
     @staticmethod
     def _latest_cycle_has_persona_evidence(run: Run) -> bool:
