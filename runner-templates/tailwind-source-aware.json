@@ -1,0 +1,5 @@
+{
+  "id": "tailwind-source-aware",
+  "name": "Tailwind source-aware journey",
+  "description": "Checks a Tailwind project’s source contract before retaining Playwright evidence for its rendered user journeys."
+}

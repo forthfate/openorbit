@@ -1,0 +1,5 @@
+{
+  "id": "selenium-external-journey",
+  "name": "Selenium external journey",
+  "description": "Connects an existing Selenium automation adapter while OpenOrbit owns scheduling, structured evidence, and supervision."
+}

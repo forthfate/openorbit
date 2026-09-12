@@ -1,0 +1,5 @@
+{
+  "id": "playwright-continuous-journey",
+  "name": "Playwright continuous journey",
+  "description": "Runs one focused browser journey per iteration, preserves evidence-backed handoffs, and retries failed cases before advancing."
+}
