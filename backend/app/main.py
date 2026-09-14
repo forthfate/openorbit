@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -78,6 +79,30 @@ def safely(action):
         raise HTTPException(404, "대상을 찾을 수 없습니다.")
     except ValueError as error:
         raise HTTPException(409, str(error))
+
+
+_LOCALE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+
+
+def request_locale(request: Request) -> str | None:
+    """Return the browser's highest-priority valid ``Accept-Language`` locale."""
+    choices: list[tuple[float, int, str]] = []
+    for index, item in enumerate(request.headers.get("accept-language", "").split(",")):
+        value, *parameters = item.strip().split(";")
+        if not _LOCALE_PATTERN.fullmatch(value):
+            continue
+        quality = 1.0
+        for parameter in parameters:
+            name, separator, raw_value = parameter.strip().partition("=")
+            if name.lower() != "q" or not separator:
+                continue
+            try:
+                quality = float(raw_value)
+            except ValueError:
+                quality = 0.0
+        if quality > 0:
+            choices.append((quality, index, value))
+    return max(choices, default=(0.0, 0, ""), key=lambda item: (item[0], -item[1]))[2] or None
 
 
 def paginated(values: list, response: Response, page: int, per_page: int) -> list:
@@ -358,15 +383,23 @@ class BuildRunRequest(BaseModel):
 
 
 @app.post("/api/builds/{build_id}/runs")
-def invoke_build(build_id: str, values: BuildRunRequest | None = None):
+def invoke_build(build_id: str, request: Request, values: BuildRunRequest | None = None):
     return safely(
-        lambda: store.invoke_remote_build(build_id, output_locale=values.output_locale if values else None)
+        lambda: store.invoke_remote_build(
+            build_id,
+            output_locale=(request_locale(request) or (values.output_locale if values else None)),
+        )
     )
 
 
 @app.post("/api/builds/{build_id}/tests")
-def test_build(build_id: str, values: BuildRunRequest | None = None):
-    return safely(lambda: store.test_build(build_id, output_locale=values.output_locale if values else None))
+def test_build(build_id: str, request: Request, values: BuildRunRequest | None = None):
+    return safely(
+        lambda: store.test_build(
+            build_id,
+            output_locale=(request_locale(request) or (values.output_locale if values else None)),
+        )
+    )
 
 
 @app.get("/api/build-tests/{session_id}")
@@ -638,8 +671,10 @@ def list_project_pipelines(
     status_code=201,
     summary="Start a project pipeline",
 )
-def create_project_pipeline(project_id: str, values: PipelineCreate):
-    return safely(lambda: store.invoke_remote_build(project_id, values.execution_mode))
+def create_project_pipeline(project_id: str, values: PipelineCreate, request: Request):
+    return safely(
+        lambda: store.invoke_remote_build(project_id, values.execution_mode, request_locale(request))
+    )
 
 
 @app.get("/api/v1/quick-starts", tags=["Quick starts"], operation_id="listQuickStarts")
@@ -1010,7 +1045,7 @@ class CycleAnalysisRequest(BaseModel):
 
 
 @app.post("/api/cycle-improvements/analyze")
-def analyze_cycle(values: CycleAnalysisRequest):
+def analyze_cycle(values: CycleAnalysisRequest, request: Request):
     """Use the configured system AI to diagnose a build's PDCA loop."""
     profile_name = store.application_settings()["chat_model_profile_name"]
     if not profile_name:
@@ -1043,7 +1078,11 @@ def analyze_cycle(values: CycleAnalysisRequest):
         "not a single iteration. Identify evidence of plan, do, check, and act; score trends, "
         "repeated proposals, and whether accepted work was verified. Recommend only operating-cycle "
         "changes (runner, workflow, tests, supervisor prompt, or cadence). Respond only in "
-        + (f"Use BCP 47 locale '{values.locale}'. " if values.locale else "")
+        + (
+            f"Use BCP 47 locale '{request_locale(request) or values.locale}'. "
+            if request_locale(request) or values.locale
+            else ""
+        )
         + "Respond in concise Markdown with headings for Health, Evidence, Bottleneck, and Recommended next action.\n\n"
         + json.dumps(context, ensure_ascii=False, default=str)
     )
@@ -1056,7 +1095,7 @@ def analyze_cycle(values: CycleAnalysisRequest):
 
 
 @app.post("/api/chat")
-def chat(values: ChatMessage):
+def chat(values: ChatMessage, request: Request):
     profile_name = store.application_settings()["chat_model_profile_name"]
     if not profile_name:
         raise HTTPException(409, "Select an AI model profile for the chat assistant in Settings.")
@@ -1070,6 +1109,8 @@ def chat(values: ChatMessage):
             "The local OpenAPI contract is available at /api/openapi.json; use it as the source of truth "
             "when explaining API endpoints, parameters, and response shapes.\n"
         )
+        if locale := request_locale(request):
+            prompt += f"Respond in BCP 47 locale '{locale}'.\n"
         if history:
             prompt += f"Conversation so far:\n{history}\n\n"
         prompt += f"User: {values.content}\nAssistant:"

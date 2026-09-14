@@ -15,12 +15,24 @@ from app.main import app
 from app.models import Run, Step, Workflow
 from fastapi.testclient import TestClient
 from orbit_sdk import RunnerContext
+from starlette.requests import Request
 
 
 def test_health_is_available():
     response = TestClient(app).get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_request_locale_prefers_the_browser_accept_language_priority():
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"accept-language", b"ja;q=0.6, ko-KR;q=0.9, en;q=0.8")],
+        }
+    )
+
+    assert main_module.request_locale(request) == "ko-KR"
 
 
 def test_generated_sdk_docs_are_served_from_the_local_app(tmp_path, monkeypatch):
