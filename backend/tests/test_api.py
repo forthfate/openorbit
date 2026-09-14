@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import orbit_sdk as sdk
 import pytest
+import yaml
 from app import main as main_module
 from app import providers
 from app import store as store_module
@@ -1117,6 +1118,22 @@ def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):
     assert imported["origin"] == "user"
     assert templates["shared-browser-check"]["source"] == imported["source"]
     assert (tmp_path / "runner-templates" / "shared-browser-check.json").exists()
+
+
+def test_build_star_is_persisted_without_changing_other_build_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path)
+    (tmp_path / "builds.yaml").write_text(
+        "- id: starred-build\n  name: Starred build\n  enabled: true\n  repository: ''\n",
+        encoding="utf-8",
+    )
+
+    updated = store_module.ConsoleStore().set_build_star("starred-build", True)
+
+    assert updated["starred"] is True
+    saved = yaml.safe_load((tmp_path / "builds.yaml").read_text(encoding="utf-8"))[0]
+    assert saved["starred"] is True
+    assert saved["name"] == "Starred build"
+    assert saved["enabled"] is True
 
 
 def test_manager_prompt_template_can_be_updated(tmp_path, monkeypatch):

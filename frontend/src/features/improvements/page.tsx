@@ -777,6 +777,7 @@ export function ImprovementsPage() {
           current ||
           [...next].sort(
             (left, right) =>
+              Number(right.starred) - Number(left.starred) ||
               lastRunTimestamp(right) - lastRunTimestamp(left) ||
               left.name.localeCompare(right.name),
           )[0]?.id ||
@@ -789,6 +790,8 @@ export function ImprovementsPage() {
   const sortedBuilds = useMemo(
     () =>
       [...builds].sort((left, right) => {
+        const starOrder = Number(right.starred) - Number(left.starred);
+        if (starOrder) return starOrder;
         const leftRun = lastRunTimestamp(left);
         const rightRun = lastRunTimestamp(right);
         return rightRun - leftRun || left.name.localeCompare(right.name);
@@ -804,7 +807,7 @@ export function ImprovementsPage() {
           <select value={build} onChange={(event) => setBuild(event.target.value)}>
             {sortedBuilds.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name} ({compactTimestamp(locale, item.last_run_at)})
+                {item.starred ? "★ " : ""}{item.name} ({compactTimestamp(locale, item.last_run_at)})
               </option>
             ))}
           </select>

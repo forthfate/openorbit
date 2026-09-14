@@ -407,6 +407,10 @@ class BuildCreate(BaseModel):
     enabled: bool = True
 
 
+class BuildStarUpdate(BaseModel):
+    starred: bool
+
+
 class PipelineCreate(BaseModel):
     """The requested execution mode for a project pipeline."""
 
@@ -518,6 +522,11 @@ def create_build(values: BuildCreate):
 @app.put("/api/builds/{build_id}")
 def update_build(build_id: str, values: BuildCreate):
     return safely(lambda: store.update_build(build_id, values.model_dump()))
+
+
+@app.patch("/api/builds/{build_id}/star")
+def update_build_star(build_id: str, values: BuildStarUpdate):
+    return safely(lambda: store.set_build_star(build_id, values.starred))
 
 
 @app.delete("/api/builds/{build_id}")

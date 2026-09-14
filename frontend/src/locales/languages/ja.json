@@ -580,8 +580,8 @@
       "succeeded": "成功",
       "failed": "失敗",
       "cancelled": "キャンセル",
-      "running": "実行中"
-      ,"selectBuild": "ビルド"
+      "running": "実行中",
+      "selectBuild": "ビルド"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

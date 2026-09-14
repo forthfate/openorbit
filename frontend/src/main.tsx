@@ -215,6 +215,13 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
+  const toggleBuildStar = (id: string, starred: boolean) =>
+    api(`/api/builds/${id}/star`, "PATCH", { starred })
+      .then(() => room.refresh())
+      .catch((e) => {
+        room.setNotice(e.message);
+        throw e;
+      });
   const deleteAsset = (
     kind:
       | "profile"
@@ -305,6 +312,7 @@ export default function App() {
         onTest={testBuild}
         onCreate={createBuild}
         onUpdate={updateBuild}
+        onToggleStar={toggleBuildStar}
         onDelete={deleteBuild}
         onQuickStartCreate={createQuickStart}
         quickStartRequest={quickStartRequest}

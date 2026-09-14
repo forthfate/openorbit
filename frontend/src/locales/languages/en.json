@@ -581,8 +581,8 @@
       "succeeded": "Succeeded",
       "failed": "Failed",
       "cancelled": "Cancelled",
-      "running": "Running"
-      ,"selectBuild": "Build"
+      "running": "Running",
+      "selectBuild": "Build"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

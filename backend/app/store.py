@@ -2389,6 +2389,7 @@ if __name__ == "__main__":
             # Existing builds predate this optional policy, so leave it off
             # unless an operator explicitly enabled it.
             build.setdefault("require_human_approval_before_apply", False)
+            build.setdefault("starred", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
@@ -2963,6 +2964,7 @@ if __name__ == "__main__":
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
+            "starred": False,
             "runner_id": runner["id"],
             "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
@@ -3049,6 +3051,7 @@ if __name__ == "__main__":
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
+            "starred": bool(existing.get("starred", False)),
             "runner_id": runner["id"],
             "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
@@ -3091,6 +3094,17 @@ if __name__ == "__main__":
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
         temporary.replace(CONFIG / "builds.yaml")
         return build
+
+    def set_build_star(self, build_id: str, starred: bool) -> dict[str, Any]:
+        builds = self.builds()
+        index = next((i for i, build in enumerate(builds) if build["id"] == build_id), None)
+        if index is None:
+            raise KeyError(build_id)
+        builds[index]["starred"] = starred
+        temporary = CONFIG / "builds.tmp"
+        temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(CONFIG / "builds.yaml")
+        return builds[index]
 
     def delete_build(self, build_id: str) -> None:
         builds = self.builds()

@@ -580,8 +580,8 @@
       "succeeded": "성공",
       "failed": "실패",
       "cancelled": "취소됨",
-      "running": "실행 중"
-      ,"selectBuild": "빌드"
+      "running": "실행 중",
+      "selectBuild": "빌드"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {
