@@ -373,6 +373,7 @@ class BuildCreate(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
     runner_id: str
+    runner_version: int | None = Field(default=None, ge=1)
     repository: str = ""  # Legacy target-environment input.
     target_environment_id: str = ""
     execution_environment_id: str = ""

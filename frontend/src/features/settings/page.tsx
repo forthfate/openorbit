@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Database, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { AlertTriangle, Database, Pencil, Save } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
@@ -8,7 +8,7 @@ import { SectionInfo } from "../../components/ui/section-info";
 import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
-import { ProfileForm, type ProfileFormCopy } from "../builds/page";
+import { ProfileCatalog } from "../assets/page";
 import { OrbitLogs } from "./orbit-logs";
 
 type ApplicationSettings = {
@@ -20,18 +20,9 @@ type ApplicationData = { path: string; size_bytes: number };
 
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
-const profileBlank: Settings = {
-  profile_name: "",
-  provider: "azure-openai",
-  model: "",
-  endpoint: "",
-  region: "us-east-1",
-  secret_env: "AZURE_OPENAI_API_KEY",
-  aws_profile: "",
-};
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
 type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
-type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; storage: StorageCopy; profileForm: ProfileFormCopy };
+type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; storage: StorageCopy };
 const bytes = (value: number) => {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = value ? Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1) : 0;
@@ -69,8 +60,7 @@ export function SettingsPage({
     settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
     l = settingsCopy.manager,
     p = settingsCopy.profiles,
-    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
-    evaluation = locales[locale].evaluation;
+    sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
     [dataPath, setDataPath] = useState(""),
@@ -78,8 +68,7 @@ export function SettingsPage({
     [dataSize, setDataSize] = useState<number | null>(null),
     [dataLoading, setDataLoading] = useState(true),
     [dataEditing, setDataEditing] = useState(false),
-    [open, setOpen] = useState(false),
-    [profileOpen, setProfileOpen] = useState(false);
+    [open, setOpen] = useState(false);
   const { pushToast } = useToast();
   useEffect(() => {
     api<ApplicationSettings>("/api/application-settings")
@@ -129,7 +118,6 @@ export function SettingsPage({
         pushToast(p.chatProfileSaved, "success");
       })
       .catch((error) => pushToast(error.message));
-  const saveProfile = () => save().then(() => setProfileOpen(false));
   const saveDataLocation = () => {
     setDataLoading(true);
     api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
@@ -217,53 +205,17 @@ export function SettingsPage({
           <strong>{dataLoading ? settingsCopy.storage.calculating : bytes(dataSize ?? 0)}</strong>
         </div>
       </section>
-      <section className="panel app-settings">
-        <div className="panel-title-action">
-          <div className="panel-title-action__copy">
-            <PanelHeader title={<SectionInfo title={p.title} description={sectionDetails.assetProfiles} />} />
-            <p className="hint section-description">{p.description}</p>
-          </div>
-          <button
-            className="approve"
-            onClick={() => {
-              setSettings(profileBlank);
-              setProfileOpen(true);
-            }}
-          >
-            <Plus size={14} />
-            {p.create}
-          </button>
-        </div>
-        <div className="catalog-list">
-          {profiles.length ? (
-            profiles.map((profile) => (
-              <div className="catalog-row-wrap" key={profile.profile_name}>
-                <button
-                  className="catalog-row"
-                  onClick={() => {
-                    setSettings(profile);
-                    setProfileOpen(true);
-                  }}
-                >
-                  <strong>{profile.profile_name}</strong>
-                  <span>
-                    {profile.provider} · {profile.model || "—"}
-                  </span>
-                </button>
-                <button
-                  className="icon-button danger"
-                  aria-label={`${p.delete} ${profile.profile_name}`}
-                  onClick={() => onDeleteProfile(profile.profile_name)}
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            ))
-          ) : (
-            <p className="catalog-empty">{p.empty}</p>
-          )}
-        </div>
-      </section>
+      <ProfileCatalog
+        locale={locale}
+        profiles={profiles}
+        settings={settings}
+        setSettings={setSettings}
+        test={test}
+        save={save}
+        tested={tested}
+        loading={false}
+        onDelete={onDeleteProfile}
+      />
       <section className="panel app-settings">
         <PanelHeader title={<SectionInfo title={p.chatProfile} description={sectionDetails.systemAiModel} />} />
         <p className="hint section-description">{p.chatProfileHint}</p>
@@ -336,22 +288,6 @@ export function SettingsPage({
             </button>
           </div>
         </div>
-      </Modal>
-      <Modal
-        open={profileOpen}
-        title={settings.profile_name ? p.edit : p.create}
-        onClose={() => setProfileOpen(false)}
-      >
-        <ProfileForm
-          settings={settings}
-          setSettings={setSettings}
-          test={test}
-          save={saveProfile}
-          tested={tested}
-          onClose={() => setProfileOpen(false)}
-          t={evaluation}
-          help={settingsCopy.profileForm}
-        />
       </Modal>
     </>
   );

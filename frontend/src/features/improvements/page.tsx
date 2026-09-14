@@ -98,6 +98,17 @@ const tick = (value: string) =>
   });
 const timestamp = (locale: Locale, value?: string) =>
   value ? new Date(value).toLocaleString(intlLocales[locale]) : "—";
+const compactTimestamp = (locale: Locale, value?: string) =>
+  value
+    ? new Intl.DateTimeFormat(intlLocales[locale], {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(value))
+    : "—";
+const lastRunTimestamp = (build: Build) =>
+  build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
 function Card({
   title,
   description,
@@ -762,11 +773,28 @@ export function ImprovementsPage() {
     api<Build[]>("/api/builds")
       .then((next) => {
         setBuilds(next);
-        setBuild((current) => current || next[0]?.id || "");
+        setBuild((current) =>
+          current ||
+          [...next].sort(
+            (left, right) =>
+              lastRunTimestamp(right) - lastRunTimestamp(left) ||
+              left.name.localeCompare(right.name),
+          )[0]?.id ||
+          "",
+        );
       })
       .catch(() => setBuilds([]))
       .finally(() => setInitialLoading(false));
   }, []);
+  const sortedBuilds = useMemo(
+    () =>
+      [...builds].sort((left, right) => {
+        const leftRun = lastRunTimestamp(left);
+        const rightRun = lastRunTimestamp(right);
+        return rightRun - leftRun || left.name.localeCompare(right.name);
+      }),
+    [builds],
+  );
   if (initialLoading) return <><SectionSkeleton rows={1} /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
   return (
     <>
@@ -774,7 +802,11 @@ export function ImprovementsPage() {
         <label>
           {t.selectBuild}
           <select value={build} onChange={(event) => setBuild(event.target.value)}>
-            {builds.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            {sortedBuilds.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} ({compactTimestamp(locale, item.last_run_at)})
+              </option>
+            ))}
           </select>
         </label>
       </section>

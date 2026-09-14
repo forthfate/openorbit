@@ -74,6 +74,13 @@ const elapsed = (start?: string, end?: string) => {
   );
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 };
+const displayedIteration = (run: Run) => {
+  const observed = Math.max(
+    0,
+    ...(run.step_results ?? []).map((step) => step.loop_index ?? 0),
+  );
+  return run.loop_limit ? Math.min(observed, run.loop_limit) : observed;
+};
 const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
@@ -470,6 +477,12 @@ export function EvaluationsPage({
         : 0,
     },
     {
+      id: "status",
+      header: t.status,
+      render: (r) => <StatusBadge value={r.status} label={label(r.status)} />,
+      sortValue: (r) => label(r.status),
+    },
+    {
       id: "phase",
       header: t.phase,
       render: (r) => (
@@ -493,12 +506,6 @@ export function EvaluationsPage({
       sortValue: (r) => r.approved_improvements ?? 0,
     },
     { id: "issues", header: t.issues, render: (r) => r.reported_issues ?? 0, sortValue: (r) => r.reported_issues ?? 0 },
-    {
-      id: "status",
-      header: t.status,
-      render: (r) => <StatusBadge value={r.status} label={label(r.status)} />,
-      sortValue: (r) => label(r.status),
-    },
     {
       id: "actions",
       header: locales[locale].evaluation.action,
@@ -545,17 +552,14 @@ export function EvaluationsPage({
     },
   ];
   columns[1].header = l.task;
-  columns.splice(4, 0, {
+  columns.splice(5, 0, {
     id: "iteration",
     header: l.iteration,
     render: (r) => {
-      const current = Math.max(
-        0,
-        ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
-      );
+      const current = displayedIteration(r);
       return current ? `${current}/${r.loop_limit ?? current}` : "—";
     },
-    sortValue: (r) => Math.max(0, ...(r.step_results ?? []).map((step) => step.loop_index ?? 0)),
+    sortValue: displayedIteration,
   });
   const steps = useMemo(() => selected?.step_results ?? [], [selected?.step_results]);
   const iterations =
@@ -932,7 +936,7 @@ export function EvaluationsPage({
           setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
         className="active-evaluation-table"
-        gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
+        gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 72px 90px 72px 96px 96px 82px 94px 72px"
         empty={t.noRuns}
       />
       <Pagination locale={locale} page={currentPage} totalPages={totalPages} totalItems={filteredRuns.length} pageSize={pageSize} onPageChange={setPage}/>
