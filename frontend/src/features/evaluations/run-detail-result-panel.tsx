@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { FileSearch } from "lucide-react";
+import { CodeXml, Image } from "lucide-react";
+import type { RunStepResult } from "../../domain/models";
+import { Modal } from "../../components/ui/modal";
 import { intlLocales, type Locale } from "../../locales";
 
 type Messages = Record<string, string | undefined>;
@@ -10,7 +12,27 @@ type BehaviorTrace = {
   summary?: string;
   trace?: { persona_goal?: string; current_action?: string; decision?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string };
 };
+type EvidenceArtifact = { id?: string; name?: string; screenshot?: string; html?: string };
 const time = (locale: Locale, value?: string) => value ? new Intl.DateTimeFormat(intlLocales[locale], { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value)) : "—";
+
+function browserJourney(result?: Record<string, unknown>) {
+  if (!result) return undefined;
+  const direct = result.browser_journey;
+  if (direct && typeof direct === "object") return direct as { results?: EvidenceArtifact[] };
+  for (const key of ["user_journey", "improvement_cycle"]) {
+    const cycle = result[key];
+    if (!cycle || typeof cycle !== "object") continue;
+    const evidence = (cycle as { evidence?: unknown }).evidence;
+    if (evidence && typeof evidence === "object") return evidence as { results?: EvidenceArtifact[] };
+  }
+  return undefined;
+}
+
+function artifactUrl(runId: string, iteration: number, path: string) {
+  const normalized = path.replaceAll("\\", "/"), marker = `/loop-${iteration}/`;
+  const relative = normalized.includes(marker) ? normalized.split(marker).at(-1)! : normalized.split("/").at(-1)!;
+  return `/api/runs/${encodeURIComponent(runId)}/artifacts/${iteration}/${relative.split("/").map(encodeURIComponent).join("/")}`;
+}
 
 function ResultList({ items, kind, locale, empty }: { items: RecordItem[]; kind: "improvement" | "issue"; locale: Locale; empty: string }) {
   return <div className="result-items result-items--scrollable">{items.length ? items.map((item, index) => {
@@ -19,8 +41,8 @@ function ResultList({ items, kind, locale, empty }: { items: RecordItem[]; kind:
   }) : <p className="hint result-empty">{empty}</p>}</div>;
 }
 
-export function EvaluationResultPanel({ error, records, summaries, improvements, issues, l, locale }: { error?: ReactNode; records: unknown[]; summaries: BehaviorTrace[]; improvements: RecordItem[]; issues: RecordItem[]; l: Messages; locale: Locale }) {
-  const [evidenceIteration, setEvidenceIteration] = useState<number | null>(null);
+export function EvaluationResultPanel({ error, records, summaries, steps, runId, improvements, issues, l, locale }: { error?: ReactNode; records: unknown[]; summaries: BehaviorTrace[]; steps: RunStepResult[]; runId: string; improvements: RecordItem[]; issues: RecordItem[]; l: Messages; locale: Locale }) {
+  const [evidenceModal, setEvidenceModal] = useState<{ kind: "image" | "html"; artifacts: EvidenceArtifact[]; iteration: number } | null>(null);
   const traceFields = (item: BehaviorTrace) => {
     if (!item.trace) return [];
     const trace = item.trace;
@@ -49,5 +71,7 @@ export function EvaluationResultPanel({ error, records, summaries, improvements,
     ];
     return fields.filter((field): field is [string | undefined, string] => Boolean(field[1]));
   };
-  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items result-items--scrollable">{summaries.map((item) => <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <><dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{evidenceIteration === item.iteration && item.trace?.evidence && <section className="result-trace-evidence"><strong>{l.traceEvidence}</strong><p>{item.trace.evidence}</p></section>}</> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span><small>Iteration</small><b>#{item.iteration}</b></span>{item.trace?.evidence && <button className="ghost icon-button" type="button" aria-label={evidenceIteration === item.iteration ? l.hideEvidence : l.viewEvidence} title={evidenceIteration === item.iteration ? l.hideEvidence : l.viewEvidence} onClick={() => setEvidenceIteration((current) => current === item.iteration ? null : item.iteration)}><FileSearch size={16} /></button>}</div></article>)}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}</>;
+  const artifactsFor = (iteration: number) => steps.filter((step) => step.loop_index === iteration).flatMap((step) => browserJourney(step.result)?.results ?? []);
+  const modalArtifacts = evidenceModal?.artifacts.filter((artifact) => evidenceModal.kind === "image" ? Boolean(artifact.screenshot) : Boolean(artifact.html)) ?? [];
+  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items result-items--scrollable">{summaries.map((item) => { const artifacts = artifactsFor(item.iteration), imageArtifacts = artifacts.filter((artifact) => artifact.screenshot), htmlArtifacts = artifacts.filter((artifact) => artifact.html); return <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span><small>Iteration</small><b>#{item.iteration}</b></span><button className="ghost icon-button" type="button" disabled={!imageArtifacts.length} aria-label={l.viewImageEvidence} title={l.viewImageEvidence} onClick={() => setEvidenceModal({ kind: "image", artifacts: imageArtifacts, iteration: item.iteration })}><Image size={16} /></button><button className="ghost icon-button" type="button" disabled={!htmlArtifacts.length} aria-label={l.viewHtmlEvidence} title={l.viewHtmlEvidence} onClick={() => setEvidenceModal({ kind: "html", artifacts: htmlArtifacts, iteration: item.iteration })}><CodeXml size={16} /></button></div></article>; })}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}<Modal open={Boolean(evidenceModal)} title={evidenceModal?.kind === "image" ? l.imageEvidence ?? "" : l.htmlEvidence ?? ""} onClose={() => setEvidenceModal(null)} className="modal--evidence">{modalArtifacts.map((artifact, index) => <figure className="persona-evidence" key={`${artifact.id ?? index}-${evidenceModal?.kind}`}><figcaption>{artifact.name ?? artifact.id ?? `#${index + 1}`}</figcaption>{evidenceModal?.kind === "image" ? <img src={artifactUrl(runId, evidenceModal.iteration, artifact.screenshot!)} alt={artifact.name ?? artifact.id ?? ""} /> : <iframe title={artifact.name ?? artifact.id ?? `#${index + 1}`} sandbox="" src={artifactUrl(runId, evidenceModal!.iteration, artifact.html!)} />}</figure>)}</Modal></>;
 }

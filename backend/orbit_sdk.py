@@ -1633,7 +1633,7 @@ class RunnerContext:
             cases: Optional fixed cases to run. The build's selected cases are used when omitted.
 
         Returns:
-            Per-case pass/fail evidence, screenshots, and artifact directory metadata.
+            Per-case pass/fail evidence, screenshots, page HTML, and artifact directory metadata.
         """
         build = self.build
         base_url = str(
@@ -1664,7 +1664,7 @@ class RunnerContext:
         }
         script = r"""const fs=require('fs'); const { chromium }=require(process.argv[1]); const input=JSON.parse(process.argv[2]);
 (async()=>{const launch={headless:input.headless}; if(input.executablePath)launch.executablePath=input.executablePath; else if(process.env.SIM_BROWSER_BIN)launch.executablePath=process.env.SIM_BROWSER_BIN; const browser=await chromium.launch(launch); const results=[];
-for(const item of input.cases){const page=await browser.newPage();const path=String(item.path||'/');const url=new URL(path,input.baseUrl).toString();const id=String(item.id||'case').replace(/[^a-zA-Z0-9_-]/g,'-');const screenshot=`${input.artifacts}/${id}.png`;try{await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});const expected=String(item.expected_text||'').trim();const passed=!expected||await page.getByText(expected,{exact:false}).first().isVisible({timeout:5000});await page.screenshot({path:screenshot,fullPage:true});results.push({id:item.id,name:item.name,url,passed,expected_text:expected,screenshot});}catch(error){try{await page.screenshot({path:screenshot,fullPage:true});}catch{}results.push({id:item.id,name:item.name,url,passed:false,error:String(error),screenshot});}finally{await page.close();}}
+for(const item of input.cases){const page=await browser.newPage();const path=String(item.path||'/');const url=new URL(path,input.baseUrl).toString();const id=String(item.id||'case').replace(/[^a-zA-Z0-9_-]/g,'-');const screenshot=`${input.artifacts}/${id}.png`;const html=`${input.artifacts}/${id}.html`;try{await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});const expected=String(item.expected_text||'').trim();const passed=!expected||await page.getByText(expected,{exact:false}).first().isVisible({timeout:5000});await page.screenshot({path:screenshot,fullPage:true});await fs.promises.writeFile(html,await page.content());results.push({id:item.id,name:item.name,url,passed,expected_text:expected,screenshot,html});}catch(error){try{await page.screenshot({path:screenshot,fullPage:true});await fs.promises.writeFile(html,await page.content());}catch{}results.push({id:item.id,name:item.name,url,passed:false,error:String(error),screenshot,html});}finally{await page.close();}}
 await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,results}));})().catch(error=>{console.error(error);process.exit(1)});"""
         environment = dict(self.environment)
         library_path = str(build.get("browser_library_path", "")).strip()

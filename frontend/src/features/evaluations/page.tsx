@@ -1296,6 +1296,8 @@ export function EvaluationsPage({
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
                 summaries={resultBehaviorTraces}
+                runId={selected.id}
+                steps={steps}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}
