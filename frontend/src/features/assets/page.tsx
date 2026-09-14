@@ -93,9 +93,9 @@ function AssetCatalog({
   locale?: Locale;
 }) {
   const [sort, setSort] = useState<{
-      key: "name" | "createdAt";
-      direction: "asc" | "desc";
-    }>({ key: "name", direction: "asc" }),
+    key: "name" | "createdAt";
+    direction: "asc" | "desc";
+    }>({ key: "createdAt", direction: "desc" }),
     rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
       const a = String(
         (left.props as { name?: string; detail?: string; createdAt?: string })[
