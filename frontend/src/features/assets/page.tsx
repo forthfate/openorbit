@@ -325,6 +325,7 @@ function RunnerModal({
   const copy = runnerLabels[locale];
   const [templates, setTemplates] = useState<RunnerTemplate[]>([]),
     [draft, setDraft] = useState<RunnerAsset | undefined>(editing ?? undefined),
+    [selectedVersion, setSelectedVersion] = useState<number | null>(editing?.version ?? null),
     [notice, setNotice] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -340,6 +341,7 @@ function RunnerModal({
       description: template.description,
       template_id: template.id,
       source: template.source,
+      version: 1,
     });
   const changeTemplate = () => {
     setDraft(undefined);
@@ -368,16 +370,23 @@ function RunnerModal({
   const save = (openInVsCode = false) => {
     if (!draft) return;
     const runnerId = editing?.id ?? draft.id;
+    const values = editing
+      ? {
+          name: draft.name,
+          description: draft.description,
+          source: draft.source,
+        }
+      : {
+          id: draft.id,
+          name: draft.name,
+          description: draft.description,
+          template_id: draft.template_id,
+          source: draft.source,
+        };
     api(
       editing ? `/api/runners/${editing.id}` : "/api/runners",
       editing ? "PUT" : "POST",
-      editing
-        ? {
-            name: draft.name,
-            description: draft.description,
-            source: draft.source,
-          }
-        : draft,
+      values,
     )
       .then(async () => {
         onSaved();
@@ -457,6 +466,13 @@ function RunnerModal({
   const selectedTemplate = templates.find(
     (template) => template.id === draft.template_id,
   );
+  const versions = editing?.versions ?? [];
+  const selectVersion = (version: number) => {
+    const selected = versions.find((item) => item.version === version);
+    if (!selected) return;
+    setSelectedVersion(version);
+    setDraft({ ...draft, source: selected.source });
+  };
   return (
     <Modal
       open
@@ -505,6 +521,21 @@ function RunnerModal({
             }
           />
         </label>
+        {editing && (
+          <label className="modal-setting-row">
+            <FieldLabel label={copy.version} description={copy.versionHint} />
+            <div>
+              <select value={selectedVersion ?? editing.version} onChange={(event) => selectVersion(Number(event.target.value))}>
+                {[...versions].sort((a, b) => b.version - a.version).map((version) => (
+                  <option key={version.version} value={version.version}>
+                    v{version.version}{version.version === editing.version ? ` (${copy.current})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </label>
+        )}
+        {!editing && <p className="hint">{copy.initialVersion}</p>}
         <label className="runner-source">
           <FieldLabel
             label={copy.source}
@@ -737,7 +768,7 @@ function RunnerCatalog({
             <AssetRow
               key={item.id}
               name={item.name}
-              detail={`${item.id} · ${item.description}`}
+              detail={`${item.id} · v${item.version} · ${item.description}`}
               createdAt={item.created_at}
               locale={locale}
               onClick={() => {

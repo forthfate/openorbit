@@ -45,6 +45,7 @@ class Workflow(BaseModel):
     risk: Literal["low", "medium", "high"]
     tags: list[str] = []
     runner_id: str | None = None
+    runner_version: int | None = None
     steps: list[Step]
     test_steps: list[Step] | None = None
 
@@ -65,6 +66,8 @@ class Run(BaseModel):
     id: str
     workflow_id: str
     workflow_name: str
+    runner_version: int | None = None
+    runner_source_sha256: str | None = None
     build_id: str | None = None
     build_name: str | None = None
     repository: str | None = None

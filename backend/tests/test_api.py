@@ -655,6 +655,35 @@ def test_runner_execution_plan_stops_when_its_run_phase_fails(tmp_path, monkeypa
     assert workflow.steps_for("test")[0].on_failure == "stop"
 
 
+def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store = store_module.ConsoleStore()
+    initial = store.create_runner(
+        {
+            "id": "versioned-runner",
+            "name": "Versioned runner",
+            "description": "Keeps runner source revisions.",
+            "source": "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n",
+        }
+    )
+    updated = store.update_runner(
+        "versioned-runner",
+        {
+            "name": initial["name"],
+            "description": initial["description"],
+            "source": "from orbit_sdk import runner\n@runner.phase('verify')\ndef verify(ctx): ctx.log('v2')\n",
+        },
+    )
+
+    assert initial["version"] == 1
+    assert [item["version"] for item in initial["versions"]] == [1]
+    assert [item["version"] for item in updated["versions"]] == [1, 2]
+    assert store._runner_entry_path("versioned-runner", 1).read_text(encoding="utf-8") == initial["source"]
+    assert "v2" in store._runner_entry_path("versioned-runner", 2).read_text(encoding="utf-8")
+    assert [step.phase for step in store._runner_execution_plan("versioned-runner", 1).steps] == ["execute"]
+    assert [step.phase for step in store._runner_execution_plan("versioned-runner", 2).steps] == ["verify"]
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()

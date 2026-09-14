@@ -44,6 +44,7 @@ type Draft = {
   id: string;
   name: string;
   runner_id: string;
+  runner_version: number | null;
   execution_environment_id: string;
   target_environment_id: string;
   purpose: string;
@@ -86,6 +87,7 @@ type BuildWizardCopy = {
   buildId: LabelCopy;
   buildName: LabelCopy;
   runner: LabelCopy;
+  runnerVersion: LabelCopy & { latest: string };
   targetEnvironment: LabelCopy;
   executionEnvironment: LabelCopy;
   purpose: LabelCopy;
@@ -143,6 +145,7 @@ const empty: Draft = {
   id: "",
   name: "",
   runner_id: "",
+  runner_version: null,
   execution_environment_id: "",
   target_environment_id: "",
   purpose: "",
@@ -171,6 +174,7 @@ const draftOf = (b: Build, copy = false): Draft => ({
   id: copy ? "" : b.id,
   name: copy ? `${b.name} copy` : b.name,
   runner_id: b.runner_id,
+  runner_version: b.runner_version ?? null,
   execution_environment_id: b.execution_environment_id ?? "",
   target_environment_id: b.target_environment_id ?? "",
   purpose: b.purpose,
@@ -378,7 +382,7 @@ function Direct({
           <Field label={copy.runner.label} description={copy.runner.hint}>
             <select
               value={d.runner_id}
-              onChange={(e) => setD({ ...d, runner_id: e.target.value })}
+              onChange={(e) => setD({ ...d, runner_id: e.target.value, runner_version: null })}
             >
               <option value="" />
               {runners.map((x) => (
@@ -386,6 +390,12 @@ function Direct({
                   {x.name}
                 </option>
               ))}
+            </select>
+          </Field>
+          <Field label={copy.runnerVersion.label} description={copy.runnerVersion.hint}>
+            <select value={d.runner_version ?? "latest"} onChange={(e) => setD({ ...d, runner_version: e.target.value === "latest" ? null : Number(e.target.value) })} disabled={!d.runner_id}>
+              <option value="latest">{copy.runnerVersion.latest}</option>
+              {(runners.find((item) => item.id === d.runner_id)?.versions ?? []).slice().sort((a, b) => b.version - a.version).map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
             </select>
           </Field>
           <Field

@@ -147,6 +147,11 @@
         "label": "Runner",
         "hint": "The reusable automation runner that performs this evaluation."
       },
+      "runnerVersion": {
+        "label": "Runner version",
+        "hint": "Latest follows future Runner saves; a selected version stays fixed for this build.",
+        "latest": "Latest"
+      },
       "targetEnvironment": {
         "label": "Target environment",
         "hint": "The target application or service being evaluated."
@@ -508,6 +513,10 @@
       "id": "ID",
       "name": "Name",
       "description": "Description",
+      "version": "Base version for the new save",
+      "versionHint": "Save the selected code as a new version. Saved versions remain unchanged.",
+      "current": "current",
+      "initialVersion": "New runners are created as v1.",
       "source": "Runner code",
       "saveAndOpen": "Save and open in VS Code",
       "save": "Save runner",

@@ -146,6 +146,11 @@
         "label": "러너",
         "hint": "이 평가를 수행하는 재사용 가능한 자동화 러너입니다."
       },
+      "runnerVersion": {
+        "label": "러너 버전",
+        "hint": "최신은 이후 러너 저장을 따르고, 선택한 버전은 이 빌드에 고정됩니다.",
+        "latest": "최신"
+      },
       "targetEnvironment": {
         "label": "대상 환경",
         "hint": "평가 대상 애플리케이션 또는 서비스입니다."
@@ -507,6 +512,10 @@
       "id": "ID",
       "name": "이름",
       "description": "설명",
+      "version": "새 버전의 기준",
+      "versionHint": "선택한 코드에서 새 버전을 저장합니다. 저장된 버전은 변경되지 않습니다.",
+      "current": "현재",
+      "initialVersion": "새 러너는 v1으로 생성됩니다.",
       "source": "러너 코드",
       "saveAndOpen": "저장 후 VS Code에서 열기",
       "save": "러너 저장",
