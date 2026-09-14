@@ -387,6 +387,7 @@
     "cycle": {
       "title": "사이클 개선 AI",
       "build": "빌드",
+      "range": "기간",
       "description": "선택한 빌드의 PDCA 흐름, 제안 결정, 점수 추세를 함께 진단합니다.",
       "titleHint": "선택한 빌드의 PDCA 흐름과 운영 병목을 진단합니다.",
       "health": "사이클 건강도",

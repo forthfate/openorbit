@@ -688,14 +688,15 @@ function CycleImprovementAI({
   const [data, setData] = useState<ImprovementAnalytics>(),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
+    [hours, setHours] = useState(720),
     t = locales[locale].cycle;
   useEffect(() => {
-    api<ImprovementAnalytics>("/api/improvement-analytics?hours=720")
+    api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`)
       .then((next) => {
         setData(next);
       })
       .catch(() => setData(undefined));
-  }, []);
+  }, [hours]);
   const trend = data?.iteration_trends.find((item) => item.build_id === build),
     scores = (trend?.points ?? [])
       .map((item) => item.score)
@@ -713,6 +714,7 @@ function CycleImprovementAI({
     api<{ response: string }>("/api/cycle-improvements/analyze", "POST", {
       build_id: build,
       locale,
+      hours,
     })
       .then((result) => setAnalysis(result.response))
       .catch((error) => setAnalysis(error.message))
@@ -724,6 +726,15 @@ function CycleImprovementAI({
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+          </select>
+        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (

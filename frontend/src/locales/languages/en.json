@@ -388,6 +388,7 @@
     "cycle": {
       "title": "Cycle Improvement AI",
       "build": "Build",
+      "range": "Range",
       "description": "Diagnose the selected build’s PDCA flow, proposal decisions, and score trend together.",
       "titleHint": "Diagnose the selected build’s PDCA flow and operating bottlenecks.",
       "health": "Cycle health",
