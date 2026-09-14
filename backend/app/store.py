@@ -79,11 +79,11 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 
 Your final response must be exactly one JSON object:
 {
-  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"purpose\":\"string\",\"rationale\":\"string\",\"observation\":\"string\",\"decision\":\"string\",\"next_action\":\"string\"}, \"behavior_summary\":\"legacy string, only when the evaluated target is an AI\"},
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"expectation\":\"string\",\"interpretation\":\"string\",\"evidence\":\"string\",\"impact\":\"string\",\"next_step\":\"string\"}},
   \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
-For an evaluated AI, include behavior_trace and fill every field. It is an evidence-backed activity record for a person reviewing the run: purpose explains why this check or action matters now; rationale names only the observable evidence or declared plan behind it; observation records the material change or finding in this iteration; decision records what the target AI did or deliberately did not do; next_action states the specific next check or hypothesis. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics (navigation, waits, screenshots, or generic control inspection). When there is no material change, say so briefly and make next_action explain how the next check will differ or escalate. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is optional legacy compatibility only; prefer behavior_trace. Always include both array keys, using empty arrays when there are no items."""
+For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning: persona_goal is the persona's stated goal in this session; expectation is the information or reassurance the persona needs before safely proceeding; interpretation is the persona's concise, first-person reading of the rendered experience; evidence states only the observable source-backed facts that support that reading; impact states how the experience affects the persona's confidence or ability to continue; next_step is the specific safe next check or journey step. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics such as navigation, waits, screenshots, or generic control inspection. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
 LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -1190,7 +1190,19 @@ if __name__ == "__main__": runner.main()
                             {
                                 "behavior_trace": display_fields(
                                     behavior_trace,
-                                    ("purpose", "rationale", "observation", "decision", "next_action"),
+                                    (
+                                        "persona_goal",
+                                        "expectation",
+                                        "interpretation",
+                                        "evidence",
+                                        "impact",
+                                        "next_step",
+                                        "purpose",
+                                        "rationale",
+                                        "observation",
+                                        "decision",
+                                        "next_action",
+                                    ),
                                 )
                             }
                             if isinstance(behavior_trace, dict)
@@ -4547,13 +4559,20 @@ if __name__ == "__main__":
                 raise ValueError("supervisor evaluation behavior_summary is invalid")
             if "behavior_trace" in evaluation:
                 trace = evaluation["behavior_trace"]
-                trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
+                persona_trace_fields = {
+                    "persona_goal",
+                    "expectation",
+                    "interpretation",
+                    "evidence",
+                    "impact",
+                    "next_step",
+                }
+                legacy_trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
                 if (
                     not isinstance(trace, dict)
-                    or set(trace) != trace_fields
-                    or not all(
-                        isinstance(trace[field], str) and trace[field].strip() for field in trace_fields
-                    )
+                    or frozenset(trace)
+                    not in {frozenset(persona_trace_fields), frozenset(legacy_trace_fields)}
+                    or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
         return result

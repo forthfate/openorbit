@@ -850,7 +850,18 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
     assert result["evaluation"]["score"] == 8.0
 
 
-def test_supervisor_result_accepts_a_structured_ai_behavior_trace():
+def test_supervisor_result_accepts_a_persona_journey_trace():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
+        '{"persona_goal":"Confirm the account is usable","expectation":"A visible balance",'
+        '"interpretation":"I cannot confirm my balance yet","evidence":"The balance is still loading",'
+        '"impact":"I cannot safely continue","next_step":"Wait for the balance, then check the holdings"}},'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["evaluation"]["behavior_trace"]["interpretation"] == "I cannot confirm my balance yet"
+
+
+def test_supervisor_result_accepts_a_legacy_behavior_trace_for_existing_runs():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
         '{"purpose":"Verify recovery","rationale":"The prior attempt timed out","observation":"A retry completed",'
