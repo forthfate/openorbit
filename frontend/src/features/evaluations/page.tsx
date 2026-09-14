@@ -44,6 +44,8 @@ const phases = [
   "after_each",
   "after_all",
 ] as const;
+const phaseLabel = (phase: string) =>
+  phase.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const time = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -287,7 +289,9 @@ export function EvaluationsPage({
     if (run.status === "succeeded") return l.complete;
     if (run.status === "cancelled") return l.cancelled;
     if (run.status === "failed") return l.failed;
-    return run.current_phase === "waiting" ? l.waiting : (run.current_phase ?? "—");
+    return run.current_phase === "waiting"
+      ? l.waiting
+      : (run.current_phase ? phaseLabel(run.current_phase) : "—");
   };
   const builds = useMemo(
     () => [
@@ -888,7 +892,7 @@ export function EvaluationsPage({
                 </option>
                 {availablePhases.map((phase) => (
                   <option key={phase} value={phase}>
-                    {phase}
+                    {phaseLabel(phase)}
                   </option>
                 ))}
                 <option value="waiting">{l.waiting}</option>
@@ -1036,7 +1040,7 @@ export function EvaluationsPage({
                     className={phaseTab === phase ? "active" : ""}
                     onClick={() => setPhaseTab(phase)}
                   >
-                    {phase}
+                    {phaseLabel(phase)}
                   </button>
                 ))}
               </div>
