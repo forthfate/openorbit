@@ -85,7 +85,7 @@ const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { behavior_summary?: string; behavior_trace?: { persona_goal?: string; expectation?: string; interpretation?: string; evidence?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string; next_action?: string }; summary?: string };
+    evaluation: { behavior_summary?: string; behavior_trace?: { persona_goal?: string; current_action?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string }; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };

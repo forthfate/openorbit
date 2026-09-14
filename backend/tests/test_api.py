@@ -882,6 +882,21 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
 def test_supervisor_result_accepts_a_persona_journey_trace():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
+        '{"persona_goal":"I want to confirm my account is usable",'
+        '"current_action":"I checked my balance but it is still loading",'
+        '"next_action":"I will wait for the balance, then check my holdings",'
+        '"evidence":"The visible balance is still loading"}},'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert (
+        result["evaluation"]["behavior_trace"]["current_action"]
+        == "I checked my balance but it is still loading"
+    )
+
+
+def test_supervisor_result_accepts_an_expanded_persona_trace_for_existing_runs():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
         '{"persona_goal":"Confirm the account is usable","expectation":"A visible balance",'
         '"interpretation":"I cannot confirm my balance yet","evidence":"The balance is still loading",'
         '"impact":"I cannot safely continue","next_step":"Wait for the balance, then check the holdings"}},'

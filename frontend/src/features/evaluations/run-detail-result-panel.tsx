@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { FileSearch } from "lucide-react";
 import { intlLocales, type Locale } from "../../locales";
 
 type Messages = Record<string, string | undefined>;
@@ -7,7 +8,7 @@ type BehaviorTrace = {
   iteration: number;
   recordedAt?: string;
   summary?: string;
-  trace?: { persona_goal?: string; expectation?: string; interpretation?: string; evidence?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string; next_action?: string };
+  trace?: { persona_goal?: string; current_action?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string };
 };
 const time = (locale: Locale, value?: string) => value ? new Intl.DateTimeFormat(intlLocales[locale], { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value)) : "—";
 
@@ -19,10 +20,15 @@ function ResultList({ items, kind, locale, empty }: { items: RecordItem[]; kind:
 }
 
 export function EvaluationResultPanel({ error, records, summaries, improvements, issues, l, locale }: { error?: ReactNode; records: unknown[]; summaries: BehaviorTrace[]; improvements: RecordItem[]; issues: RecordItem[]; l: Messages; locale: Locale }) {
+  const [evidenceIteration, setEvidenceIteration] = useState<number | null>(null);
   const traceFields = (item: BehaviorTrace) => {
     if (!item.trace) return [];
     const trace = item.trace;
-    const fields = trace.persona_goal ? [
+    const fields = trace.current_action ? [
+      [l.tracePersonaGoal, trace.persona_goal],
+      [l.traceCurrentAction, trace.current_action],
+      [l.traceNextAction, trace.next_action],
+    ] : trace.persona_goal ? [
       [l.tracePersonaGoal, trace.persona_goal],
       [l.traceExpectation, trace.expectation],
       [l.traceInterpretation, trace.interpretation],
@@ -38,5 +44,5 @@ export function EvaluationResultPanel({ error, records, summaries, improvements,
     ];
     return fields.filter((field): field is [string | undefined, string] => Boolean(field[1]));
   };
-  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items">{summaries.map((item) => <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span><small>Iteration</small><b>#{item.iteration}</b></span></div></article>)}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}</>;
+  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items">{summaries.map((item) => <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <><dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{evidenceIteration === item.iteration && item.trace?.evidence && <section className="result-trace-evidence"><strong>{l.traceEvidence}</strong><p>{item.trace.evidence}</p></section>}</> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span><small>Iteration</small><b>#{item.iteration}</b></span>{item.trace?.evidence && <button className="ghost icon-button" type="button" aria-label={evidenceIteration === item.iteration ? l.hideEvidence : l.viewEvidence} title={evidenceIteration === item.iteration ? l.hideEvidence : l.viewEvidence} onClick={() => setEvidenceIteration((current) => current === item.iteration ? null : item.iteration)}><FileSearch size={16} /></button>}</div></article>)}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}</>;
 }
