@@ -1103,7 +1103,6 @@ export function EvaluationsPage({
                 record={translateSupervisorRecord(supervision)}
                 l={l}
                 telemetry={telemetry}
-                iteration={iterationTab}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
             </RunDetailTabPanel>
