@@ -72,6 +72,7 @@ class Run(BaseModel):
     build_name: str | None = None
     repository: str | None = None
     supervisor_profile_name: str | None = None
+    output_locale: str | None = None
     prompt_source: str | None = None
     prompt_snapshot: str | None = None
     execution_mode: Literal["run", "test"] = "run"

@@ -2864,7 +2864,7 @@ if __name__ == "__main__":
         temporary.replace(CONFIG / "prompt-templates.yaml")
         return template
 
-    def _assembled_prompt(self, build: dict[str, Any]) -> tuple[str, str]:
+    def _assembled_prompt(self, build: dict[str, Any], output_locale: str | None = None) -> tuple[str, str]:
         """Resolve the global manager contract and the build's evaluation policy."""
         template_id = build.get("manager_template_id", "manager-default-v1")
         template = next((item for item in self.prompt_templates() if item.get("id") == template_id), None)
@@ -2910,15 +2910,27 @@ if __name__ == "__main__":
             )
             if part
         )
+        resolved_output_locale = (
+            str(output_locale or self.application_settings()["manager_output_locale"]).strip() or "en"
+        )
+        output_language_name = {
+            "en": "English",
+            "ja": "Japanese",
+            "ko": "Korean",
+        }.get(resolved_output_locale.lower().split("-", 1)[0], resolved_output_locale)
         assembled = "\n\n".join(
             part
             for part in (
                 operational.replace(MANAGER_PROMPT_SLOT, manager_policy).replace(
                     MANAGER_OUTPUT_LANGUAGE_SLOT,
                     "# Output language\n"
-                    "Write all human-readable string values in the configured application language "
-                    f"({self.application_settings()['manager_output_locale']}). "
-                    "Keep JSON keys, field names, and required enum values exactly as specified.",
+                    "Write every human-readable JSON string value in "
+                    f"{output_language_name} ({resolved_output_locale}). "
+                    "This applies even when the persona, rendered UI, or source evidence uses another language; "
+                    "do not switch to the persona's language for behavior_trace, summaries, improvements, or issues. "
+                    "If another instruction asks you to preserve an issue title, evidence, or reproduction, "
+                    "preserve its facts and severity rather than its source-language wording. "
+                    "Keep JSON keys, field names, required enum values, and verbatim UI strings quoted as evidence exactly as specified.",
                 ),
                 f"# Evaluation context\nRepository: {build.get('repository', '')}\n{legacy_context}",
                 case_text,
@@ -4030,6 +4042,7 @@ if __name__ == "__main__":
         supervisor_profile_name: str | None = None,
         prompt_source: str | None = None,
         prompt_snapshot: str | None = None,
+        output_locale: str | None = None,
         loop_limit: int = 1,
         timezone: str = "UTC",
         schedule_enabled: bool = False,
@@ -4069,6 +4082,7 @@ if __name__ == "__main__":
             build_name=build_name,
             repository=repository,
             supervisor_profile_name=supervisor_profile_name,
+            output_locale=output_locale,
             prompt_source=prompt_source,
             prompt_snapshot=prompt_snapshot,
             execution_mode=execution_mode,
@@ -4695,7 +4709,7 @@ if __name__ == "__main__":
         supervisor_prompt = run.prompt_snapshot or ""
         if run.build_id:
             try:
-                _, supervisor_prompt = self._assembled_prompt(self.build(run.build_id))
+                _, supervisor_prompt = self._assembled_prompt(self.build(run.build_id), run.output_locale)
             except ValueError:
                 # The original immutable run snapshot remains a safe fallback
                 # if an operator has made the prompt temporarily unreadable.
@@ -5257,14 +5271,19 @@ if __name__ == "__main__":
                 stopped.append(self.cancel(run.id))
         return stopped
 
-    def invoke_remote_build(self, build_id: str, execution_mode: str = "run") -> Run:
+    def invoke_remote_build(
+        self, build_id: str, execution_mode: str = "run", output_locale: str | None = None
+    ) -> Run:
         build = self.build(build_id)
         executor = build.get("executor", {})
         if not build.get("enabled"):
             raise ValueError("This build is not enabled.")
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
-        prompt_source, prompt_snapshot = self._assembled_prompt(build)
+        resolved_output_locale = (
+            str(output_locale or self.application_settings()["manager_output_locale"]).strip() or "en"
+        )
+        prompt_source, prompt_snapshot = self._assembled_prompt(build, resolved_output_locale)
         if executor.get("type") != "remote-http":
             return self.create_run(
                 build["runner_id"],
@@ -5273,6 +5292,7 @@ if __name__ == "__main__":
                 build_id=build["id"],
                 build_name=build["name"],
                 supervisor_profile_name=build.get("model_profile_name"),
+                output_locale=resolved_output_locale,
                 prompt_source=prompt_source,
                 prompt_snapshot=prompt_snapshot,
                 loop_limit=1 if execution_mode == "test" else int(build.get("run_limit", 1)),
@@ -5314,6 +5334,7 @@ if __name__ == "__main__":
             build_id=build["id"],
             build_name=build["name"],
             supervisor_profile_name=build.get("model_profile_name"),
+            output_locale=resolved_output_locale,
             execution_mode=execution_mode,
             execution_type="invoke",
             status="queued",
@@ -5330,11 +5351,11 @@ if __name__ == "__main__":
         threading.Thread(target=self._execute_remote, args=(run.id, executor), daemon=True).start()
         return run
 
-    def test_build(self, build_id: str) -> Run:
+    def test_build(self, build_id: str, output_locale: str | None = None) -> Run:
         build = self.build(build_id)
         if not build.get("enabled"):
             raise ValueError("This build is not enabled.")
-        return self.invoke_remote_build(build_id, "test")
+        return self.invoke_remote_build(build_id, "test", output_locale=output_locale)
 
     def _execute_remote(self, run_id: str, executor: dict[str, Any]) -> None:
         run = self._load(run_id)

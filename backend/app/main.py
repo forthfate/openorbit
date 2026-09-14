@@ -353,14 +353,20 @@ def workspaces(path: str | None = None):
     return safely(lambda: store.workspaces(path))
 
 
+class BuildRunRequest(BaseModel):
+    output_locale: str = Field(default="", max_length=35, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
+
+
 @app.post("/api/builds/{build_id}/runs")
-def invoke_build(build_id: str):
-    return safely(lambda: store.invoke_remote_build(build_id))
+def invoke_build(build_id: str, values: BuildRunRequest | None = None):
+    return safely(
+        lambda: store.invoke_remote_build(build_id, output_locale=values.output_locale if values else None)
+    )
 
 
 @app.post("/api/builds/{build_id}/tests")
-def test_build(build_id: str):
-    return safely(lambda: store.test_build(build_id))
+def test_build(build_id: str, values: BuildRunRequest | None = None):
+    return safely(lambda: store.test_build(build_id, output_locale=values.output_locale if values else None))
 
 
 @app.get("/api/build-tests/{session_id}")
