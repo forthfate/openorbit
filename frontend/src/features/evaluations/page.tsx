@@ -972,7 +972,7 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.phase}</small>
-              <strong>{finalPhase(selected)}</strong>
+              <StatusBadge value={selected.status} label={finalPhase(selected)} />
             </div>
             <div>
               <small>{t.elapsed}</small>
