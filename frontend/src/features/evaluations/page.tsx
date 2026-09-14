@@ -489,11 +489,7 @@ export function EvaluationsPage({
     {
       id: "phase",
       header: t.phase,
-      render: (r) => (
-        <span className={`run-phase run-phase--${r.status}`}>
-          {finalPhase(r)}
-        </span>
-      ),
+      render: (r) => <StatusBadge value={r.status} label={finalPhase(r)} />,
       sortValue: (r) => finalPhase(r),
     },
     { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—", sortValue: (r) => r.pid ?? r.last_pid ?? -1 },
