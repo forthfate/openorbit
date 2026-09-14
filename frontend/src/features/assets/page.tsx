@@ -694,7 +694,7 @@ type ProfileCatalogCopy = {
   empty: string;
   delete: string;
 };
-function ProfileCatalog({
+export function ProfileCatalog({
   locale,
   profiles,
   settings,
