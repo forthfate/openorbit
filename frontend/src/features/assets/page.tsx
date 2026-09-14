@@ -391,7 +391,7 @@ function RunnerModal({
     id: "empty",
     name: copy.empty,
     description: copy.emptyDescription,
-    source: "from orbit_sdk import runner\n\n\n@runner.phase(\"before_all\")\ndef before_all(ctx):\n    pass\n\n\n@runner.phase(\"before_each\")\ndef before_each(ctx):\n    pass\n\n\n@runner.phase(\"execute\")\ndef execute(ctx):\n    pass\n\n\n@runner.phase(\"verify\")\ndef verify(ctx):\n    pass\n\n\n@runner.phase(\"after_each\")\ndef after_each(ctx):\n    pass\n\n\n@runner.phase(\"after_all\")\ndef after_all(ctx):\n    pass\n\n\nif __name__ == \"__main__\":\n    runner.main()\n",
+    source: "from orbit_sdk import runner\n\n\n@runner.phase(\"before_all\")\ndef before_all(ctx):\n    # TODO: Add one-time setup before the run starts.\n    pass\n\n\n@runner.phase(\"before_each\")\ndef before_each(ctx):\n    # TODO: Add setup for each iteration.\n    pass\n\n\n@runner.phase(\"execute\")\ndef execute(ctx):\n    # TODO: Add the main work for this iteration.\n    pass\n\n\n@runner.phase(\"verify\")\ndef verify(ctx):\n    # TODO: Verify the result of this iteration.\n    pass\n\n\n@runner.phase(\"after_each\")\ndef after_each(ctx):\n    # TODO: Add cleanup for each iteration.\n    pass\n\n\n@runner.phase(\"after_all\")\ndef after_all(ctx):\n    # TODO: Add one-time cleanup after the run ends.\n    pass\n\n\nif __name__ == \"__main__\":\n    runner.main()\n",
   };
   const templateOptions = [emptyTemplate, ...templates];
   useEffect(() => {
