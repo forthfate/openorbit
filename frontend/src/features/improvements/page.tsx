@@ -785,6 +785,15 @@ function StoredState({
       .then(setStates)
       .catch(() => setStates([]));
   }, [buildId]);
+  const renderStateValue = (value: unknown, label?: string): ReactNode => {
+    if (Array.isArray(value)) {
+      return <details className="stored-state__tree-node" open={label === "journey_handoff"}><summary>{label ?? "Array"}<small>{value.length} items</small></summary><ul>{value.map((item, index) => <li key={index}>{renderStateValue(item, String(index))}</li>)}</ul></details>;
+    }
+    if (value && typeof value === "object") {
+      return <details className="stored-state__tree-node" open={label === "journey_handoff"}><summary>{label ?? "Object"}<small>{Object.keys(value as Record<string, unknown>).length} fields</small></summary><ul>{Object.entries(value as Record<string, unknown>).map(([key, item]) => <li key={key}>{renderStateValue(item, key)}</li>)}</ul></details>;
+    }
+    return <span className="stored-state__tree-leaf"><strong>{label}</strong><code>{value === null ? "null" : String(value)}</code></span>;
+  };
   return (
     <section className="panel stored-state">
       <PanelHeader title={t.storedState} description={t.storedStateHint} />
@@ -808,11 +817,10 @@ function StoredState({
                         ? value as Record<string, unknown>
                         : {};
                       return (
-                        <div key={persona}>
-                          <strong>{persona}</strong>
-                          <span>{String(record.last_action_at ?? "—")}</span>
-                          <span>{String(record.next_check ?? record.last_summary ?? "—")}</span>
-                        </div>
+                        <details className="stored-state__persona" key={persona}>
+                          <summary><strong>{persona}</strong><span>{String(record.last_action_at ?? "—")}</span><span>{String(record.active ?? "—")}</span></summary>
+                          <div className="stored-state__tree"><ul className="stored-state__tree-root">{Object.entries(record).map(([key, item]) => <li key={key}>{renderStateValue(item, key)}</li>)}</ul></div>
+                        </details>
                       );
                     })}
                   </div>
