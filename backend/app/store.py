@@ -2155,17 +2155,61 @@ if __name__ == "__main__":
             metadata = path.with_suffix(".json")
             if metadata.exists():
                 values = json.loads(metadata.read_text(encoding="utf-8"))
-                assets.append({**values, "source": path.read_text(encoding="utf-8")})
+                source = path.read_text(encoding="utf-8")
+                versions = values.get("versions") or [
+                    {
+                        "version": int(values.get("version", 1)),
+                        "source": source,
+                        "created_at": values.get("created_at"),
+                    }
+                ]
+                latest = max(versions, key=lambda item: int(item.get("version", 0)))
+                assets.append(
+                    {
+                        **values,
+                        "version": int(latest["version"]),
+                        "versions": versions,
+                        "source": str(latest["source"]),
+                    }
+                )
         for directory in sorted(path for path in RUNNERS.iterdir() if path.is_dir()):
             entry, metadata = directory / "runner.py", directory / "runner.json"
             if entry.exists() and metadata.exists():
                 values = json.loads(metadata.read_text(encoding="utf-8"))
-                assets.append({**values, "source": entry.read_text(encoding="utf-8"), "bundle": True})
+                source = entry.read_text(encoding="utf-8")
+                versions = values.get("versions") or [
+                    {
+                        "version": int(values.get("version", 1)),
+                        "source": source,
+                        "created_at": values.get("created_at"),
+                    }
+                ]
+                latest = max(versions, key=lambda item: int(item.get("version", 0)))
+                assets.append(
+                    {
+                        **values,
+                        "version": int(latest["version"]),
+                        "versions": versions,
+                        "source": str(latest["source"]),
+                        "bundle": True,
+                    }
+                )
         return assets
 
-    @staticmethod
-    def _runner_entry_path(runner_id: str) -> Path:
+    def _runner_entry_path(self, runner_id: str, version: int | None = None) -> Path:
         """Return a bundle entrypoint when present, otherwise the legacy runner file."""
+        if version is not None:
+            runner = self._runner(runner_id)
+            selected = next(
+                (item for item in runner.get("versions", []) if int(item.get("version", 0)) == version), None
+            )
+            if selected is None:
+                raise ValueError(f"runner version {version} does not exist")
+            path = RUNNERS / ".versions" / runner_id / f"v{version}.py"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text(str(selected["source"]), encoding="utf-8")
+            return path
         bundled = RUNNERS / runner_id / "runner.py"
         return bundled if bundled.is_file() else RUNNERS / f"{runner_id}.py"
 
@@ -2201,12 +2245,22 @@ if __name__ == "__main__":
     def _write_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
+        existing_versions = list(values.get("versions") or [])
+        version = max((int(item.get("version", 0)) for item in existing_versions), default=0) + 1
+        version_record = {
+            "version": version,
+            "source": source,
+            "sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+            "created_at": now().isoformat(),
+        }
         asset = {
             "id": runner_id,
             "name": str(values["name"]).strip(),
             "description": str(values["description"]).strip(),
             "template_id": str(values.get("template_id", "custom")),
             "created_at": str(values.get("created_at") or now().isoformat()),
+            "version": version,
+            "versions": [*existing_versions, version_record],
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
@@ -2225,7 +2279,7 @@ if __name__ == "__main__":
 
     def open_runner_in_vscode(self, runner_id: str) -> dict[str, str]:
         self._runner(runner_id)
-        self._open_in_vscode(self._runner_entry_path(runner_id))
+        self._open_in_vscode(self._runner_entry_path(runner_id, int(self._runner(runner_id)["version"])))
         return {"status": "opened"}
 
     def delete_runner(self, runner_id: str) -> None:
@@ -2235,13 +2289,26 @@ if __name__ == "__main__":
         (RUNNERS / f"{runner_id}.py").unlink(missing_ok=True)
         (RUNNERS / f"{runner_id}.json").unlink(missing_ok=True)
 
-    def _runner_execution_plan(self, runner_id: str) -> Workflow:
+    def _runner_execution_plan(self, runner_id: str, runner_version: int | None = None) -> Workflow:
         """Build the lifecycle declared by a runner without a workflow asset."""
         runner = self._runner(runner_id)
+        source = runner["source"]
+        if runner_version is not None:
+            selected = next(
+                (
+                    item
+                    for item in runner.get("versions", [])
+                    if int(item.get("version", 0)) == runner_version
+                ),
+                None,
+            )
+            if selected is None:
+                raise ValueError(f"runner version {runner_version} does not exist")
+            source = str(selected["source"])
         lifecycle_order = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
         declared = {
             PHASE_ALIASES.get(phase, phase)
-            for phase in re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', runner["source"])
+            for phase in re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', source)
         }
         phases = [phase for phase in lifecycle_order if phase in declared]
         if not phases:
@@ -2251,7 +2318,12 @@ if __name__ == "__main__":
                 id=phase,
                 phase=phase,
                 name=phase,
-                command=[sys.executable, str(self._runner_entry_path(runner_id)), "--phase", phase],
+                command=[
+                    sys.executable,
+                    str(self._runner_entry_path(runner_id, runner_version)),
+                    "--phase",
+                    phase,
+                ],
                 working_directory=str(ROOT),
                 timeout_seconds=86_400 if phase == "execute" else 300,
                 approval="not_required",
@@ -2270,11 +2342,14 @@ if __name__ == "__main__":
             enabled=True,
             risk="medium",
             runner_id=runner_id,
+            runner_version=runner_version or int(runner["version"]),
             steps=steps,
             test_steps=deepcopy(steps),
         )
 
-    def _runner_graph_definition(self, runner_id: str, repository: str | None) -> dict[str, Any] | None:
+    def _runner_graph_definition(
+        self, runner_id: str, repository: str | None, runner_version: int | None = None
+    ) -> dict[str, Any] | None:
         """Read the runner's optional visual-workflow declaration safely."""
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(ROOT / "backend") + (
@@ -2284,7 +2359,7 @@ if __name__ == "__main__":
         environment["ORBIT_APP_DATA"] = str(APP_DATA)
         try:
             result = subprocess.run(
-                [sys.executable, str(self._runner_entry_path(runner_id)), "--graph"],
+                [sys.executable, str(self._runner_entry_path(runner_id, runner_version)), "--graph"],
                 cwd=repository or ROOT,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -2855,6 +2930,11 @@ if __name__ == "__main__":
         if any(build["id"] == build_id for build in self.builds()):
             raise ValueError("같은 ID의 빌드가 이미 있습니다.")
         runner = self._runner(values["runner_id"])
+        runner_version = values.get("runner_version")
+        if runner_version is not None and not any(
+            int(item.get("version", 0)) == int(runner_version) for item in runner.get("versions", [])
+        ):
+            raise ValueError("runner version does not exist")
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
@@ -2884,6 +2964,7 @@ if __name__ == "__main__":
             "name": values["name"],
             "enabled": values["enabled"],
             "runner_id": runner["id"],
+            "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
             "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
@@ -2934,6 +3015,11 @@ if __name__ == "__main__":
         if values["id"] != build_id:
             raise ValueError("build ID cannot be changed")
         runner = self._runner(values["runner_id"])
+        runner_version = values.get("runner_version")
+        if runner_version is not None and not any(
+            int(item.get("version", 0)) == int(runner_version) for item in runner.get("versions", [])
+        ):
+            raise ValueError("runner version does not exist")
         execution_environment, target_environment = self._build_environment_values(values)
         executor = execution_environment["executor"]
         repository_value = str(target_environment["repository"])
@@ -2964,6 +3050,7 @@ if __name__ == "__main__":
             "name": values["name"],
             "enabled": values["enabled"],
             "runner_id": runner["id"],
+            "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
             "target_environment_id": target_environment.get("id", ""),
             "repository": repository_value
@@ -3874,6 +3961,7 @@ if __name__ == "__main__":
         self,
         runner_id: str,
         execution_mode: str = "run",
+        runner_version: int | None = None,
         build_id: str | None = None,
         build_name: str | None = None,
         supervisor_profile_name: str | None = None,
@@ -3899,12 +3987,21 @@ if __name__ == "__main__":
     ) -> Run:
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
-        runner = self._runner_execution_plan(runner_id)
+        runner_asset = self._runner(runner_id)
+        resolved_runner_version = runner_version or int(runner_asset["version"])
+        runner = self._runner_execution_plan(runner_id, resolved_runner_version)
+        runner_source = next(
+            item["source"]
+            for item in runner_asset["versions"]
+            if int(item["version"]) == resolved_runner_version
+        )
         needs_approval = False
         run = Run(
             id=uuid.uuid4().hex[:12],
             workflow_id=runner.id,
             workflow_name=runner.name,
+            runner_version=resolved_runner_version,
+            runner_source_sha256=hashlib.sha256(str(runner_source).encode("utf-8")).hexdigest(),
             build_id=build_id,
             build_name=build_name,
             repository=repository,
@@ -3922,7 +4019,7 @@ if __name__ == "__main__":
             start_iteration=max(1, min(start_iteration, max(1, loop_limit))),
             retry_of_run_id=retry_of_run_id,
             retry_mode=retry_mode if retry_mode in {"restart", "resume"} else None,
-            workflow_graph=self._runner_graph_definition(runner_id, repository),
+            workflow_graph=self._runner_graph_definition(runner_id, repository, resolved_runner_version),
             repeat_interval_minutes=max(0, repeat_interval_minutes),
             cadence_mode="fixed" if cadence_mode == "fixed" else "after_completion",
             overrun_policy="interrupt_eval" if overrun_policy == "interrupt_eval" else "wait",
@@ -4123,7 +4220,11 @@ if __name__ == "__main__":
 
     def _execute(self, run_id: str) -> None:
         run = self._load(run_id)
-        workflow = self._runner_execution_plan(run.workflow_id)
+        workflow = (
+            self._runner_execution_plan(run.workflow_id, run.runner_version)
+            if run.runner_version is not None
+            else self._runner_execution_plan(run.workflow_id)
+        )
         resources: dict[str, Any] = {
             "workflow": workflow.model_dump(mode="json"),
             "build": {},
@@ -4154,7 +4255,7 @@ if __name__ == "__main__":
         # Insighta user simulator).  Keep each step's runner directory intact;
         # the build repository is still captured on the Run and in its prompt.
         if workflow.runner_id:
-            runner_path = self._runner_entry_path(workflow.runner_id)
+            runner_path = self._runner_entry_path(workflow.runner_id, run.runner_version)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
                 step.command = [sys.executable, str(runner_path), "--phase", step.phase]
                 step.working_directory = run.repository or str(ROOT)
@@ -5077,7 +5178,8 @@ if __name__ == "__main__":
         if executor.get("type") != "remote-http":
             return self.create_run(
                 build["runner_id"],
-                execution_mode,
+                runner_version=build.get("runner_version"),
+                execution_mode=execution_mode,
                 build_id=build["id"],
                 build_name=build["name"],
                 supervisor_profile_name=build.get("model_profile_name"),
@@ -5104,6 +5206,21 @@ if __name__ == "__main__":
             id=uuid.uuid4().hex[:12],
             workflow_id=build["runner_id"],  # Legacy Run field: stores the direct runner ID.
             workflow_name=self._runner(build["runner_id"])["name"],
+            runner_version=(
+                int(build["runner_version"])
+                if build.get("runner_version") is not None
+                else int(self._runner(build["runner_id"])["version"])
+            ),
+            runner_source_sha256=next(
+                item.get("sha256")
+                for item in self._runner(build["runner_id"])["versions"]
+                if int(item["version"])
+                == (
+                    int(build["runner_version"])
+                    if build.get("runner_version") is not None
+                    else int(self._runner(build["runner_id"])["version"])
+                )
+            ),
             build_id=build["id"],
             build_name=build["name"],
             supervisor_profile_name=build.get("model_profile_name"),
