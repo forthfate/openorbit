@@ -581,8 +581,13 @@
       "succeeded": "Succeeded",
       "failed": "Failed",
       "cancelled": "Cancelled",
-      "running": "Running"
-      ,"selectBuild": "Build"
+      "running": "Running",
+      "selectBuild": "Build",
+      "storedState": "Stored state",
+      "storedStateHint": "Current build-scoped state retained by the runner between executions.",
+      "noStoredState": "No state has been saved for this build yet.",
+      "updated": "Updated",
+      "rawState": "View raw state"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {
@@ -655,7 +660,13 @@
       "score": "Score",
       "decision": "Decision",
       "proposals": "Proposed improvements",
-      "observedBehavior": "AI behavior",
+      "observedBehavior": "Persona journey",
+      "tracePersonaGoal": "Persona goal",
+      "traceExpectation": "Expectation",
+      "traceInterpretation": "Persona interpretation",
+      "traceEvidence": "Observed experience",
+      "traceImpact": "User impact",
+      "traceNextStep": "Next journey step",
       "tracePurpose": "Purpose",
       "traceRationale": "Rationale",
       "traceObservation": "Observation",

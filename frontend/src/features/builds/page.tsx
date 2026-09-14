@@ -8,6 +8,7 @@ import {
   Play,
   Plus,
   Sparkles,
+  Star,
   TestTube2,
   Trash2,
   Wrench,
@@ -776,6 +777,7 @@ export function BuildsPage(props: {
   onTest: (id: string) => Promise<Run>;
   onCreate: (v: Draft) => Promise<unknown>;
   onUpdate: (id: string, v: Draft) => Promise<unknown>;
+  onToggleStar: (id: string, starred: boolean) => Promise<unknown>;
   onDelete: (id: string) => void;
   onQuickStartCreate: (
     id: string,
@@ -798,6 +800,7 @@ export function BuildsPage(props: {
     onTest,
     onCreate,
     onUpdate,
+    onToggleStar,
     onDelete,
     onQuickStartCreate,
     quickStartRequest,
@@ -908,7 +911,23 @@ export function BuildsPage(props: {
       {
         id: "name",
         header: locales[locale].evaluation.name,
-        render: (b) => b.name,
+        render: (b) => (
+          <span className="build-name">
+            <button
+              className={`build-star${b.starred ? " build-star--active" : ""}`}
+              type="button"
+              aria-label={b.starred ? `Unstar ${b.name}` : `Star ${b.name}`}
+              title={b.starred ? `Unstar ${b.name}` : `Star ${b.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                void onToggleStar(b.id, !b.starred);
+              }}
+            >
+              <Star size={16} fill={b.starred ? "currentColor" : "none"} />
+            </button>
+            {b.name}
+          </span>
+        ),
         sortValue: (b) => b.name,
       },
       {

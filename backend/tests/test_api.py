@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import orbit_sdk as sdk
 import pytest
+import yaml
 from app import main as main_module
 from app import providers
 from app import store as store_module
@@ -519,6 +520,49 @@ def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tm
     ]
 
 
+def test_linear_runs_complete_supervision_after_each_iteration(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="linear-supervision",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        execution_mode="run",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+        loop_limit=2,
+        iteration_strategy="linear",
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="workflow",
+        name="Workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[Step(id="verify", phase="verify", name="Verify", command=[], working_directory=".")],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    completed_iterations = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, **_kwargs):
+        current = store._load(run_id)
+        current.step_results.append({"phase": step.phase, "loop_index": loop_index})
+        store._save(current)
+
+    def supervise(run_id):
+        completed_iterations.append(store._load(run_id).step_results[-1]["loop_index"])
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+    monkeypatch.setattr(store, "_complete_supervision", supervise)
+
+    store._execute(run.id)
+
+    assert completed_iterations == [1, 2]
+
+
 def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
@@ -684,6 +728,35 @@ def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_pa
     assert [step.phase for step in store._runner_execution_plan("versioned-runner", 2).steps] == ["verify"]
 
 
+def test_bundle_runner_updates_in_place_and_keeps_immutable_versions(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    bundle = store_module.RUNNERS / "bundle-runner"
+    bundle.mkdir(parents=True)
+    initial_source = "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n"
+    (bundle / "runner.py").write_text(initial_source, encoding="utf-8")
+    (bundle / "runner.json").write_text(
+        json.dumps({"id": "bundle-runner", "name": "Bundle", "description": "Versioned bundle."}),
+        encoding="utf-8",
+    )
+    store = store_module.ConsoleStore()
+
+    updated = store.update_runner(
+        "bundle-runner",
+        {
+            "name": "Bundle",
+            "description": "Versioned bundle.",
+            "source": "from orbit_sdk import runner\n@runner.phase('verify')\ndef run(ctx): pass\n",
+        },
+    )
+
+    assert updated["version"] == 2
+    assert [item["version"] for item in updated["versions"]] == [1, 2]
+    assert (bundle / "runner.py").read_text(encoding="utf-8") == updated["source"]
+    assert not (store_module.RUNNERS / "bundle-runner.py").exists()
+    assert [step.phase for step in store._runner_execution_plan("bundle-runner", 1).steps] == ["execute"]
+    assert [step.phase for step in store._runner_execution_plan("bundle-runner", 2).steps] == ["verify"]
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()
@@ -806,7 +879,18 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
     assert result["evaluation"]["score"] == 8.0
 
 
-def test_supervisor_result_accepts_a_structured_ai_behavior_trace():
+def test_supervisor_result_accepts_a_persona_journey_trace():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
+        '{"persona_goal":"Confirm the account is usable","expectation":"A visible balance",'
+        '"interpretation":"I cannot confirm my balance yet","evidence":"The balance is still loading",'
+        '"impact":"I cannot safely continue","next_step":"Wait for the balance, then check the holdings"}},'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["evaluation"]["behavior_trace"]["interpretation"] == "I cannot confirm my balance yet"
+
+
+def test_supervisor_result_accepts_a_legacy_behavior_trace_for_existing_runs():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
         '{"purpose":"Verify recovery","rationale":"The prior attempt timed out","observation":"A retry completed",'
@@ -1117,6 +1201,56 @@ def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):
     assert imported["origin"] == "user"
     assert templates["shared-browser-check"]["source"] == imported["source"]
     assert (tmp_path / "runner-templates" / "shared-browser-check.json").exists()
+
+
+def test_build_star_is_persisted_without_changing_other_build_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path)
+    (tmp_path / "builds.yaml").write_text(
+        "- id: starred-build\n  name: Starred build\n  enabled: true\n  repository: ''\n",
+        encoding="utf-8",
+    )
+
+    updated = store_module.ConsoleStore().set_build_star("starred-build", True)
+
+    assert updated["starred"] is True
+    saved = yaml.safe_load((tmp_path / "builds.yaml").read_text(encoding="utf-8"))[0]
+    assert saved["starred"] is True
+    assert saved["name"] == "Starred build"
+    assert saved["enabled"] is True
+
+
+def test_build_state_exposes_sdk_managed_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    monkeypatch.setattr(store_module, "APP_DATA", tmp_path / "app-data")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "builds.yaml").write_text(
+        "- id: persona-quality\n  name: Persona quality\n  enabled: true\n  repository: ''\n",
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "app-data" / "runner-state" / "persona-quality"
+    state_dir.mkdir(parents=True)
+    (state_dir / "persona-journey.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "updated_at": "2026-09-14T00:00:00+00:00",
+                "run_id": "run-1",
+                "iteration": 2,
+                "value": {"personas": {"haruka": {"stage": 2}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert store_module.ConsoleStore().build_state("persona-quality") == [
+        {
+            "name": "persona-journey",
+            "updated_at": "2026-09-14T00:00:00+00:00",
+            "run_id": "run-1",
+            "iteration": 2,
+            "value": {"personas": {"haruka": {"stage": 2}}},
+        }
+    ]
 
 
 def test_manager_prompt_template_can_be_updated(tmp_path, monkeypatch):

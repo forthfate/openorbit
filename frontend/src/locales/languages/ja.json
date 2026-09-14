@@ -580,8 +580,13 @@
       "succeeded": "成功",
       "failed": "失敗",
       "cancelled": "キャンセル",
-      "running": "実行中"
-      ,"selectBuild": "ビルド"
+      "running": "実行中",
+      "selectBuild": "ビルド",
+      "storedState": "保存済み状態",
+      "storedStateHint": "Runner が実行間で保持する現在のビルド単位の状態です。",
+      "noStoredState": "このビルドにはまだ保存された状態がありません。",
+      "updated": "更新",
+      "rawState": "生の状態を表示"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {
@@ -654,7 +659,13 @@
       "score": "スコア",
       "decision": "判断",
       "proposals": "改善提案",
-      "observedBehavior": "評価対象AIの行動",
+      "observedBehavior": "ペルソナジャーニー",
+      "tracePersonaGoal": "ペルソナの目的",
+      "traceExpectation": "期待",
+      "traceInterpretation": "ペルソナの解釈",
+      "traceEvidence": "確認された体験",
+      "traceImpact": "ユーザーへの影響",
+      "traceNextStep": "次のジャーニー",
       "tracePurpose": "目的",
       "traceRationale": "根拠",
       "traceObservation": "観測",

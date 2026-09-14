@@ -79,11 +79,11 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 
 Your final response must be exactly one JSON object:
 {
-  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"purpose\":\"string\",\"rationale\":\"string\",\"observation\":\"string\",\"decision\":\"string\",\"next_action\":\"string\"}, \"behavior_summary\":\"legacy string, only when the evaluated target is an AI\"},
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"expectation\":\"string\",\"interpretation\":\"string\",\"evidence\":\"string\",\"impact\":\"string\",\"next_step\":\"string\"}},
   \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
-For an evaluated AI, include behavior_trace and fill every field. It is an evidence-backed activity record for a person reviewing the run: purpose explains why this check or action matters now; rationale names only the observable evidence or declared plan behind it; observation records the material change or finding in this iteration; decision records what the target AI did or deliberately did not do; next_action states the specific next check or hypothesis. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics (navigation, waits, screenshots, or generic control inspection). When there is no material change, say so briefly and make next_action explain how the next check will differ or escalate. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is optional legacy compatibility only; prefer behavior_trace. Always include both array keys, using empty arrays when there are no items."""
+For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning: persona_goal is the persona's stated goal in this session; expectation is the information or reassurance the persona needs before safely proceeding; interpretation is the persona's concise, first-person reading of the rendered experience; evidence states only the observable source-backed facts that support that reading; impact states how the experience affects the persona's confidence or ability to continue; next_step is the specific safe next check or journey step. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Compare with the immediately previous iteration when that evidence is supplied. Do not narrate repeated mechanics such as navigation, waits, screenshots, or generic control inspection. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
 LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -1190,7 +1190,19 @@ if __name__ == "__main__": runner.main()
                             {
                                 "behavior_trace": display_fields(
                                     behavior_trace,
-                                    ("purpose", "rationale", "observation", "decision", "next_action"),
+                                    (
+                                        "persona_goal",
+                                        "expectation",
+                                        "interpretation",
+                                        "evidence",
+                                        "impact",
+                                        "next_step",
+                                        "purpose",
+                                        "rationale",
+                                        "observation",
+                                        "decision",
+                                        "next_action",
+                                    ),
                                 )
                             }
                             if isinstance(behavior_trace, dict)
@@ -2239,10 +2251,14 @@ if __name__ == "__main__":
     def update_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         existing = self._runner(runner_id)
         return self._write_runner(
-            runner_id, {**existing, **{key: value for key, value in values.items() if value is not None}}
+            runner_id,
+            {**existing, **{key: value for key, value in values.items() if value is not None}},
+            bundle=bool(existing.get("bundle")),
         )
 
-    def _write_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
+    def _write_runner(
+        self, runner_id: str, values: dict[str, str], *, bundle: bool = False
+    ) -> dict[str, str]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
         existing_versions = list(values.get("versions") or [])
@@ -2264,7 +2280,12 @@ if __name__ == "__main__":
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
-        source_path, metadata_path = RUNNERS / f"{runner_id}.py", RUNNERS / f"{runner_id}.json"
+        source_path, metadata_path = (
+            (RUNNERS / runner_id / "runner.py", RUNNERS / runner_id / "runner.json")
+            if bundle
+            else (RUNNERS / f"{runner_id}.py", RUNNERS / f"{runner_id}.json")
+        )
+        source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text(source, encoding="utf-8")
         metadata_path.write_text(json.dumps(asset, indent=2), encoding="utf-8")
         return {**asset, "source": source}
@@ -2389,6 +2410,7 @@ if __name__ == "__main__":
             # Existing builds predate this optional policy, so leave it off
             # unless an operator explicitly enabled it.
             build.setdefault("require_human_approval_before_apply", False)
+            build.setdefault("starred", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
@@ -2909,6 +2931,31 @@ if __name__ == "__main__":
                 return build
         raise KeyError(build_id)
 
+    def build_state(self, build_id: str) -> list[dict[str, Any]]:
+        """Expose a build's SDK-managed state without treating it as run evidence."""
+        self.build(build_id)
+        directory = APP_DATA / "runner-state" / build_id
+        if not directory.is_dir():
+            return []
+        states = []
+        for path in sorted(directory.glob("*.json")):
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(document, dict) or document.get("schema_version") != 1:
+                continue
+            states.append(
+                {
+                    "name": path.stem,
+                    "updated_at": document.get("updated_at"),
+                    "run_id": document.get("run_id"),
+                    "iteration": document.get("iteration"),
+                    "value": document.get("value"),
+                }
+            )
+        return sorted(states, key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+
     def workspaces(self, path: str | None = None) -> dict[str, Any]:
         if path is None:
             root = Path(Path.cwd().anchor)
@@ -2963,6 +3010,7 @@ if __name__ == "__main__":
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
+            "starred": False,
             "runner_id": runner["id"],
             "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
@@ -3049,6 +3097,7 @@ if __name__ == "__main__":
             "id": build_id,
             "name": values["name"],
             "enabled": values["enabled"],
+            "starred": bool(existing.get("starred", False)),
             "runner_id": runner["id"],
             "runner_version": int(runner_version) if runner_version is not None else None,
             "execution_environment_id": execution_environment.get("id", ""),
@@ -3091,6 +3140,17 @@ if __name__ == "__main__":
         temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
         temporary.replace(CONFIG / "builds.yaml")
         return build
+
+    def set_build_star(self, build_id: str, starred: bool) -> dict[str, Any]:
+        builds = self.builds()
+        index = next((i for i, build in enumerate(builds) if build["id"] == build_id), None)
+        if index is None:
+            raise KeyError(build_id)
+        builds[index]["starred"] = starred
+        temporary = CONFIG / "builds.tmp"
+        temporary.write_text(yaml.safe_dump(builds, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(CONFIG / "builds.yaml")
+        return builds[index]
 
     def delete_build(self, build_id: str) -> None:
         builds = self.builds()
@@ -4377,6 +4437,8 @@ if __name__ == "__main__":
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
+                if run.execution_mode == "run" and self._load(run_id).status == "running":
+                    self._complete_supervision(run_id)
                 if (
                     loop_index < run.loop_limit
                     and run.repeat_interval_minutes
@@ -4506,13 +4568,20 @@ if __name__ == "__main__":
                 raise ValueError("supervisor evaluation behavior_summary is invalid")
             if "behavior_trace" in evaluation:
                 trace = evaluation["behavior_trace"]
-                trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
+                persona_trace_fields = {
+                    "persona_goal",
+                    "expectation",
+                    "interpretation",
+                    "evidence",
+                    "impact",
+                    "next_step",
+                }
+                legacy_trace_fields = {"purpose", "rationale", "observation", "decision", "next_action"}
                 if (
                     not isinstance(trace, dict)
-                    or set(trace) != trace_fields
-                    or not all(
-                        isinstance(trace[field], str) and trace[field].strip() for field in trace_fields
-                    )
+                    or frozenset(trace)
+                    not in {frozenset(persona_trace_fields), frozenset(legacy_trace_fields)}
+                    or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
         return result
