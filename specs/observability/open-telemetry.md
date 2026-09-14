@@ -5,12 +5,15 @@ Status: accepted
 ## Trace model
 
 - One run creates one root trace.
-- Workflow, step, remote-invocation and model calls are spans.
+- Workflow, step, remote-invocation, supervisor evaluation and cycle-review model calls are spans.
 - Dashboard rows expose the local trace ID and its exported spans.
 
 ## Logs and metrics
 
-- Console output is retained in the local run record; OTEL records subprocess completion and failures as span events.
+- Console output and full supervisor prompts/responses are retained in the local run record. OTEL records
+  redaction-safe request/response lengths and SHA-256 fingerprints, model/provider metadata, evaluation
+  outcomes, subprocess lifecycle and output counts, and remote-response metadata as span attributes/events.
+- Prompt, response, console and HTTP-body text are not exported in OTEL records.
 - Dashboard metrics currently include build/run counts and supervisor-feedback summaries.
 
 ## Data protection

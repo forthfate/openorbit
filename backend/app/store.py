@@ -16,10 +16,12 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
 import yaml
+from opentelemetry.trace import Status, StatusCode
 
 from orbit import load_bundle
 
@@ -30,6 +32,15 @@ from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .remote import RemoteInvocation
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _telemetry_text_metadata(prefix: str, value: str) -> dict[str, str | int]:
+    """Describe retained model text without exporting its potentially sensitive contents."""
+    encoded = value.encode("utf-8")
+    return {
+        f"{prefix}.length": len(value),
+        f"{prefix}.sha256": hashlib.sha256(encoded).hexdigest(),
+    }
 
 
 def _application_data_pointer() -> Path:
@@ -4342,6 +4353,10 @@ if __name__ == "__main__":
                 "workflow.id": workflow.id,
                 "run.id": run_id,
                 "workflow.kind": workflow.kind,
+                "orbit.execution.mode": run.execution_mode,
+                "orbit.execution.type": run.execution_type,
+                "orbit.loop.limit": run.loop_limit,
+                "orbit.build.id": run.build_id or "",
             },
         ) as workflow_span:
             trace_id = f"{workflow_span.get_span_context().trace_id:032x}"
@@ -4721,16 +4736,24 @@ if __name__ == "__main__":
             "supervisor.evaluate",
             attributes={
                 "run.id": run_id,
+                "gen_ai.operation.name": "chat",
                 "gen_ai.provider.name": settings.provider,
                 "gen_ai.request.model": settings.model,
                 "orbit.manager.template": (
                     self.build(run.build_id).get("manager_template_id") if run.build_id else ""
                 ),
                 "orbit.iteration": iteration,
+                "orbit.candidate.id": candidate_id or "",
+                "orbit.evidence.step_count": len(cycle_evidence),
+                **_telemetry_text_metadata("gen_ai.request.prompt", supervisor_prompt),
             },
         ) as span:
             try:
-                result = self._validated_supervisor_result(provider.complete(settings, supervisor_prompt))
+                span.add_event("gen_ai.request.sent")
+                response_text = provider.complete(settings, supervisor_prompt)
+                span.set_attributes(_telemetry_text_metadata("gen_ai.response", response_text))
+                span.add_event("gen_ai.response.received")
+                result = self._validated_supervisor_result(response_text)
                 evaluation = result.get("evaluation")
                 if evaluation is not None:
                     threshold = (
@@ -4767,7 +4790,16 @@ if __name__ == "__main__":
                 self._review_cycle_improvement(run, iteration, result, settings, provider)
                 span.set_attribute("orbit.supervisor.improvements", len(result["improvements"]))
                 span.set_attribute("orbit.supervisor.reported_issues", len(result["reported_issues"]))
-                span.add_event("supervisor.response.validated")
+                if isinstance(evaluation, dict):
+                    span.set_attribute("orbit.supervisor.score", evaluation.get("score", 0))
+                    span.set_attribute("orbit.supervisor.approval", str(evaluation.get("approval", "")))
+                span.add_event(
+                    "supervisor.response.validated",
+                    {
+                        "orbit.supervisor.improvements": len(result["improvements"]),
+                        "orbit.supervisor.reported_issues": len(result["reported_issues"]),
+                    },
+                )
             except ValueError as error:
                 run = self._load(run_id)
                 run.supervisor_status, run.supervisor_error, run.updated_at = (
@@ -4786,7 +4818,8 @@ if __name__ == "__main__":
                 )
                 self._save(run)
                 span.record_exception(error)
-                span.add_event("supervisor.response.invalid", {"reason": str(error)})
+                span.set_status(Status(StatusCode.ERROR))
+                span.add_event("supervisor.response.invalid", {"error.type": type(error).__name__})
             except (RuntimeError, requests.RequestException) as error:
                 run = self._load(run_id)
                 run.supervisor_status, run.supervisor_error, run.updated_at = "failed", str(error), now()
@@ -4801,7 +4834,8 @@ if __name__ == "__main__":
                 )
                 self._save(run)
                 span.record_exception(error)
-                span.add_event("supervisor.request.failed", {"reason": str(error)})
+                span.set_status(Status(StatusCode.ERROR))
+                span.add_event("supervisor.request.failed", {"error.type": type(error).__name__})
 
     def _review_cycle_improvement(
         self, run: Run, iteration: int, result: dict[str, Any], settings: ModelSettings, provider: Any
@@ -4819,10 +4853,29 @@ if __name__ == "__main__":
             )
         )
         try:
-            reviewed = json.loads(provider.complete(settings, prompt))
-            interventions = reviewed.get("interventions", []) if isinstance(reviewed, dict) else []
-            if not isinstance(interventions, list):
-                return
+            with self.tracer.start_as_current_span(
+                "supervisor.cycle_review",
+                attributes={
+                    "run.id": run.id,
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.provider.name": settings.provider,
+                    "gen_ai.request.model": settings.model,
+                    "orbit.iteration": iteration,
+                    **_telemetry_text_metadata("gen_ai.request.prompt", prompt),
+                },
+            ) as span:
+                span.add_event("gen_ai.request.sent")
+                response_text = provider.complete(settings, prompt)
+                span.set_attributes(_telemetry_text_metadata("gen_ai.response", response_text))
+                span.add_event("gen_ai.response.received")
+                reviewed = json.loads(response_text)
+                interventions = reviewed.get("interventions", []) if isinstance(reviewed, dict) else []
+                if not isinstance(interventions, list):
+                    span.set_status(Status(StatusCode.ERROR))
+                    span.add_event("supervisor.cycle_review.invalid_response")
+                    return
+                span.set_attribute("orbit.cycle_review.intervention_count", len(interventions))
+                span.add_event("supervisor.cycle_review.validated")
             stored = self.cycle_interventions()
             for intervention in interventions:
                 if not isinstance(intervention, dict) or not isinstance(intervention.get("title"), str):
@@ -4861,6 +4914,11 @@ if __name__ == "__main__":
                 "run.id": run_id,
                 "step.id": step.id,
                 "step.phase": step.phase,
+                "orbit.iteration": loop_index,
+                "orbit.candidate.id": candidate_id or "",
+                "process.command.executable": Path(step.command[0]).name if step.command else "",
+                "process.command.argument_count": max(0, len(step.command) - 1),
+                "process.timeout.seconds": step.timeout_seconds,
             },
         ) as span:
             run = self._load(run_id)
@@ -4922,6 +4980,7 @@ if __name__ == "__main__":
                     creationflags=creation_flags,
                     env=environment,
                 )
+                span.add_event("process.started", {"process.pid": process.pid})
                 interruption_timer: threading.Timer | None = None
                 if (
                     step.phase == "verify"
@@ -5154,7 +5213,13 @@ if __name__ == "__main__":
                 run.pid, run.updated_at = None, now()
                 self._save(run)
                 span.add_event("process.completed", {"process.exit_code": process.returncode})
+                span.set_attribute("process.exit_code", process.returncode)
+                span.set_attribute("process.output.line_count", len(captured_lines))
+                span.set_attribute("orbit.result.has_structured_output", structured_result is not None)
+                span.set_attribute("orbit.result.target_log_count", len(target_logs))
+                span.set_attribute("orbit.result.data_file_count", len(data_files))
                 if process.returncode and step.on_failure == "stop":
+                    span.set_status(Status(StatusCode.ERROR))
                     if step.phase == "verify" and run.advance_requested:
                         run.advance_requested = False
                         self._save(run)
@@ -5169,12 +5234,14 @@ if __name__ == "__main__":
             except subprocess.TimeoutExpired:
                 self._stop_process_group(process, force=True)
                 span.add_event("process.timeout", {"timeout.seconds": step.timeout_seconds})
+                span.set_status(Status(StatusCode.ERROR))
                 if self._load(run_id).status == "cancelled":
                     return
                 self._fail(self._load(run_id), step.id, f"timed out after {step.timeout_seconds}s")
                 return
             except ValueError as error:
-                span.add_event("step.rejected", {"reason": str(error)})
+                span.add_event("step.rejected", {"error.type": type(error).__name__})
+                span.set_status(Status(StatusCode.ERROR))
                 self._fail(self._load(run_id), step.id, str(error))
                 return
             finally:
@@ -5359,7 +5426,16 @@ if __name__ == "__main__":
 
     def _execute_remote(self, run_id: str, executor: dict[str, Any]) -> None:
         run = self._load(run_id)
-        with self.tracer.start_as_current_span("remote.agent.run", attributes={"run.id": run_id}) as span:
+        endpoint = str(executor.get("endpoint", ""))
+        with self.tracer.start_as_current_span(
+            "remote.agent.run",
+            attributes={
+                "run.id": run_id,
+                "http.request.method": str(executor.get("method", "POST")),
+                "server.address": urlparse(endpoint).hostname or "",
+                "http.request.timeout_seconds": int(executor.get("timeout_seconds", 0) or 0),
+            },
+        ) as span:
             run.status, run.current_phase, run.telemetry_trace_id, run.updated_at = (
                 "running",
                 "execute",
@@ -5380,6 +5456,10 @@ if __name__ == "__main__":
                 invocation = RemoteInvocation(**invocation_values)
                 status_code, output = invocation.invoke()
                 span.set_attribute("http.response.status_code", status_code)
+                span.set_attributes(_telemetry_text_metadata("http.response.body", output))
+                span.add_event("remote.response.received", {"http.response.status_code": status_code})
+                if not 200 <= status_code < 300:
+                    span.set_status(Status(StatusCode.ERROR))
                 run = self._load(run_id)
                 run.step_results.append(
                     {"step_id": "execute", "phase": "execute", "http_status": status_code, "output": output}
@@ -5391,4 +5471,6 @@ if __name__ == "__main__":
                     self._complete_supervision(run_id)
             except (ValueError, requests.RequestException) as error:
                 span.record_exception(error)
+                span.set_status(Status(StatusCode.ERROR))
+                span.add_event("remote.request.failed", {"error.type": type(error).__name__})
                 self._fail(self._load(run_id), "execute", str(error))
