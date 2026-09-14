@@ -1525,5 +1525,23 @@ def test_manager_output_language_is_injected_into_the_assembled_prompt(tmp_path,
         encoding="utf-8",
     )
     _, prompt = store._assembled_prompt({"manager_template_id": "manager-default-v1", "repository": "test"})
-    assert "configured application language (ja)" in prompt
+    assert "Japanese (ja)" in prompt
     assert store_module.MANAGER_OUTPUT_LANGUAGE_SLOT not in prompt
+
+
+def test_run_output_language_overrides_the_shared_application_setting(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    store = store_module.ConsoleStore()
+    store.save_application_settings({"manager_output_locale": "en"})
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "prompt-templates.yaml").write_text(
+        "- id: manager-default-v1\n  name: Default\n  version: 1\n  content: Assess evidence.\n",
+        encoding="utf-8",
+    )
+    _, prompt = store._assembled_prompt(
+        {"manager_template_id": "manager-default-v1", "repository": "test"}, "ko"
+    )
+    assert "Korean (ko)" in prompt
+    assert "do not switch to the persona's language" in prompt
+    assert "facts and severity rather than its source-language wording" in prompt

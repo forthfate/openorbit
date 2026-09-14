@@ -75,11 +75,6 @@ export function SettingsPage({
       .then((values) => {
         setPrompt(values.manager_prompt_template);
         setChatProfile(values.chat_model_profile_name);
-        if (values.manager_output_locale !== locale) {
-          return api<ApplicationSettings>("/api/application-settings", "PUT", {
-            manager_output_locale: locale,
-          });
-        }
       })
       .catch(() => pushToast("Unable to load operational prompt."));
   }, [locale, pushToast]);

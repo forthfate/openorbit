@@ -173,14 +173,14 @@ export default function App() {
     });
   };
   const invoke = (id: string) =>
-    api(`/api/builds/${id}/runs`, "POST")
+    api(`/api/builds/${id}/runs`, "POST", { output_locale: locale })
       .then(() => {
         room.setNotice(ui.evaluationStarted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
   const testBuild = (id: string) =>
-    api<Run>(`/api/builds/${id}/tests`, "POST")
+    api<Run>(`/api/builds/${id}/tests`, "POST", { output_locale: locale })
       .then((run) => {
         room.setNotice(ui.evaluationTestStarted, "success");
         return run;
