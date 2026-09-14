@@ -85,6 +85,10 @@ export type ProfileFormCopy = {
   modelDeployment: LabelCopy;
 };
 type BuildWizardCopy = {
+  basics: string;
+  evaluationSetup: string;
+  schedule: string;
+  decisionPolicy: string;
   buildId: LabelCopy;
   buildName: LabelCopy;
   runner: LabelCopy;
@@ -356,7 +360,7 @@ function Direct({
   return (
     <div className="build-wizard">
       <ol className="wizard-steps">
-        {[t.common.build, t.evaluation.criteria, t.ui.review].map(
+        {[copy.basics, copy.evaluationSetup, copy.schedule, copy.decisionPolicy, t.ui.review].map(
           (x, i) => (
             <li key={x} className={step === i + 1 ? "current" : ""}>
               <button onClick={() => setStep(i + 1)}>
@@ -378,6 +382,12 @@ function Direct({
             <input
               value={d.name}
               onChange={(e) => setD({ ...d, name: e.target.value })}
+            />
+          </Field>
+          <Field label={copy.purpose.label} description={copy.purpose.hint}>
+            <textarea
+              value={d.purpose}
+              onChange={(e) => setD({ ...d, purpose: e.target.value })}
             />
           </Field>
           <Field label={copy.runner.label} description={copy.runner.hint}>
@@ -435,12 +445,6 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={copy.purpose.label} description={copy.purpose.hint}>
-            <textarea
-              value={d.purpose}
-              onChange={(e) => setD({ ...d, purpose: e.target.value })}
-            />
-          </Field>
         </div>
       )}
       {step === 2 && (
@@ -491,6 +495,10 @@ function Direct({
               ))}
             </select>
           </Field>
+        </div>
+      )}
+      {step === 3 && (
+        <div className="modal-form">
           <Field label={copy.timezone.label} description={copy.timezone.hint}>
             <input
               value={d.timezone}
@@ -526,6 +534,10 @@ function Direct({
             <label className="build-schedule-toggle"><input type="checkbox" checked={d.schedule_enabled} onChange={(e) => setD({ ...d, schedule_enabled: e.target.checked })} /> {scheduleCopy.enable}</label>
             {d.schedule_enabled && <div className="build-schedule-fields"><div className="build-schedule-days">{scheduleCopy.days.map((day, index) => <label key={day}><input type="checkbox" checked={d.schedule_weekdays.includes(index)} onChange={() => setD({ ...d, schedule_weekdays: d.schedule_weekdays.includes(index) ? d.schedule_weekdays.filter((value) => value !== index) : [...d.schedule_weekdays, index] })} />{day}</label>)}</div><label>{scheduleCopy.start}<input type="time" value={d.schedule_start_time} onChange={(e) => setD({ ...d, schedule_start_time: e.target.value })} /></label><label>{scheduleCopy.end}<input type="time" value={d.schedule_end_time} onChange={(e) => setD({ ...d, schedule_end_time: e.target.value })} /></label></div>}
           </Field>
+        </div>
+      )}
+      {step === 4 && (
+        <div className="modal-form">
           <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
             <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
               <option value="linear">{copy.iterationStrategyLinear}</option>
@@ -569,7 +581,7 @@ function Direct({
           </Field>
         </div>
       )}
-      {step === 3 && (
+      {step === 5 && (
         <div className="wizard-review">
           <p>{t.ui.review}</p>
           <dl>
@@ -587,7 +599,7 @@ function Direct({
             {t.ui.back}
           </button>
         )}
-        {step < 3 ? (
+        {step < 5 ? (
           <button className="approve" onClick={() => setStep(step + 1)}>
             {copy.next}
             <ChevronRight size={15} />

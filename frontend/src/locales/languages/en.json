@@ -138,6 +138,10 @@
       }
     },
     "buildWizard": {
+      "basics": "Build basics",
+      "evaluationSetup": "Evaluation setup",
+      "schedule": "Schedule & cadence",
+      "decisionPolicy": "Decision policy",
       "buildId": {
         "label": "Build ID",
         "hint": "A stable identifier used by the API and run history."

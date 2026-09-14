@@ -137,6 +137,10 @@
       }
     },
     "buildWizard": {
+      "basics": "빌드 기본 정보",
+      "evaluationSetup": "평가 구성",
+      "schedule": "일정 및 반복",
+      "decisionPolicy": "판단 정책",
       "buildId": {
         "label": "빌드 ID",
         "hint": "API와 실행 이력에서 사용하는 안정적인 식별자입니다."

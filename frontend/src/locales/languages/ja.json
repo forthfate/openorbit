@@ -137,6 +137,10 @@
       }
     },
     "buildWizard": {
+      "basics": "ビルドの基本情報",
+      "evaluationSetup": "評価の構成",
+      "schedule": "スケジュールと繰り返し",
+      "decisionPolicy": "判断ポリシー",
       "buildId": {
         "label": "ビルド ID",
         "hint": "API と実行履歴で使用する安定した識別子です。"
