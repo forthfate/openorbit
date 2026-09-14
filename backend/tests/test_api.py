@@ -728,6 +728,35 @@ def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_pa
     assert [step.phase for step in store._runner_execution_plan("versioned-runner", 2).steps] == ["verify"]
 
 
+def test_bundle_runner_updates_in_place_and_keeps_immutable_versions(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    bundle = store_module.RUNNERS / "bundle-runner"
+    bundle.mkdir(parents=True)
+    initial_source = "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n"
+    (bundle / "runner.py").write_text(initial_source, encoding="utf-8")
+    (bundle / "runner.json").write_text(
+        json.dumps({"id": "bundle-runner", "name": "Bundle", "description": "Versioned bundle."}),
+        encoding="utf-8",
+    )
+    store = store_module.ConsoleStore()
+
+    updated = store.update_runner(
+        "bundle-runner",
+        {
+            "name": "Bundle",
+            "description": "Versioned bundle.",
+            "source": "from orbit_sdk import runner\n@runner.phase('verify')\ndef run(ctx): pass\n",
+        },
+    )
+
+    assert updated["version"] == 2
+    assert [item["version"] for item in updated["versions"]] == [1, 2]
+    assert (bundle / "runner.py").read_text(encoding="utf-8") == updated["source"]
+    assert not (store_module.RUNNERS / "bundle-runner.py").exists()
+    assert [step.phase for step in store._runner_execution_plan("bundle-runner", 1).steps] == ["execute"]
+    assert [step.phase for step in store._runner_execution_plan("bundle-runner", 2).steps] == ["verify"]
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()

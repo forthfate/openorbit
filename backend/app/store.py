@@ -2251,10 +2251,14 @@ if __name__ == "__main__":
     def update_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         existing = self._runner(runner_id)
         return self._write_runner(
-            runner_id, {**existing, **{key: value for key, value in values.items() if value is not None}}
+            runner_id,
+            {**existing, **{key: value for key, value in values.items() if value is not None}},
+            bundle=bool(existing.get("bundle")),
         )
 
-    def _write_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
+    def _write_runner(
+        self, runner_id: str, values: dict[str, str], *, bundle: bool = False
+    ) -> dict[str, str]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
         existing_versions = list(values.get("versions") or [])
@@ -2276,7 +2280,12 @@ if __name__ == "__main__":
         }
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
-        source_path, metadata_path = RUNNERS / f"{runner_id}.py", RUNNERS / f"{runner_id}.json"
+        source_path, metadata_path = (
+            (RUNNERS / runner_id / "runner.py", RUNNERS / runner_id / "runner.json")
+            if bundle
+            else (RUNNERS / f"{runner_id}.py", RUNNERS / f"{runner_id}.json")
+        )
+        source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text(source, encoding="utf-8")
         metadata_path.write_text(json.dumps(asset, indent=2), encoding="utf-8")
         return {**asset, "source": source}
