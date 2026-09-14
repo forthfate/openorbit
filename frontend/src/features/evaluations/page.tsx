@@ -919,7 +919,6 @@ export function EvaluationsPage({
       </div>
       <div className="run-history-actions">
         <span>{ui.selected(selectedRunIds.size)}</span>
-        <button className="ghost" onClick={() => setSelectedRunIds(new Set())} disabled={!selectedRunIds.size}>{ui.deselect}</button>
         <button className="icon-button danger" aria-label={ui.deleteSelected} title={ui.deleteSelected} onClick={deleteSelected} disabled={!selectedRunIds.size}><Trash2 size={15}/></button>
       </div>
       <DataTable
