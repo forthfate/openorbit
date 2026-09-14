@@ -581,7 +581,12 @@
       "failed": "실패",
       "cancelled": "취소됨",
       "running": "실행 중",
-      "selectBuild": "빌드"
+      "selectBuild": "빌드",
+      "storedState": "저장된 상태",
+      "storedStateHint": "Runner가 실행 사이에 유지하는 현재 빌드별 상태입니다.",
+      "noStoredState": "이 빌드에 아직 저장된 상태가 없습니다.",
+      "updated": "갱신",
+      "rawState": "원본 상태 보기"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

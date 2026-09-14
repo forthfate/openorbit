@@ -2910,6 +2910,31 @@ if __name__ == "__main__":
                 return build
         raise KeyError(build_id)
 
+    def build_state(self, build_id: str) -> list[dict[str, Any]]:
+        """Expose a build's SDK-managed state without treating it as run evidence."""
+        self.build(build_id)
+        directory = APP_DATA / "runner-state" / build_id
+        if not directory.is_dir():
+            return []
+        states = []
+        for path in sorted(directory.glob("*.json")):
+            try:
+                document = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(document, dict) or document.get("schema_version") != 1:
+                continue
+            states.append(
+                {
+                    "name": path.stem,
+                    "updated_at": document.get("updated_at"),
+                    "run_id": document.get("run_id"),
+                    "iteration": document.get("iteration"),
+                    "value": document.get("value"),
+                }
+            )
+        return sorted(states, key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+
     def workspaces(self, path: str | None = None) -> dict[str, Any]:
         if path is None:
             root = Path(Path.cwd().anchor)
@@ -4391,6 +4416,8 @@ if __name__ == "__main__":
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
+                if run.execution_mode == "run" and self._load(run_id).status == "running":
+                    self._complete_supervision(run_id)
                 if (
                     loop_index < run.loop_limit
                     and run.repeat_interval_minutes

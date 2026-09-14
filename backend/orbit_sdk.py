@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -218,6 +219,12 @@ def _proposal_history_path(project_root: Path) -> Path:
     return ORBIT_APP_DATA / "proposal-history" / project_key / "decisions.json"
 
 
+def _state_name(name: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", name):
+        raise ValueError("state name must be 1-64 letters, numbers, underscores, or hyphens")
+    return name
+
+
 def _repository_snapshot_paths(project_root: Path) -> tuple[Path, Path]:
     """Return the private manifest location for Git-object repository snapshots."""
     project_key = _sha256(str(project_root).encode("utf-8"))
@@ -376,6 +383,67 @@ class RunnerContext:
         directory = self.app_data / "runner-assets" / _sha256(str(self.project_root).encode()) / name
         directory.mkdir(parents=True, exist_ok=True)
         return directory
+
+    def _state_path(self, name: str) -> Path:
+        state_name = _state_name(name)
+        build_id = str(self.build.get("id") or _sha256(str(self.project_root).encode())[:16])
+        directory = self.app_data / "runner-state" / build_id
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{state_name}.json"
+
+    def load_state(self, name: str, default: object = None) -> object:
+        """Load mutable, build-scoped runner state from Orbit AppData.
+
+        State is separate from immutable run evidence. Use it only for bounded
+        continuation data required by a later run, such as a persona's last
+        observation or next check. State values must be JSON-safe.
+
+        Args:
+            name: Stable state name containing letters, numbers, underscores, or hyphens.
+            default: Value returned when no saved state exists.
+
+        Returns:
+            The saved JSON value or ``default`` when the named state is absent.
+        """
+        path = self._state_path(name)
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return default
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"Orbit runner state is invalid: {name}") from error
+        if not isinstance(document, dict) or document.get("schema_version") != 1:
+            raise RuntimeError(f"Orbit runner state is invalid: {name}")
+        return document.get("value", default)
+
+    def save_state(self, name: str, value: object) -> dict[str, object]:
+        """Atomically save mutable, build-scoped runner state in Orbit AppData.
+
+        The value is not copied into run evidence. Emit a bounded summary with
+        :meth:`emit_result` when a particular state transition needs auditing.
+
+        Args:
+            name: Stable state name containing letters, numbers, underscores, or hyphens.
+            value: JSON-safe value to retain for a later invocation of this build.
+
+        Returns:
+            State name, update timestamp, and JSON byte size.
+        """
+        path = self._state_path(name)
+        try:
+            encoded_value = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("state value must be JSON serializable") from error
+        document = {
+            "schema_version": 1,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "run_id": self.environment.get("ORBIT_RUN_ID") or None,
+            "iteration": self.loop_index,
+            "value": json.loads(encoded_value),
+        }
+        payload = json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        _atomic_write(path, payload)
+        return {"name": _state_name(name), "updated_at": document["updated_at"], "size": len(payload)}
 
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
         """Atomically materialize runner-owned files outside the target repository.

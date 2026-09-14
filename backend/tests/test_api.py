@@ -520,6 +520,49 @@ def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tm
     ]
 
 
+def test_linear_runs_complete_supervision_after_each_iteration(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="linear-supervision",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        execution_mode="run",
+        status="queued",
+        created_at=timestamp,
+        updated_at=timestamp,
+        loop_limit=2,
+        iteration_strategy="linear",
+    )
+    store._save(run)
+    workflow = Workflow(
+        id="workflow",
+        name="Workflow",
+        description="",
+        kind="simulation",
+        risk="low",
+        steps=[Step(id="verify", phase="verify", name="Verify", command=[], working_directory=".")],
+    )
+    monkeypatch.setattr(store, "_runner_execution_plan", lambda _: workflow)
+    completed_iterations = []
+
+    def execute_step(run_id, step, loop_index=1, resources=None, **_kwargs):
+        current = store._load(run_id)
+        current.step_results.append({"phase": step.phase, "loop_index": loop_index})
+        store._save(current)
+
+    def supervise(run_id):
+        completed_iterations.append(store._load(run_id).step_results[-1]["loop_index"])
+
+    monkeypatch.setattr(store, "_execute_step", execute_step)
+    monkeypatch.setattr(store, "_complete_supervision", supervise)
+
+    store._execute(run.id)
+
+    assert completed_iterations == [1, 2]
+
+
 def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
@@ -1134,6 +1177,40 @@ def test_build_star_is_persisted_without_changing_other_build_fields(tmp_path, m
     assert saved["starred"] is True
     assert saved["name"] == "Starred build"
     assert saved["enabled"] is True
+
+
+def test_build_state_exposes_sdk_managed_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    monkeypatch.setattr(store_module, "APP_DATA", tmp_path / "app-data")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "builds.yaml").write_text(
+        "- id: persona-quality\n  name: Persona quality\n  enabled: true\n  repository: ''\n",
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "app-data" / "runner-state" / "persona-quality"
+    state_dir.mkdir(parents=True)
+    (state_dir / "persona-journey.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "updated_at": "2026-09-14T00:00:00+00:00",
+                "run_id": "run-1",
+                "iteration": 2,
+                "value": {"personas": {"haruka": {"stage": 2}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert store_module.ConsoleStore().build_state("persona-quality") == [
+        {
+            "name": "persona-journey",
+            "updated_at": "2026-09-14T00:00:00+00:00",
+            "run_id": "run-1",
+            "iteration": 2,
+            "value": {"personas": {"haruka": {"stage": 2}}},
+        }
+    ]
 
 
 def test_manager_prompt_template_can_be_updated(tmp_path, monkeypatch):

@@ -204,6 +204,11 @@ def builds():
     return store.builds()
 
 
+@app.get("/api/builds/{build_id}/state")
+def build_state(build_id: str):
+    return safely(lambda: store.build_state(build_id))
+
+
 @app.get("/api/prompt-templates")
 def prompt_templates():
     return store.prompt_templates()

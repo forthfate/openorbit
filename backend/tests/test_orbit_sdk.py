@@ -140,6 +140,33 @@ def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatc
     assert json.loads(manifest.read_text(encoding="utf-8"))["history"][0]["id"] == version["id"]
 
 
+def test_runner_state_is_build_scoped_and_retained_between_invocations(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    resources = {"build": {"id": "persona-quality"}}
+    encoded = b64encode(json.dumps(resources).encode()).decode()
+
+    saved = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded, "ORBIT_RUN_ID": "run-456"},
+    ).save_state("persona-journey", {"personas": {"haruka": {"stage": 2}}})
+
+    next_context = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=3,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded},
+    )
+    assert saved["name"] == "persona-journey"
+    assert next_context.load_state("persona-journey") == {"personas": {"haruka": {"stage": 2}}}
+    assert next_context.load_state("missing", default={}) == {}
+
+
 def test_rollback_file_restores_a_version_and_can_be_undone(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()

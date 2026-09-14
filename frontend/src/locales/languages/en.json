@@ -582,7 +582,12 @@
       "failed": "Failed",
       "cancelled": "Cancelled",
       "running": "Running",
-      "selectBuild": "Build"
+      "selectBuild": "Build",
+      "storedState": "Stored state",
+      "storedStateHint": "Current build-scoped state retained by the runner between executions.",
+      "noStoredState": "No state has been saved for this build yet.",
+      "updated": "Updated",
+      "rawState": "View raw state"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

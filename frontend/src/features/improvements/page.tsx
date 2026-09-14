@@ -21,6 +21,7 @@ import type {
   ImprovementIterationData,
   Build,
   ProposalLifecycle,
+  RunnerState,
   SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
@@ -81,6 +82,11 @@ type ImprovementCopy = {
   cancelled: string;
   running: string;
   selectBuild: string;
+  storedState: string;
+  storedStateHint: string;
+  noStoredState: string;
+  updated: string;
+  rawState: string;
 };
 type ChartHints = {
   feedbackByBuild: string;
@@ -763,6 +769,68 @@ function CycleImprovementAI({
     </section>
   );
 }
+
+function StoredState({
+  buildId,
+  locale,
+  t,
+}: {
+  buildId: string;
+  locale: Locale;
+  t: (typeof copy)["en"];
+}) {
+  const [states, setStates] = useState<RunnerState[]>([]);
+  useEffect(() => {
+    api<RunnerState[]>(`/api/builds/${encodeURIComponent(buildId)}/state`)
+      .then(setStates)
+      .catch(() => setStates([]));
+  }, [buildId]);
+  return (
+    <section className="panel stored-state">
+      <PanelHeader title={t.storedState} description={t.storedStateHint} />
+      {states.length ? (
+        <div className="stored-state__list">
+          {states.map((state) => {
+            const personas =
+              state.value && typeof state.value === "object" && !Array.isArray(state.value)
+                ? (state.value as { personas?: Record<string, unknown> }).personas
+                : undefined;
+            return (
+              <article key={state.name}>
+                <header>
+                  <strong>{state.name}</strong>
+                  <small>{t.updated} {timestamp(locale, state.updated_at)}</small>
+                </header>
+                {personas && Object.keys(personas).length > 0 && (
+                  <div className="stored-state__personas">
+                    {Object.entries(personas).map(([persona, value]) => {
+                      const record = value && typeof value === "object" && !Array.isArray(value)
+                        ? value as Record<string, unknown>
+                        : {};
+                      return (
+                        <div key={persona}>
+                          <strong>{persona}</strong>
+                          <span>{String(record.last_action_at ?? "—")}</span>
+                          <span>{String(record.next_check ?? record.last_summary ?? "—")}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <details>
+                  <summary>{t.rawState}</summary>
+                  <pre>{JSON.stringify(state.value, null, 2)}</pre>
+                </details>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="catalog-empty">{t.noStoredState}</p>
+      )}
+    </section>
+  );
+}
 export function ImprovementsPage() {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
@@ -813,6 +881,7 @@ export function ImprovementsPage() {
           </select>
         </label>
       </section>
+      {build && <StoredState buildId={build} locale={locale} t={t} />}
       {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
       <CycleImprovementAI locale={locale} build={build} />
     </>
