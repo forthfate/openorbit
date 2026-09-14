@@ -194,6 +194,10 @@
         "label": "反復実行のタイミング",
         "hint": "前の実行の完了後に間隔を開始するか、固定時刻を基準に実行するかを選択します。"
       },
+      "overrunPolicy": {
+        "label": "実行超過時の処理",
+        "hint": "次の固定間隔になっても評価が実行中の場合の処理を選択します。"
+      },
       "iterationTimingAfterCompletion": "完了後に待機",
       "iterationTimingFixed": "固定間隔",
       "iterationTimingWait": "現在の作業が終わり次第開始",

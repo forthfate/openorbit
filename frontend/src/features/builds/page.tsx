@@ -102,6 +102,7 @@ type BuildWizardCopy = {
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
   iterationTiming: LabelCopy;
+  overrunPolicy: LabelCopy;
   iterationTimingAfterCompletion: string;
   iterationTimingFixed: string;
   iterationTimingWait: string;
@@ -228,7 +229,6 @@ export function ProfileForm({
   test,
   save,
   tested,
-  onClose,
   t,
   help,
 }: {
@@ -237,7 +237,6 @@ export function ProfileForm({
   test: () => void;
   save: () => void;
   tested: boolean;
-  onClose: () => void;
   t: typeof locales.en.evaluation;
   help: ProfileFormCopy;
 }) {
@@ -313,9 +312,6 @@ export function ProfileForm({
         </>
       )}
       <div className="modal-actions">
-        <button className="ghost" onClick={onClose}>
-          {t.cancel}
-        </button>
         <button className="ghost" onClick={test}>
           <Bot size={15} />
           {t.test}
@@ -338,7 +334,6 @@ function Direct({
   executions,
   targets,
   onSave,
-  onClose,
   locale,
 }: {
   d: Draft;
@@ -350,7 +345,6 @@ function Direct({
   executions: ExecutionEnvironment[];
   targets: TargetEnvironment[];
   onSave: () => void;
-  onClose: () => void;
   locale: Locale;
 }) {
   const t = locales[locale],
@@ -519,8 +513,8 @@ function Direct({
           </Field>
           <Field label={copy.iterationTiming.label} description={copy.iterationTiming.hint}>
             <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">{copy.iterationTimingAfterCompletion}</option><option value="fixed">{copy.iterationTimingFixed}</option></select>
-            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select>}
           </Field>
+          {d.cadence_mode === "fixed" && <Field label={copy.overrunPolicy.label} description={copy.overrunPolicy.hint}><select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select></Field>}
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
@@ -583,7 +577,6 @@ function Direct({
       )}
       {step === 5 && (
         <div className="wizard-review">
-          <p>{t.ui.review}</p>
           <dl>
             <dt>{copy.name}</dt>
             <dd>{d.name || "—"}</dd>
@@ -609,9 +602,6 @@ function Direct({
             {t.ui.save}
           </button>
         )}
-        <button className="ghost" onClick={onClose}>
-          {t.ui.cancel}
-        </button>
       </div>
     </div>
   );
@@ -1187,7 +1177,6 @@ export function BuildsPage(props: {
             executions={executionEnvironments}
             targets={targetEnvironments}
             onSave={save}
-            onClose={() => setOpen(false)}
             locale={locale}
           />
         )}

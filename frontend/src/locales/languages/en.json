@@ -195,6 +195,10 @@
         "label": "Iteration timing",
         "hint": "Choose whether the interval begins after completion or stays on a fixed clock."
       },
+      "overrunPolicy": {
+        "label": "Overrun policy",
+        "hint": "Choose what happens when an evaluation is still running at the next fixed interval."
+      },
       "iterationTimingAfterCompletion": "Wait after completion",
       "iterationTimingFixed": "Fixed interval",
       "iterationTimingWait": "Start as soon as the current work finishes",

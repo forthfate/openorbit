@@ -772,7 +772,6 @@ export function ProfileCatalog({
           test={test}
           save={saveProfile}
           tested={tested}
-          onClose={() => setOpen(false)}
           t={locales[locale].evaluation}
           help={copy.profileForm}
         />
