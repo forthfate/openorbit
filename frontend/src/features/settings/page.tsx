@@ -76,7 +76,7 @@ export function SettingsPage({
         setPrompt(values.manager_prompt_template);
         setChatProfile(values.chat_model_profile_name);
       })
-      .catch(() => pushToast("Unable to load operational prompt."));
+      .catch(() => pushToast(locales[locale].ui.operationalPromptLoadFailed));
   }, [locale, pushToast]);
   useEffect(() => {
     let mounted = true;

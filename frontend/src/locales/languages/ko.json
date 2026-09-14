@@ -444,6 +444,14 @@
       "buildDeleted": "빌드를 삭제했습니다",
       "quickStartCreated": "퀵 스타트가 자산과 빌드를 생성했습니다",
       "assetDeleted": "자산을 삭제했습니다",
+      "runDeleted": "실행을 삭제했습니다",
+      "runsDeleted": "{count}개의 실행을 삭제했습니다",
+      "settingsTestSucceeded": "테스트에 성공했습니다: {response}",
+      "evaluationRetryStarted": "실행 재시도를 시작했습니다.",
+      "creationFailed": "생성에 실패했습니다",
+      "testFailedToStart": "테스트를 시작하지 못했습니다",
+      "importFailed": "가져오기에 실패했습니다",
+      "operationalPromptLoadFailed": "운영 프롬프트를 불러오지 못했습니다.",
       "apiConnectionFailed": "API 연결에 실패했습니다."
     },
     "runUi": {
@@ -539,7 +547,9 @@
       "library": "브라우저 라이브러리 경로 (선택)",
       "repository": "저장소",
       "baseUrl": "브라우저 기본 URL (선택)",
-      "promptPath": "개선 대상 프롬프트 파일 경로 (Native Improvement Cycle 전용)"
+      "promptPath": "개선 대상 프롬프트 파일 경로 (Native Improvement Cycle 전용)",
+      "assetSaved": "자산을 저장했습니다",
+      "assetSaveFailed": "자산을 저장하지 못했습니다"
     },
     "improvementPage": {
       "improvement": "개선",

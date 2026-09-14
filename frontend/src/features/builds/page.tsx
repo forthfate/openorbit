@@ -642,7 +642,7 @@ function Quick({
       await create(item.id, v);
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Creation failed");
+      setError(e instanceof Error ? e.message : t.creationFailed);
     } finally {
       setBusy(false);
     }
@@ -844,7 +844,7 @@ export function BuildsPage(props: {
       .then(setTestRun)
       .catch((error) =>
         setError(
-          error instanceof Error ? error.message : "Test failed to start",
+          error instanceof Error ? error.message : ui.testFailedToStart,
         ),
       );
   };
@@ -891,7 +891,7 @@ export function BuildsPage(props: {
       });
       setItems(await api("/api/quick-starts"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
+      setError(e instanceof Error ? e.message : ui.importFailed);
     }
   };
   const cols: Column<Build>[] = [

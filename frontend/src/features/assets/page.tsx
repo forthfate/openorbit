@@ -1639,9 +1639,9 @@ function EnvironmentCatalog({
       }
       setKind(null);
       await onRefresh();
-      pushToast("Asset saved", "success");
+      pushToast(t.assetSaved, "success");
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Asset save failed");
+      pushToast(error instanceof Error ? error.message : t.assetSaveFailed);
     }
   };
   const help = fieldHelp[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");

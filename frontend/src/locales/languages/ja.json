@@ -444,6 +444,14 @@
       "buildDeleted": "ビルドを削除しました",
       "quickStartCreated": "クイックスタートがアセットとビルドを作成しました",
       "assetDeleted": "アセットを削除しました",
+      "runDeleted": "実行を削除しました",
+      "runsDeleted": "{count} 件の実行を削除しました",
+      "settingsTestSucceeded": "テストに成功しました: {response}",
+      "evaluationRetryStarted": "実行の再試行を開始しました。",
+      "creationFailed": "作成に失敗しました",
+      "testFailedToStart": "テストを開始できませんでした",
+      "importFailed": "インポートに失敗しました",
+      "operationalPromptLoadFailed": "運用プロンプトを読み込めませんでした。",
       "apiConnectionFailed": "API 接続に失敗しました。"
     },
     "runUi": {
@@ -539,7 +547,9 @@
       "library": "ブラウザーライブラリパス（任意）",
       "repository": "リポジトリ",
       "baseUrl": "ブラウザー基本 URL（任意）",
-      "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）"
+      "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）",
+      "assetSaved": "アセットを保存しました",
+      "assetSaveFailed": "アセットを保存できませんでした"
     },
     "improvementPage": {
       "improvement": "改善",

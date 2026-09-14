@@ -445,6 +445,14 @@
       "buildDeleted": "Build deleted",
       "quickStartCreated": "Quick Start created its assets and a build",
       "assetDeleted": "Asset deleted",
+      "runDeleted": "Run deleted",
+      "runsDeleted": "{count} runs deleted",
+      "settingsTestSucceeded": "Test succeeded: {response}",
+      "evaluationRetryStarted": "Evaluation retry started.",
+      "creationFailed": "Creation failed",
+      "testFailedToStart": "Test failed to start",
+      "importFailed": "Import failed",
+      "operationalPromptLoadFailed": "Unable to load operational prompt.",
       "apiConnectionFailed": "API connection failed."
     },
     "runUi": {
@@ -540,7 +548,9 @@
       "library": "Browser library path (optional)",
       "repository": "Repository",
       "baseUrl": "Browser base URL (optional)",
-      "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)"
+      "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)",
+      "assetSaved": "Asset saved",
+      "assetSaveFailed": "Asset save failed"
     },
     "improvementPage": {
       "improvement": "Improvement",
