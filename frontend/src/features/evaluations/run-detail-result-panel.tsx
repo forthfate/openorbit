@@ -8,7 +8,7 @@ type BehaviorTrace = {
   iteration: number;
   recordedAt?: string;
   summary?: string;
-  trace?: { persona_goal?: string; current_action?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string };
+  trace?: { persona_goal?: string; current_action?: string; decision?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string };
 };
 const time = (locale: Locale, value?: string) => value ? new Intl.DateTimeFormat(intlLocales[locale], { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value)) : "—";
 
@@ -24,7 +24,12 @@ export function EvaluationResultPanel({ error, records, summaries, improvements,
   const traceFields = (item: BehaviorTrace) => {
     if (!item.trace) return [];
     const trace = item.trace;
-    const fields = trace.current_action ? [
+    const fields = trace.current_action && trace.decision ? [
+      [l.tracePersonaGoal, trace.persona_goal],
+      [l.traceSessionAction, trace.current_action],
+      [l.traceCurrentDecision, trace.decision],
+      [l.traceNextAction, trace.next_action],
+    ] : trace.current_action ? [
       [l.tracePersonaGoal, trace.persona_goal],
       [l.traceCurrentAction, trace.current_action],
       [l.traceNextAction, trace.next_action],

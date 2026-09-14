@@ -79,11 +79,11 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 
 Your final response must be exactly one JSON object:
 {
-  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"current_action\":\"string\",\"next_action\":\"string\",\"evidence\":\"string\"}},
+  \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"current_action\":\"string\",\"decision\":\"string\",\"next_action\":\"string\",\"evidence\":\"string\"}},
   \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
-For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning. Keep the visible journey concise: persona_goal is the persona's stable, first-person wish in one sentence; current_action is a first-person sentence that starts with the persona's decision or outcome from this iteration, then gives only the minimum user-meaningful reason; next_action is the one specific, safe next action in first person. Do not describe navigation, waits, screenshots, generic control inspection, or other repeated mechanics in any visible journey field. evidence is a concise source-backed factual record for the evidence drawer, not a visible journey item. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
+For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning. Keep the visible journey concise: persona_goal is the persona's stable, first-person wish in one sentence; current_action is a first-person sentence describing the one meaningful action the persona took in this iteration; decision is the persona's first-person judgment or resulting choice from that action; next_action is the one specific, safe next action in first person. Do not describe navigation, waits, screenshots, generic control inspection, or other repeated mechanics in any visible journey field. evidence is a concise source-backed factual record for the evidence drawer, not a visible journey item. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
 LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -1193,6 +1193,7 @@ if __name__ == "__main__": runner.main()
                                     (
                                         "persona_goal",
                                         "current_action",
+                                        "decision",
                                         "next_action",
                                         "evidence",
                                         "expectation",
@@ -4570,6 +4571,13 @@ if __name__ == "__main__":
                 raise ValueError("supervisor evaluation behavior_summary is invalid")
             if "behavior_trace" in evaluation:
                 trace = evaluation["behavior_trace"]
+                persona_journey_trace_fields = {
+                    "persona_goal",
+                    "current_action",
+                    "decision",
+                    "next_action",
+                    "evidence",
+                }
                 compact_persona_trace_fields = {
                     "persona_goal",
                     "current_action",
@@ -4589,6 +4597,7 @@ if __name__ == "__main__":
                     not isinstance(trace, dict)
                     or frozenset(trace)
                     not in {
+                        frozenset(persona_journey_trace_fields),
                         frozenset(compact_persona_trace_fields),
                         frozenset(expanded_persona_trace_fields),
                         frozenset(legacy_trace_fields),

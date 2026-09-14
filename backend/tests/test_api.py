@@ -883,15 +883,28 @@ def test_supervisor_result_accepts_a_persona_journey_trace():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
         '{"persona_goal":"I want to confirm my account is usable",'
-        '"current_action":"I checked my balance but it is still loading",'
+        '"current_action":"I checked whether my balance and holdings agree",'
+        '"decision":"I decided not to make a change while they disagree",'
         '"next_action":"I will wait for the balance, then check my holdings",'
         '"evidence":"The visible balance is still loading"}},'
         '"improvements":[],"reported_issues":[]}'
     )
     assert (
         result["evaluation"]["behavior_trace"]["current_action"]
-        == "I checked my balance but it is still loading"
+        == "I checked whether my balance and holdings agree"
     )
+
+
+def test_supervisor_result_accepts_a_compact_persona_trace_for_existing_runs():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
+        '{"persona_goal":"I want to confirm my account is usable",'
+        '"current_action":"I decided to wait for the balance",'
+        '"next_action":"I will check my holdings",'
+        '"evidence":"The visible balance is still loading"}},'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["evaluation"]["behavior_trace"]["current_action"] == "I decided to wait for the balance"
 
 
 def test_supervisor_result_accepts_an_expanded_persona_trace_for_existing_runs():
