@@ -138,6 +138,10 @@
       }
     },
     "buildWizard": {
+      "basics": "Build basics",
+      "evaluationSetup": "Evaluation setup",
+      "schedule": "Schedule & cadence",
+      "decisionPolicy": "Decision policy",
       "buildId": {
         "label": "Build ID",
         "hint": "A stable identifier used by the API and run history."
@@ -190,6 +194,10 @@
       "iterationTiming": {
         "label": "Iteration timing",
         "hint": "Choose whether the interval begins after completion or stays on a fixed clock."
+      },
+      "overrunPolicy": {
+        "label": "Overrun policy",
+        "hint": "Choose what happens when an evaluation is still running at the next fixed interval."
       },
       "iterationTimingAfterCompletion": "Wait after completion",
       "iterationTimingFixed": "Fixed interval",
@@ -380,6 +388,7 @@
     "cycle": {
       "title": "Cycle Improvement AI",
       "build": "Build",
+      "range": "Range",
       "description": "Diagnose the selected build’s PDCA flow, proposal decisions, and score trend together.",
       "titleHint": "Diagnose the selected build’s PDCA flow and operating bottlenecks.",
       "health": "Cycle health",
@@ -445,6 +454,14 @@
       "buildDeleted": "Build deleted",
       "quickStartCreated": "Quick Start created its assets and a build",
       "assetDeleted": "Asset deleted",
+      "runDeleted": "Run deleted",
+      "runsDeleted": "{count} runs deleted",
+      "settingsTestSucceeded": "Test succeeded: {response}",
+      "evaluationRetryStarted": "Evaluation retry started.",
+      "creationFailed": "Creation failed",
+      "testFailedToStart": "Test failed to start",
+      "importFailed": "Import failed",
+      "operationalPromptLoadFailed": "Unable to load operational prompt.",
       "apiConnectionFailed": "API connection failed."
     },
     "runUi": {
@@ -513,6 +530,8 @@
       "importFailed": "Template import failed",
       "basedOn": "Based on template",
       "changeTemplate": "Change template",
+      "empty": "Empty",
+      "emptyDescription": "Start with an empty six-phase runner.",
       "id": "ID",
       "name": "Name",
       "description": "Description",
@@ -521,6 +540,9 @@
       "current": "current",
       "initialVersion": "New runners are created as v1.",
       "source": "Runner code",
+      "workflowGraph": "Workflow graph",
+      "loadingGraph": "Building workflow graph...",
+      "noWorkflowGraph": "This runner has no declared workflow to display.",
       "saveAndOpen": "Save and open in VS Code",
       "save": "Save runner",
       "delete": "Delete"
@@ -540,7 +562,9 @@
       "library": "Browser library path (optional)",
       "repository": "Repository",
       "baseUrl": "Browser base URL (optional)",
-      "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)"
+      "promptPath": "Improvement target prompt file path (Native Improvement Cycle only)",
+      "assetSaved": "Asset saved",
+      "assetSaveFailed": "Asset save failed"
     },
     "improvementPage": {
       "improvement": "Improvement",
@@ -673,6 +697,10 @@
       "traceNextStep": "Next journey step",
       "viewEvidence": "View evidence",
       "hideEvidence": "Hide evidence",
+      "viewImageEvidence": "View image evidence",
+      "viewHtmlEvidence": "View HTML evidence",
+      "imageEvidence": "Image evidence",
+      "htmlEvidence": "HTML evidence",
       "tracePurpose": "Purpose",
       "traceRationale": "Rationale",
       "traceObservation": "Observation",

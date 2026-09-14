@@ -85,6 +85,10 @@ export type ProfileFormCopy = {
   modelDeployment: LabelCopy;
 };
 type BuildWizardCopy = {
+  basics: string;
+  evaluationSetup: string;
+  schedule: string;
+  decisionPolicy: string;
   buildId: LabelCopy;
   buildName: LabelCopy;
   runner: LabelCopy;
@@ -98,6 +102,7 @@ type BuildWizardCopy = {
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
   iterationTiming: LabelCopy;
+  overrunPolicy: LabelCopy;
   iterationTimingAfterCompletion: string;
   iterationTimingFixed: string;
   iterationTimingWait: string;
@@ -224,7 +229,6 @@ export function ProfileForm({
   test,
   save,
   tested,
-  onClose,
   t,
   help,
 }: {
@@ -233,7 +237,6 @@ export function ProfileForm({
   test: () => void;
   save: () => void;
   tested: boolean;
-  onClose: () => void;
   t: typeof locales.en.evaluation;
   help: ProfileFormCopy;
 }) {
@@ -309,9 +312,6 @@ export function ProfileForm({
         </>
       )}
       <div className="modal-actions">
-        <button className="ghost" onClick={onClose}>
-          {t.cancel}
-        </button>
         <button className="ghost" onClick={test}>
           <Bot size={15} />
           {t.test}
@@ -334,7 +334,6 @@ function Direct({
   executions,
   targets,
   onSave,
-  onClose,
   locale,
 }: {
   d: Draft;
@@ -346,7 +345,6 @@ function Direct({
   executions: ExecutionEnvironment[];
   targets: TargetEnvironment[];
   onSave: () => void;
-  onClose: () => void;
   locale: Locale;
 }) {
   const t = locales[locale],
@@ -356,7 +354,7 @@ function Direct({
   return (
     <div className="build-wizard">
       <ol className="wizard-steps">
-        {[t.common.build, t.evaluation.criteria, t.ui.review].map(
+        {[copy.basics, copy.evaluationSetup, copy.schedule, copy.decisionPolicy, t.ui.review].map(
           (x, i) => (
             <li key={x} className={step === i + 1 ? "current" : ""}>
               <button onClick={() => setStep(i + 1)}>
@@ -378,6 +376,12 @@ function Direct({
             <input
               value={d.name}
               onChange={(e) => setD({ ...d, name: e.target.value })}
+            />
+          </Field>
+          <Field label={copy.purpose.label} description={copy.purpose.hint}>
+            <textarea
+              value={d.purpose}
+              onChange={(e) => setD({ ...d, purpose: e.target.value })}
             />
           </Field>
           <Field label={copy.runner.label} description={copy.runner.hint}>
@@ -435,12 +439,6 @@ function Direct({
               ))}
             </select>
           </Field>
-          <Field label={copy.purpose.label} description={copy.purpose.hint}>
-            <textarea
-              value={d.purpose}
-              onChange={(e) => setD({ ...d, purpose: e.target.value })}
-            />
-          </Field>
         </div>
       )}
       {step === 2 && (
@@ -491,6 +489,10 @@ function Direct({
               ))}
             </select>
           </Field>
+        </div>
+      )}
+      {step === 3 && (
+        <div className="modal-form">
           <Field label={copy.timezone.label} description={copy.timezone.hint}>
             <input
               value={d.timezone}
@@ -511,8 +513,8 @@ function Direct({
           </Field>
           <Field label={copy.iterationTiming.label} description={copy.iterationTiming.hint}>
             <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">{copy.iterationTimingAfterCompletion}</option><option value="fixed">{copy.iterationTimingFixed}</option></select>
-            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select>}
           </Field>
+          {d.cadence_mode === "fixed" && <Field label={copy.overrunPolicy.label} description={copy.overrunPolicy.hint}><select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select></Field>}
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
@@ -526,6 +528,10 @@ function Direct({
             <label className="build-schedule-toggle"><input type="checkbox" checked={d.schedule_enabled} onChange={(e) => setD({ ...d, schedule_enabled: e.target.checked })} /> {scheduleCopy.enable}</label>
             {d.schedule_enabled && <div className="build-schedule-fields"><div className="build-schedule-days">{scheduleCopy.days.map((day, index) => <label key={day}><input type="checkbox" checked={d.schedule_weekdays.includes(index)} onChange={() => setD({ ...d, schedule_weekdays: d.schedule_weekdays.includes(index) ? d.schedule_weekdays.filter((value) => value !== index) : [...d.schedule_weekdays, index] })} />{day}</label>)}</div><label>{scheduleCopy.start}<input type="time" value={d.schedule_start_time} onChange={(e) => setD({ ...d, schedule_start_time: e.target.value })} /></label><label>{scheduleCopy.end}<input type="time" value={d.schedule_end_time} onChange={(e) => setD({ ...d, schedule_end_time: e.target.value })} /></label></div>}
           </Field>
+        </div>
+      )}
+      {step === 4 && (
+        <div className="modal-form">
           <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
             <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
               <option value="linear">{copy.iterationStrategyLinear}</option>
@@ -569,9 +575,8 @@ function Direct({
           </Field>
         </div>
       )}
-      {step === 3 && (
+      {step === 5 && (
         <div className="wizard-review">
-          <p>{t.ui.review}</p>
           <dl>
             <dt>{copy.name}</dt>
             <dd>{d.name || "—"}</dd>
@@ -587,7 +592,7 @@ function Direct({
             {t.ui.back}
           </button>
         )}
-        {step < 3 ? (
+        {step < 5 ? (
           <button className="approve" onClick={() => setStep(step + 1)}>
             {copy.next}
             <ChevronRight size={15} />
@@ -597,9 +602,6 @@ function Direct({
             {t.ui.save}
           </button>
         )}
-        <button className="ghost" onClick={onClose}>
-          {t.ui.cancel}
-        </button>
       </div>
     </div>
   );
@@ -642,7 +644,7 @@ function Quick({
       await create(item.id, v);
       close();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Creation failed");
+      setError(e instanceof Error ? e.message : t.creationFailed);
     } finally {
       setBusy(false);
     }
@@ -844,7 +846,7 @@ export function BuildsPage(props: {
       .then(setTestRun)
       .catch((error) =>
         setError(
-          error instanceof Error ? error.message : "Test failed to start",
+          error instanceof Error ? error.message : ui.testFailedToStart,
         ),
       );
   };
@@ -891,7 +893,7 @@ export function BuildsPage(props: {
       });
       setItems(await api("/api/quick-starts"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
+      setError(e instanceof Error ? e.message : ui.importFailed);
     }
   };
   const cols: Column<Build>[] = [
@@ -1175,7 +1177,6 @@ export function BuildsPage(props: {
             executions={executionEnvironments}
             targets={targetEnvironments}
             onSave={save}
-            onClose={() => setOpen(false)}
             locale={locale}
           />
         )}

@@ -108,7 +108,7 @@ export default function App() {
     api<{ response: string }>("/api/settings/hello", "POST", room.settings)
       .then((r) => {
         room.setSettingsTested(true);
-        room.setNotice(`Test succeeded: ${r.response}`, "success");
+        room.setNotice(ui.settingsTestSucceeded(r.response), "success");
       })
       .catch((e) => room.setNotice(e.message));
   const stop = () =>
@@ -132,7 +132,7 @@ export default function App() {
   const retryRun = (id: string, restartFromFirst: boolean) =>
     api(`/api/runs/${id}/retry`, "POST", { restart_from_first: restartFromFirst })
       .then(() => {
-        room.setNotice("Evaluation retry started.", "warning");
+        room.setNotice(ui.evaluationRetryStarted, "warning");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -142,7 +142,7 @@ export default function App() {
     )
       .then(() => {
         room.setNotice(
-          `${ids.length} run${ids.length === 1 ? "" : "s"} deleted`,
+          ui.runsDeleted(ids.length),
           "success",
         );
         return room.refresh();

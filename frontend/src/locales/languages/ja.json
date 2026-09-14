@@ -137,6 +137,10 @@
       }
     },
     "buildWizard": {
+      "basics": "ビルドの基本情報",
+      "evaluationSetup": "評価の構成",
+      "schedule": "スケジュールと繰り返し",
+      "decisionPolicy": "判断ポリシー",
       "buildId": {
         "label": "ビルド ID",
         "hint": "API と実行履歴で使用する安定した識別子です。"
@@ -189,6 +193,10 @@
       "iterationTiming": {
         "label": "反復実行のタイミング",
         "hint": "前の実行の完了後に間隔を開始するか、固定時刻を基準に実行するかを選択します。"
+      },
+      "overrunPolicy": {
+        "label": "実行超過時の処理",
+        "hint": "次の固定間隔になっても評価が実行中の場合の処理を選択します。"
       },
       "iterationTimingAfterCompletion": "完了後に待機",
       "iterationTimingFixed": "固定間隔",
@@ -379,6 +387,7 @@
     "cycle": {
       "title": "サイクル改善AI",
       "build": "ビルド",
+      "range": "期間",
       "description": "選択したビルドの PDCA フロー、提案判断、スコア推移をまとめて診断します。",
       "titleHint": "選択したビルドの PDCA フローと運用上のボトルネックを診断します。",
       "health": "サイクルの健全性",
@@ -444,6 +453,14 @@
       "buildDeleted": "ビルドを削除しました",
       "quickStartCreated": "クイックスタートがアセットとビルドを作成しました",
       "assetDeleted": "アセットを削除しました",
+      "runDeleted": "実行を削除しました",
+      "runsDeleted": "{count} 件の実行を削除しました",
+      "settingsTestSucceeded": "テストに成功しました: {response}",
+      "evaluationRetryStarted": "実行の再試行を開始しました。",
+      "creationFailed": "作成に失敗しました",
+      "testFailedToStart": "テストを開始できませんでした",
+      "importFailed": "インポートに失敗しました",
+      "operationalPromptLoadFailed": "運用プロンプトを読み込めませんでした。",
       "apiConnectionFailed": "API 接続に失敗しました。"
     },
     "runUi": {
@@ -512,6 +529,8 @@
       "importFailed": "テンプレートをインポートできませんでした",
       "basedOn": "テンプレートに基づく",
       "changeTemplate": "テンプレートを変更",
+      "empty": "Empty",
+      "emptyDescription": "空の6フェーズランナーから始めます。",
       "id": "ID",
       "name": "名前",
       "description": "説明",
@@ -520,6 +539,9 @@
       "current": "現在",
       "initialVersion": "新しいランナーは v1 として作成されます。",
       "source": "ランナーコード",
+      "workflowGraph": "ワークフローグラフ",
+      "loadingGraph": "ワークフローグラフを作成しています...",
+      "noWorkflowGraph": "このランナーには表示する宣言済みワークフローがありません。",
       "saveAndOpen": "保存して VS Code で開く",
       "save": "ランナーを保存",
       "delete": "削除"
@@ -539,7 +561,9 @@
       "library": "ブラウザーライブラリパス（任意）",
       "repository": "リポジトリ",
       "baseUrl": "ブラウザー基本 URL（任意）",
-      "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）"
+      "promptPath": "改善対象プロンプトファイルパス（Native Improvement Cycle 専用）",
+      "assetSaved": "アセットを保存しました",
+      "assetSaveFailed": "アセットを保存できませんでした"
     },
     "improvementPage": {
       "improvement": "改善",
@@ -672,6 +696,10 @@
       "traceNextStep": "次のジャーニー",
       "viewEvidence": "証拠を見る",
       "hideEvidence": "証拠を隠す",
+      "viewImageEvidence": "画像の証拠を見る",
+      "viewHtmlEvidence": "HTMLの証拠を見る",
+      "imageEvidence": "画像の証拠",
+      "htmlEvidence": "HTMLの証拠",
       "tracePurpose": "目的",
       "traceRationale": "根拠",
       "traceObservation": "観測",

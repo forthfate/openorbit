@@ -9,6 +9,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -2386,6 +2387,20 @@ if __name__ == "__main__":
         self, runner_id: str, repository: str | None, runner_version: int | None = None
     ) -> dict[str, Any] | None:
         """Read the runner's optional visual-workflow declaration safely."""
+        return self._runner_graph_from_entry(self._runner_entry_path(runner_id, runner_version), repository)
+
+    def preview_runner_graph(self, source: str) -> dict[str, Any] | None:
+        """Build a visual workflow from unsaved runner source without retaining it."""
+        source = self._canonicalize_runner_source(source)
+        compile(source, "runner-preview.py", "exec")
+        with tempfile.TemporaryDirectory(prefix="orbit-runner-graph-") as directory:
+            entry = Path(directory) / "runner.py"
+            entry.write_text(source, encoding="utf-8")
+            return self._runner_graph_from_entry(entry, None)
+
+    @staticmethod
+    def _runner_graph_from_entry(entry: Path, repository: str | None) -> dict[str, Any] | None:
+        """Execute one runner's graph-only entrypoint and validate its response."""
         environment = os.environ.copy()
         environment["PYTHONPATH"] = str(ROOT / "backend") + (
             os.pathsep + environment["PYTHONPATH"] if environment.get("PYTHONPATH") else ""
@@ -2394,7 +2409,7 @@ if __name__ == "__main__":
         environment["ORBIT_APP_DATA"] = str(APP_DATA)
         try:
             result = subprocess.run(
-                [sys.executable, str(self._runner_entry_path(runner_id, runner_version)), "--graph"],
+                [sys.executable, str(entry), "--graph"],
                 cwd=repository or ROOT,
                 text=True,
                 stdout=subprocess.PIPE,

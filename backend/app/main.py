@@ -444,6 +444,10 @@ class RunnerAssetCreate(RunnerAssetUpdate):
     template_id: str = Field(default="custom", max_length=64)
 
 
+class RunnerGraphPreview(BaseModel):
+    source: str = Field(min_length=1, max_length=100_000)
+
+
 class RunnerTemplateValues(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
@@ -503,6 +507,11 @@ def delete_runner_template(template_id: str):
 @app.get("/api/runners")
 def runners():
     return store.runners()
+
+
+@app.post("/api/runners/preview-graph")
+def preview_runner_graph(values: RunnerGraphPreview):
+    return safely(lambda: store.preview_runner_graph(values.source))
 
 
 @app.post("/api/runners")
@@ -994,6 +1003,7 @@ def template_translation_v1(values: TemplateTranslationRequest):
 
 class CycleAnalysisRequest(BaseModel):
     build_id: str = Field(min_length=1, max_length=200)
+    hours: int = Field(default=720, ge=1, le=8760)
     locale: str | None = Field(
         default=None, min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
     )
@@ -1006,7 +1016,7 @@ def analyze_cycle(values: CycleAnalysisRequest):
     if not profile_name:
         raise HTTPException(409, "Select a System AI model in Settings first.")
     configured = profile(store.profiles(), profile_name)
-    analytics = store.improvement_analytics(720)
+    analytics = store.improvement_analytics(values.hours)
     trend = next(
         (item for item in analytics["iteration_trends"] if item["build_id"] == values.build_id),
         None,

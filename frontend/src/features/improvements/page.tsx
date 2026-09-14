@@ -688,14 +688,15 @@ function CycleImprovementAI({
   const [data, setData] = useState<ImprovementAnalytics>(),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
+    [hours, setHours] = useState(720),
     t = locales[locale].cycle;
   useEffect(() => {
-    api<ImprovementAnalytics>("/api/improvement-analytics?hours=720")
+    api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`)
       .then((next) => {
         setData(next);
       })
       .catch(() => setData(undefined));
-  }, []);
+  }, [hours]);
   const trend = data?.iteration_trends.find((item) => item.build_id === build),
     scores = (trend?.points ?? [])
       .map((item) => item.score)
@@ -713,6 +714,7 @@ function CycleImprovementAI({
     api<{ response: string }>("/api/cycle-improvements/analyze", "POST", {
       build_id: build,
       locale,
+      hours,
     })
       .then((result) => setAnalysis(result.response))
       .catch((error) => setAnalysis(error.message))
@@ -724,6 +726,15 @@ function CycleImprovementAI({
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+          </select>
+        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (
@@ -785,6 +796,15 @@ function StoredState({
       .then(setStates)
       .catch(() => setStates([]));
   }, [buildId]);
+  const renderStateValue = (value: unknown, label?: string): ReactNode => {
+    if (Array.isArray(value)) {
+      return <details className="stored-state__tree-node" open={label === "journey_handoff"}><summary>{label ?? "Array"}<small>{value.length} items</small></summary><ul>{value.map((item, index) => <li key={index}>{renderStateValue(item, String(index))}</li>)}</ul></details>;
+    }
+    if (value && typeof value === "object") {
+      return <details className="stored-state__tree-node" open={label === "journey_handoff"}><summary>{label ?? "Object"}<small>{Object.keys(value as Record<string, unknown>).length} fields</small></summary><ul>{Object.entries(value as Record<string, unknown>).map(([key, item]) => <li key={key}>{renderStateValue(item, key)}</li>)}</ul></details>;
+    }
+    return <span className="stored-state__tree-leaf"><strong>{label}</strong><code>{value === null ? "null" : String(value)}</code></span>;
+  };
   return (
     <section className="panel stored-state">
       <PanelHeader title={t.storedState} description={t.storedStateHint} />
@@ -808,11 +828,10 @@ function StoredState({
                         ? value as Record<string, unknown>
                         : {};
                       return (
-                        <div key={persona}>
-                          <strong>{persona}</strong>
-                          <span>{String(record.last_action_at ?? "—")}</span>
-                          <span>{String(record.next_check ?? record.last_summary ?? "—")}</span>
-                        </div>
+                        <details className="stored-state__persona" key={persona}>
+                          <summary><strong>{persona}</strong><span>{String(record.last_action_at ?? "—")}</span><span>{String(record.active ?? "—")}</span></summary>
+                          <div className="stored-state__tree"><ul className="stored-state__tree-root">{Object.entries(record).map(([key, item]) => <li key={key}>{renderStateValue(item, key)}</li>)}</ul></div>
+                        </details>
                       );
                     })}
                   </div>

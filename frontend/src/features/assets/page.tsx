@@ -21,6 +21,7 @@ import type {
   TargetTestCaseSet,
   TestCase,
   Workflow,
+  WorkflowGraphDefinition,
   WorkflowStep,
 } from "../../domain/models";
 import {
@@ -35,6 +36,7 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
@@ -377,8 +379,24 @@ function RunnerModal({
   const [templates, setTemplates] = useState<RunnerTemplate[]>([]),
     [draft, setDraft] = useState<RunnerAsset | undefined>(editing ?? undefined),
     [selectedVersion, setSelectedVersion] = useState<number | null>(editing?.version ?? null),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [editorTab, setEditorTab] = useState<"code" | "graph">("code"),
+    [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
+    [graphSource, setGraphSource] = useState(""),
+    [graphLoading, setGraphLoading] = useState(false),
+    [graphError, setGraphError] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
+  const draftSource = useRef(draft?.source ?? ""), graphInFlight = useRef<string | null>(null);
+  const emptyTemplate: RunnerTemplate = {
+    id: "empty",
+    name: copy.empty,
+    description: copy.emptyDescription,
+    source: "from orbit_sdk import runner\n\n\n@runner.phase(\"before_all\")\ndef before_all(ctx):\n    pass\n\n\n@runner.phase(\"before_each\")\ndef before_each(ctx):\n    pass\n\n\n@runner.phase(\"execute\")\ndef execute(ctx):\n    pass\n\n\n@runner.phase(\"verify\")\ndef verify(ctx):\n    pass\n\n\n@runner.phase(\"after_each\")\ndef after_each(ctx):\n    pass\n\n\n@runner.phase(\"after_all\")\ndef after_all(ctx):\n    pass\n\n\nif __name__ == \"__main__\":\n    runner.main()\n",
+  };
+  const templateOptions = [emptyTemplate, ...templates];
+  useEffect(() => {
+    draftSource.current = draft?.source ?? "";
+  }, [draft?.source]);
   useEffect(() => {
     if (!editing)
       api<RunnerTemplate[]>("/api/runner-templates")
@@ -397,6 +415,27 @@ function RunnerModal({
   const changeTemplate = () => {
     setDraft(undefined);
     setNotice("");
+  };
+  const refreshWorkflowGraph = (source = draft?.source ?? "") => {
+    if (!source || source === graphSource || source === graphInFlight.current) return;
+    graphInFlight.current = source;
+    setGraphLoading(true);
+    setGraphError("");
+    api<WorkflowGraphDefinition | null>("/api/runners/preview-graph", "POST", { source })
+      .then((graph) => {
+        if (draftSource.current !== source) return;
+        setWorkflowGraph(graph);
+        setGraphSource(source);
+      })
+      .catch((error) => {
+        if (draftSource.current === source) setGraphError(error.message);
+      })
+      .finally(() => {
+        if (graphInFlight.current === source) {
+          graphInFlight.current = null;
+          setGraphLoading(false);
+        }
+      });
   };
   const importTemplate = async (file: File | undefined) => {
     if (!file) return;
@@ -498,7 +537,7 @@ function RunnerModal({
             </div>
           </div>
           <div className="runner-template-grid">
-            {templates.map((template) => (
+            {templateOptions.map((template) => (
               <RunnerTemplateCard
                 key={template.id}
                 template={template}
@@ -514,7 +553,7 @@ function RunnerModal({
         {notice && <small className="hint">{notice}</small>}
       </Modal>
     );
-  const selectedTemplate = templates.find(
+  const selectedTemplate = templateOptions.find(
     (template) => template.id === draft.template_id,
   );
   const versions = editing?.versions ?? [];
@@ -587,17 +626,15 @@ function RunnerModal({
           </label>
         )}
         {!editing && <p className="hint">{copy.initialVersion}</p>}
-        <label className="runner-source">
-          <FieldLabel
-            label={copy.source}
-            description={fieldHelp[locale].source}
-          />
-          <PythonEditor
-            ariaLabel={copy.source}
-            value={draft.source}
-            onChange={(source) => setDraft({ ...draft, source })}
-          />
-        </label>
+        <div className="runner-editor-tabs" role="tablist" aria-label={copy.source}>
+          <button className={editorTab === "code" ? "selected" : ""} role="tab" aria-selected={editorTab === "code"} type="button" onClick={() => setEditorTab("code")}><SectionInfo title={copy.source} description={fieldHelp[locale].source} /></button>
+          <button className={editorTab === "graph" ? "selected" : ""} role="tab" aria-selected={editorTab === "graph"} type="button" onClick={() => { setEditorTab("graph"); refreshWorkflowGraph(); }}>{copy.workflowGraph}</button>
+        </div>
+        {editorTab === "code" ? <div className="runner-source">
+          <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => setDraft({ ...draft, source })} onBlur={() => refreshWorkflowGraph()} />
+        </div> : <section className="runner-workflow-graph">
+          {graphLoading ? <p className="hint">{copy.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || copy.noWorkflowGraph}</p>}
+        </section>}
         <div className="modal-actions">
           {notice && <small className="hint">{notice}</small>}
           <button className="ghost" type="button" onClick={() => save(true)}>
@@ -772,7 +809,6 @@ export function ProfileCatalog({
           test={test}
           save={saveProfile}
           tested={tested}
-          onClose={() => setOpen(false)}
           t={locales[locale].evaluation}
           help={copy.profileForm}
         />
@@ -1639,9 +1675,9 @@ function EnvironmentCatalog({
       }
       setKind(null);
       await onRefresh();
-      pushToast("Asset saved", "success");
+      pushToast(t.assetSaved, "success");
     } catch (error) {
-      pushToast(error instanceof Error ? error.message : "Asset save failed");
+      pushToast(error instanceof Error ? error.message : t.assetSaveFailed);
     }
   };
   const help = fieldHelp[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");

@@ -44,6 +44,8 @@ const phases = [
   "after_each",
   "after_all",
 ] as const;
+const phaseLabel = (phase: string) =>
+  phase.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const time = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -287,7 +289,9 @@ export function EvaluationsPage({
     if (run.status === "succeeded") return l.complete;
     if (run.status === "cancelled") return l.cancelled;
     if (run.status === "failed") return l.failed;
-    return run.current_phase === "waiting" ? l.waiting : (run.current_phase ?? "—");
+    return run.current_phase === "waiting"
+      ? l.waiting
+      : (run.current_phase ? phaseLabel(run.current_phase) : "—");
   };
   const builds = useMemo(
     () => [
@@ -485,11 +489,7 @@ export function EvaluationsPage({
     {
       id: "phase",
       header: t.phase,
-      render: (r) => (
-        <span className={`run-phase run-phase--${r.status}`}>
-          {finalPhase(r)}
-        </span>
-      ),
+      render: (r) => <StatusBadge value={r.status} label={finalPhase(r)} />,
       sortValue: (r) => finalPhase(r),
     },
     { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—", sortValue: (r) => r.pid ?? r.last_pid ?? -1 },
@@ -888,7 +888,7 @@ export function EvaluationsPage({
                 </option>
                 {availablePhases.map((phase) => (
                   <option key={phase} value={phase}>
-                    {phase}
+                    {phaseLabel(phase)}
                   </option>
                 ))}
                 <option value="waiting">{l.waiting}</option>
@@ -915,7 +915,6 @@ export function EvaluationsPage({
       </div>
       <div className="run-history-actions">
         <span>{ui.selected(selectedRunIds.size)}</span>
-        <button className="ghost" onClick={() => setSelectedRunIds(new Set())} disabled={!selectedRunIds.size}>{ui.deselect}</button>
         <button className="icon-button danger" aria-label={ui.deleteSelected} title={ui.deleteSelected} onClick={deleteSelected} disabled={!selectedRunIds.size}><Trash2 size={15}/></button>
       </div>
       <DataTable
@@ -973,7 +972,7 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.phase}</small>
-              <strong>{finalPhase(selected)}</strong>
+              <StatusBadge value={selected.status} label={finalPhase(selected)} />
             </div>
             <div>
               <small>{t.elapsed}</small>
@@ -1036,7 +1035,7 @@ export function EvaluationsPage({
                     className={phaseTab === phase ? "active" : ""}
                     onClick={() => setPhaseTab(phase)}
                   >
-                    {phase}
+                    {phaseLabel(phase)}
                   </button>
                 ))}
               </div>
@@ -1057,6 +1056,10 @@ export function EvaluationsPage({
                 empty={l.noLogs}
                 orbitLogs={l.orbitLogs}
                 targetLogs={l.targetLogs}
+                telemetry={telemetry}
+                openTelemetryTrace={l.openTelemetryTrace}
+                loadingOpenTelemetryTrace={l.loadingOpenTelemetryTrace}
+                noOpenTelemetrySpans={l.noOpenTelemetrySpans}
               />
             </RunDetailTabPanel>
           )}
@@ -1102,7 +1105,6 @@ export function EvaluationsPage({
               <SupervisorPanel
                 record={translateSupervisorRecord(supervision)}
                 l={l}
-                telemetry={telemetry}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
             </RunDetailTabPanel>
@@ -1294,6 +1296,8 @@ export function EvaluationsPage({
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
                 summaries={resultBehaviorTraces}
+                runId={selected.id}
+                steps={steps}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}
