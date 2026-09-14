@@ -81,6 +81,76 @@ const pipelineYaml = (workflow: Workflow | null | undefined) =>
     })
     .join("\n\n");
 
+function AssetCatalog({
+  children,
+  loading = false,
+  emptyHint,
+}: {
+  children: React.ReactNode;
+  loading?: boolean;
+  emptyHint: string;
+}) {
+  const [sort, setSort] = useState<{
+      key: "name" | "detail" | "createdAt";
+      direction: "asc" | "desc";
+    }>({ key: "name", direction: "asc" }),
+    rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
+      const a = String(
+        (left.props as { name?: string; detail?: string; createdAt?: string })[
+          sort.key
+        ] ?? "",
+      );
+      const b = String(
+        (right.props as { name?: string; detail?: string; createdAt?: string })[
+          sort.key
+        ] ?? "",
+      );
+      const value = a.localeCompare(b, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      return sort.direction === "asc" ? value : -value;
+    }),
+    changeSort = (key: typeof sort.key) =>
+      setSort((current) => ({
+        key,
+        direction:
+          current.key === key && current.direction === "asc" ? "desc" : "asc",
+      })),
+    icon = (key: typeof sort.key) =>
+      sort.key !== key
+        ? ChevronsUpDown
+        : sort.direction === "asc"
+          ? ChevronUp
+          : ChevronDown;
+  return (
+    <div className="catalog-list">
+      {loading ? <CatalogSkeleton /> : rows.length ? (
+        <>
+          <div className="catalog-list__header">
+            {(["name", "detail", "createdAt"] as const).map((key) => {
+              const Icon = icon(key);
+              return (
+                <button key={key} type="button" onClick={() => changeSort(key)}>
+                  {key === "createdAt"
+                    ? "Created"
+                    : key === "detail"
+                      ? "Details"
+                      : "Name"}
+                  <Icon size={13} />
+                </button>
+              );
+            })}
+          </div>
+          {rows}
+        </>
+      ) : (
+        <p className="catalog-empty">{emptyHint}</p>
+      )}
+    </div>
+  );
+}
+
 function Catalog({
   title,
   tooltip,
@@ -104,16 +174,7 @@ function Catalog({
   loading?: boolean;
   locale: Locale;
 }) {
-  const isLegacyWorkflowSection = title === text[locale].flows,
-    [sort, setSort] = useState<{ key: "name" | "detail" | "createdAt"; direction: "asc" | "desc" }>({ key: "name", direction: "asc" }),
-    rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
-      const a = String((left.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
-      const b = String((right.props as { name?: string; detail?: string; createdAt?: string })[sort.key] ?? "");
-      const value = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
-      return sort.direction === "asc" ? value : -value;
-    }),
-    changeSort = (key: typeof sort.key) => setSort(current => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" })),
-    icon = (key: typeof sort.key) => sort.key !== key ? ChevronsUpDown : sort.direction === "asc" ? ChevronUp : ChevronDown;
+  const isLegacyWorkflowSection = title === text[locale].flows;
   return (
     <>
       {showRunners && runners && onRefresh && (
@@ -130,18 +191,7 @@ function Catalog({
             </div>
             {button}
           </div>
-          <div className="catalog-list">
-            {loading ? <CatalogSkeleton /> : Children.count(children) ? (
-              <>
-                <div className="catalog-list__header">
-                  {(["name", "detail", "createdAt"] as const).map((key) => { const Icon = icon(key); return <button key={key} type="button" onClick={() => changeSort(key)}>{key === "createdAt" ? "Created" : key === "detail" ? "Details" : "Name"}<Icon size={13}/></button>; })}
-                </div>
-                {rows}
-              </>
-            ) : (
-              <p className="catalog-empty">{emptyHint}</p>
-            )}
-          </div>
+          <AssetCatalog loading={loading} emptyHint={emptyHint}>{children}</AssetCatalog>
         </section>
       )}
     </>
@@ -684,9 +734,8 @@ function ProfileCatalog({
           {copy.profiles.create}
         </button>
       </div>
-      <div className="catalog-list">
-        {loading ? <CatalogSkeleton /> : profiles.length ? (
-          profiles.map((profile) => (
+      <AssetCatalog loading={loading} emptyHint={copy.profiles.empty}>
+        {profiles.map((profile) => (
             <AssetRow
               key={profile.profile_name}
               name={profile.profile_name}
@@ -700,11 +749,8 @@ function ProfileCatalog({
               onDelete={() => onDelete(profile.profile_name)}
               deleteLabel={`${copy.profiles.delete} ${profile.profile_name}`}
             />
-          ))
-        ) : (
-          <p className="catalog-empty">{copy.profiles.empty}</p>
-        )}
-      </div>
+          ))}
+      </AssetCatalog>
       <Modal
         open={open}
         title={
@@ -762,9 +808,8 @@ function RunnerCatalog({
           {copy.create}
         </button>
       </div>
-      <div className="catalog-list">
-        {loading ? <CatalogSkeleton /> : items.length ? (
-          items.map((item) => (
+      <AssetCatalog loading={loading} emptyHint={text[locale].emptyRunners}>
+        {items.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
@@ -778,11 +823,8 @@ function RunnerCatalog({
               onDelete={() => remove(item.id)}
               deleteLabel={copy.delete}
             />
-          ))
-        ) : (
-          <p className="catalog-empty">{text[locale].emptyRunners}</p>
-        )}
-      </div>
+          ))}
+      </AssetCatalog>
       {open && (
         <RunnerModal
           locale={locale}
@@ -1348,7 +1390,7 @@ function EnvironmentAssets({
         <p className="hint">
           Reusable runner location, invocation method, and browser runtime.
         </p>
-        <div className="catalog-list">
+        <AssetCatalog emptyHint="No execution environments yet.">
           {executionEnvironments.map((item) => (
             <AssetRow
               key={item.id}
@@ -1372,7 +1414,7 @@ function EnvironmentAssets({
               onDelete={() => onDelete("execution-environment", item.id)}
             />
           ))}
-        </div>
+        </AssetCatalog>
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
@@ -1398,7 +1440,7 @@ function EnvironmentAssets({
           Reusable repository, browser URL, and native runner prompt-file
           target.
         </p>
-        <div className="catalog-list">
+        <AssetCatalog emptyHint="No target environments yet.">
           {targetEnvironments.map((item) => (
             <AssetRow
               key={item.id}
@@ -1418,7 +1460,7 @@ function EnvironmentAssets({
               onDelete={() => onDelete("target-environment", item.id)}
             />
           ))}
-        </div>
+        </AssetCatalog>
       </section>
       <Modal
         open={kind === "execution"}
@@ -1627,8 +1669,8 @@ function EnvironmentCatalog({
             {t.create}
           </button>
         </div>
-        <div className="catalog-list">
-          {loading ? <CatalogSkeleton /> : executionEnvironments.map((item) => (
+        <AssetCatalog loading={loading} emptyHint={t.executionHint}>
+          {executionEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
@@ -1653,7 +1695,7 @@ function EnvironmentCatalog({
               onDelete={() => onDelete("execution-environment", item.id)}
             />
           ))}
-        </div>
+        </AssetCatalog>
       </section>
       <section className="panel app-settings">
         <div className="panel-title-action">
@@ -1680,8 +1722,8 @@ function EnvironmentCatalog({
             {t.create}
           </button>
         </div>
-        <div className="catalog-list">
-          {loading ? <CatalogSkeleton /> : targetEnvironments.map((item) => (
+        <AssetCatalog loading={loading} emptyHint={t.targetHint}>
+          {targetEnvironments.map((item) => (
             <AssetRow
               key={item.id}
               name={item.name}
@@ -1701,7 +1743,7 @@ function EnvironmentCatalog({
               onDelete={() => onDelete("target-environment", item.id)}
             />
           ))}
-        </div>
+        </AssetCatalog>
       </section>
       <Modal
         open={kind === "execution"}
