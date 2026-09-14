@@ -1,5 +1,6 @@
-import type { RunStepResult } from "../../domain/models";
+import type { RunStepResult, RunTelemetry } from "../../domain/models";
 import { intlLocales, type Locale } from "../../locales";
+import { TelemetryTree } from "./run-detail-telemetry-tree";
 
 const time = (locale: Locale, value?: string) => value ? new Intl.DateTimeFormat(intlLocales[locale], { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value)) : "—";
 const stepLogLines = (step: RunStepResult) => step.log_lines?.length ? step.log_lines.map(({ timestamp, value }) => ({ value, timestamp })) : (step.output ?? step.error ?? "—").split("\n").map((value) => ({ value, timestamp: step.ended_at ?? step.started_at }));
@@ -18,11 +19,11 @@ export function WorkflowLogPanel({ steps, locale, empty }: { steps: RunStepResul
   return <div className="console-output workflow-log-output">{visibleSteps.length ? visibleSteps.map((step, index) => <section key={`${step.step_id}-${index}`}>{step.result && <BrowserEvidence result={step.result} />}{(step.log_lines?.length || step.output || step.error) && <TimestampedLogOutput locale={locale} lines={stepLogLines(step)} />}</section>) : <p className="hint">{empty}</p>}</div>;
 }
 
-export function CombinedLogPanel({ steps, locale, empty, orbitLogs, targetLogs }: { steps: RunStepResult[]; locale: Locale; empty: string; orbitLogs: string; targetLogs: string }) {
+export function CombinedLogPanel({ steps, locale, empty, orbitLogs, targetLogs, telemetry, openTelemetryTrace, loadingOpenTelemetryTrace, noOpenTelemetrySpans }: { steps: RunStepResult[]; locale: Locale; empty: string; orbitLogs: string; targetLogs: string; telemetry?: RunTelemetry; openTelemetryTrace?: string; loadingOpenTelemetryTrace?: string; noOpenTelemetrySpans?: string }) {
   const logSteps = steps.filter((step) => step.output || step.error);
   const targetLines = steps.flatMap((step) => step.target_logs ?? []).map((entry) => ({
     timestamp: entry.timestamp,
     value: `[${entry.level ?? "info"}]${entry.source ? ` ${entry.source}` : ""} ${entry.message}`,
   }));
-  return <div className="console-output"><section><h3>{orbitLogs}</h3>{logSteps.length ? <TimestampedLogOutput lines={logSteps.flatMap(stepLogLines)} locale={locale} /> : <p className="hint">{empty}</p>}</section><section><h3>{targetLogs}</h3>{targetLines.length ? <TimestampedLogOutput lines={targetLines} locale={locale} /> : <p className="hint">{empty}</p>}</section></div>;
+  return <div className="console-output combined-log-output"><section><h3>{orbitLogs}</h3>{logSteps.length ? <TimestampedLogOutput lines={logSteps.flatMap(stepLogLines)} locale={locale} /> : <p className="hint">{empty}</p>}</section><section><h3>{targetLogs}</h3>{targetLines.length ? <TimestampedLogOutput lines={targetLines} locale={locale} /> : <p className="hint">{empty}</p>}</section><section><h3>{openTelemetryTrace}</h3><TelemetryTree telemetry={telemetry} loading={loadingOpenTelemetryTrace} empty={noOpenTelemetrySpans} /></section></div>;
 }

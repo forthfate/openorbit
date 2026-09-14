@@ -1061,6 +1061,10 @@ export function EvaluationsPage({
                 empty={l.noLogs}
                 orbitLogs={l.orbitLogs}
                 targetLogs={l.targetLogs}
+                telemetry={telemetry}
+                openTelemetryTrace={l.openTelemetryTrace}
+                loadingOpenTelemetryTrace={l.loadingOpenTelemetryTrace}
+                noOpenTelemetrySpans={l.noOpenTelemetrySpans}
               />
             </RunDetailTabPanel>
           )}
@@ -1106,7 +1110,6 @@ export function EvaluationsPage({
               <SupervisorPanel
                 record={translateSupervisorRecord(supervision)}
                 l={l}
-                telemetry={telemetry}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
             </RunDetailTabPanel>
