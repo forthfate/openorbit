@@ -538,6 +538,9 @@
       "current": "current",
       "initialVersion": "New runners are created as v1.",
       "source": "Runner code",
+      "workflowGraph": "Workflow graph",
+      "loadingGraph": "Building workflow graph...",
+      "noWorkflowGraph": "This runner has no declared workflow to display.",
       "saveAndOpen": "Save and open in VS Code",
       "save": "Save runner",
       "delete": "Delete"

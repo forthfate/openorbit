@@ -3,7 +3,7 @@ import { python } from '@codemirror/lang-python'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 
-export function PythonEditor({value,onChange,ariaLabel}:{value:string;onChange:(value:string)=>void;ariaLabel:string}){
+export function PythonEditor({value,onChange,onBlur,ariaLabel}:{value:string;onChange:(value:string)=>void;onBlur?:()=>void;ariaLabel:string}){
   return <CodeMirror
     aria-label={ariaLabel}
     value={value}
@@ -13,6 +13,7 @@ export function PythonEditor({value,onChange,ariaLabel}:{value:string;onChange:(
     // letting one line widen the editor and push the save action off screen.
     extensions={[python(),EditorView.lineWrapping]}
     onChange={onChange}
+    onBlur={onBlur}
     basicSetup={{lineNumbers:true,highlightActiveLine:true,bracketMatching:true,foldGutter:true}}
   />
 }

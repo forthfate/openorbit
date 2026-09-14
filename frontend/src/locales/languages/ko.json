@@ -537,6 +537,9 @@
       "current": "현재",
       "initialVersion": "새 러너는 v1으로 생성됩니다.",
       "source": "러너 코드",
+      "workflowGraph": "워크플로우 그래프",
+      "loadingGraph": "워크플로우 그래프를 생성하는 중...",
+      "noWorkflowGraph": "이 러너에는 표시할 선언된 워크플로우가 없습니다.",
       "saveAndOpen": "저장 후 VS Code에서 열기",
       "save": "러너 저장",
       "delete": "삭제"

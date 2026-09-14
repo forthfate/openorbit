@@ -537,6 +537,9 @@
       "current": "現在",
       "initialVersion": "新しいランナーは v1 として作成されます。",
       "source": "ランナーコード",
+      "workflowGraph": "ワークフローグラフ",
+      "loadingGraph": "ワークフローグラフを作成しています...",
+      "noWorkflowGraph": "このランナーには表示する宣言済みワークフローがありません。",
       "saveAndOpen": "保存して VS Code で開く",
       "save": "ランナーを保存",
       "delete": "削除"

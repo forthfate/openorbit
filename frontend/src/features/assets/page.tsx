@@ -21,6 +21,7 @@ import type {
   TargetTestCaseSet,
   TestCase,
   Workflow,
+  WorkflowGraphDefinition,
   WorkflowStep,
 } from "../../domain/models";
 import {
@@ -35,6 +36,7 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
@@ -377,8 +379,17 @@ function RunnerModal({
   const [templates, setTemplates] = useState<RunnerTemplate[]>([]),
     [draft, setDraft] = useState<RunnerAsset | undefined>(editing ?? undefined),
     [selectedVersion, setSelectedVersion] = useState<number | null>(editing?.version ?? null),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [editorTab, setEditorTab] = useState<"code" | "graph">("code"),
+    [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
+    [graphSource, setGraphSource] = useState(""),
+    [graphLoading, setGraphLoading] = useState(false),
+    [graphError, setGraphError] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
+  const draftSource = useRef(draft?.source ?? ""), graphInFlight = useRef<string | null>(null);
+  useEffect(() => {
+    draftSource.current = draft?.source ?? "";
+  }, [draft?.source]);
   useEffect(() => {
     if (!editing)
       api<RunnerTemplate[]>("/api/runner-templates")
@@ -397,6 +408,27 @@ function RunnerModal({
   const changeTemplate = () => {
     setDraft(undefined);
     setNotice("");
+  };
+  const refreshWorkflowGraph = (source = draft?.source ?? "") => {
+    if (!source || source === graphSource || source === graphInFlight.current) return;
+    graphInFlight.current = source;
+    setGraphLoading(true);
+    setGraphError("");
+    api<WorkflowGraphDefinition | null>("/api/runners/preview-graph", "POST", { source })
+      .then((graph) => {
+        if (draftSource.current !== source) return;
+        setWorkflowGraph(graph);
+        setGraphSource(source);
+      })
+      .catch((error) => {
+        if (draftSource.current === source) setGraphError(error.message);
+      })
+      .finally(() => {
+        if (graphInFlight.current === source) {
+          graphInFlight.current = null;
+          setGraphLoading(false);
+        }
+      });
   };
   const importTemplate = async (file: File | undefined) => {
     if (!file) return;
@@ -587,17 +619,15 @@ function RunnerModal({
           </label>
         )}
         {!editing && <p className="hint">{copy.initialVersion}</p>}
-        <label className="runner-source">
-          <FieldLabel
-            label={copy.source}
-            description={fieldHelp[locale].source}
-          />
-          <PythonEditor
-            ariaLabel={copy.source}
-            value={draft.source}
-            onChange={(source) => setDraft({ ...draft, source })}
-          />
-        </label>
+        <div className="runner-editor-tabs" role="tablist" aria-label={copy.source}>
+          <button className={editorTab === "code" ? "selected" : ""} role="tab" aria-selected={editorTab === "code"} type="button" onClick={() => setEditorTab("code")}><SectionInfo title={copy.source} description={fieldHelp[locale].source} /></button>
+          <button className={editorTab === "graph" ? "selected" : ""} role="tab" aria-selected={editorTab === "graph"} type="button" onClick={() => { setEditorTab("graph"); refreshWorkflowGraph(); }}>{copy.workflowGraph}</button>
+        </div>
+        {editorTab === "code" ? <div className="runner-source">
+          <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => setDraft({ ...draft, source })} onBlur={() => refreshWorkflowGraph()} />
+        </div> : <section className="runner-workflow-graph">
+          {graphLoading ? <p className="hint">{copy.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || copy.noWorkflowGraph}</p>}
+        </section>}
         <div className="modal-actions">
           {notice && <small className="hint">{notice}</small>}
           <button className="ghost" type="button" onClick={() => save(true)}>
