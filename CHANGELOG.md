@@ -5,6 +5,29 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-09-14
+
+### Added
+
+- Runner versions are retained immutably, and Builds can use either the latest Runner or a selected Runner version.
+- Run records retain the Runner version and source hash used for execution.
+- Runs display Runner workflow graphs, lifecycle progress, and function-level trace information.
+- Projects can use a project-local application-data directory.
+- Added Autonomous Persona Journey and browser automation Runner templates.
+
+### Changed
+
+- Assets and Settings now share the same AI model-profile catalog.
+- Asset catalogs default to newest-first ordering and provide common table headers and scrollable lists.
+- The Improvements build selector is ordered by most recent run time.
+- Runs table status placement and iteration display are clearer.
+
+### Fixed
+
+- Runs no longer count the finalization step as an extra iteration (for example, `2/1` now displays as `1/1`).
+- Runner process-group cleanup and workflow function-state reporting are more reliable.
+- Prompt draft version switching and localized discard confirmation behavior were improved.
+
 ## [0.8.0] - 2026-09-10
 
 ### Added
@@ -195,3 +218,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0
 [0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1
 [0.8.0]: https://github.com/forthfate/openorbit/releases/tag/v0.8.0
+[0.9.0]: https://github.com/forthfate/openorbit/releases/tag/v0.9.0
