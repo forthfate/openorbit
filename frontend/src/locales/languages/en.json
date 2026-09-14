@@ -22,6 +22,9 @@
       "addFlow": "Create workflow",
       "id": "ID",
       "name": "Name",
+      "columnName": "Name",
+      "columnCreated": "Created",
+      "columnActions": "Actions",
       "version": "Version",
       "body": "Content",
       "description": "Description",
@@ -87,7 +90,7 @@
     "settingsPage": {
       "manager": {
         "title": "Operational manager prompt",
-        "description": "Defines Orbit-wide manager behavior and the required response contract. The selected build manager template is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
+        "description": "Defines Orbit-wide manager behavior and the required response contract.",
         "warning": "This prompt contains Orbit-reserved instructions, placeholders, and a response contract. Preserve all reserved sections and their structure; changing or removing them can stop evaluations or make results unreadable.",
         "edit": "Edit",
         "content": "Prompt content",
@@ -723,8 +726,8 @@
       "targetEnvironment": "Repository, browser URL, and managed prompt path are used only by builds that select this target.",
       "applicationSettings": "Language affects the console and manager-result display; theme changes are saved locally in this browser.",
       "applicationData": "Changing the location affects future local state and evidence; existing data is not moved automatically.",
-      "managerPrompt": "A console-wide operating prompt, separate from reusable build templates.",
-      "systemAiModel": "This profile powers Orbit system features such as chat and cycle analysis, independently of a build's supervisor profile.",
+      "managerPrompt": "The manager prompt template selected by a build is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
+      "systemAiModel": "This profile powers Orbit system features such as chat and cycle analysis.",
       "orbitLogs": "Entries are local operational events. They help diagnose console and runner activity but are not evaluation evidence."
     },
     "chartHints": {

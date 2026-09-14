@@ -85,13 +85,15 @@ function AssetCatalog({
   children,
   loading = false,
   emptyHint,
+  locale = "en",
 }: {
   children: React.ReactNode;
   loading?: boolean;
   emptyHint: string;
+  locale?: Locale;
 }) {
   const [sort, setSort] = useState<{
-      key: "name" | "detail" | "createdAt";
+      key: "name" | "createdAt";
       direction: "asc" | "desc";
     }>({ key: "name", direction: "asc" }),
     rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
@@ -128,19 +130,18 @@ function AssetCatalog({
       {loading ? <CatalogSkeleton /> : rows.length ? (
         <>
           <div className="catalog-list__header">
-            {(["name", "detail", "createdAt"] as const).map((key) => {
+            {(["name", "createdAt"] as const).map((key) => {
               const Icon = icon(key);
               return (
                 <button key={key} type="button" onClick={() => changeSort(key)}>
                   {key === "createdAt"
-                    ? "Created"
-                    : key === "detail"
-                      ? "Details"
-                      : "Name"}
+                    ? text[locale].columnCreated
+                    : text[locale].columnName}
                   <Icon size={13} />
                 </button>
               );
             })}
+            <span>{text[locale].columnActions}</span>
           </div>
           {rows}
         </>
@@ -191,7 +192,7 @@ function Catalog({
             </div>
             {button}
           </div>
-          <AssetCatalog loading={loading} emptyHint={emptyHint}>{children}</AssetCatalog>
+          <AssetCatalog locale={locale} loading={loading} emptyHint={emptyHint}>{children}</AssetCatalog>
         </section>
       )}
     </>
@@ -658,7 +659,14 @@ function AssetRow({
         <strong>{name}</strong>
         <span>{detail}</span>
       </button>
-      {createdAt && <time className="catalog-row__created" dateTime={createdAt}>{new Intl.DateTimeFormat(intlLocales[locale ?? "en"], { dateStyle: "medium", timeStyle: "short" }).format(new Date(createdAt))}</time>}
+      <time className="catalog-row__created" dateTime={createdAt}>
+        {createdAt
+          ? new Intl.DateTimeFormat(intlLocales[locale ?? "en"], {
+              dateStyle: "medium",
+              timeStyle: "short",
+            }).format(new Date(createdAt))
+          : "-"}
+      </time>
       <button
         className="icon-button danger"
         aria-label={deleteLabel}
@@ -734,7 +742,7 @@ function ProfileCatalog({
           {copy.profiles.create}
         </button>
       </div>
-      <AssetCatalog loading={loading} emptyHint={copy.profiles.empty}>
+      <AssetCatalog locale={locale} loading={loading} emptyHint={copy.profiles.empty}>
         {profiles.map((profile) => (
             <AssetRow
               key={profile.profile_name}
@@ -808,7 +816,7 @@ function RunnerCatalog({
           {copy.create}
         </button>
       </div>
-      <AssetCatalog loading={loading} emptyHint={text[locale].emptyRunners}>
+      <AssetCatalog locale={locale} loading={loading} emptyHint={text[locale].emptyRunners}>
         {items.map((item) => (
             <AssetRow
               key={item.id}
@@ -1669,7 +1677,7 @@ function EnvironmentCatalog({
             {t.create}
           </button>
         </div>
-        <AssetCatalog loading={loading} emptyHint={t.executionHint}>
+        <AssetCatalog locale={locale} loading={loading} emptyHint={t.executionHint}>
           {executionEnvironments.map((item) => (
             <AssetRow
               key={item.id}
@@ -1722,7 +1730,7 @@ function EnvironmentCatalog({
             {t.create}
           </button>
         </div>
-        <AssetCatalog loading={loading} emptyHint={t.targetHint}>
+        <AssetCatalog locale={locale} loading={loading} emptyHint={t.targetHint}>
           {targetEnvironments.map((item) => (
             <AssetRow
               key={item.id}
