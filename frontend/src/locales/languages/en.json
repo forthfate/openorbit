@@ -530,6 +530,8 @@
       "importFailed": "Template import failed",
       "basedOn": "Based on template",
       "changeTemplate": "Change template",
+      "empty": "Empty",
+      "emptyDescription": "Start with an empty six-phase runner.",
       "id": "ID",
       "name": "Name",
       "description": "Description",

@@ -387,6 +387,13 @@ function RunnerModal({
     [graphError, setGraphError] = useState("");
   const importInput = useRef<HTMLInputElement>(null);
   const draftSource = useRef(draft?.source ?? ""), graphInFlight = useRef<string | null>(null);
+  const emptyTemplate: RunnerTemplate = {
+    id: "empty",
+    name: copy.empty,
+    description: copy.emptyDescription,
+    source: "from orbit_sdk import runner\n\n\n@runner.phase(\"before_all\")\ndef before_all(ctx):\n    pass\n\n\n@runner.phase(\"before_each\")\ndef before_each(ctx):\n    pass\n\n\n@runner.phase(\"execute\")\ndef execute(ctx):\n    pass\n\n\n@runner.phase(\"verify\")\ndef verify(ctx):\n    pass\n\n\n@runner.phase(\"after_each\")\ndef after_each(ctx):\n    pass\n\n\n@runner.phase(\"after_all\")\ndef after_all(ctx):\n    pass\n\n\nif __name__ == \"__main__\":\n    runner.main()\n",
+  };
+  const templateOptions = [emptyTemplate, ...templates];
   useEffect(() => {
     draftSource.current = draft?.source ?? "";
   }, [draft?.source]);
@@ -530,7 +537,7 @@ function RunnerModal({
             </div>
           </div>
           <div className="runner-template-grid">
-            {templates.map((template) => (
+            {templateOptions.map((template) => (
               <RunnerTemplateCard
                 key={template.id}
                 template={template}
@@ -546,7 +553,7 @@ function RunnerModal({
         {notice && <small className="hint">{notice}</small>}
       </Modal>
     );
-  const selectedTemplate = templates.find(
+  const selectedTemplate = templateOptions.find(
     (template) => template.id === draft.template_id,
   );
   const versions = editing?.versions ?? [];

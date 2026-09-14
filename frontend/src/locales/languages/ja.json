@@ -529,6 +529,8 @@
       "importFailed": "テンプレートをインポートできませんでした",
       "basedOn": "テンプレートに基づく",
       "changeTemplate": "テンプレートを変更",
+      "empty": "Empty",
+      "emptyDescription": "空の6フェーズランナーから始めます。",
       "id": "ID",
       "name": "名前",
       "description": "説明",

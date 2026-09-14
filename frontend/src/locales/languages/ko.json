@@ -529,6 +529,8 @@
       "importFailed": "템플릿을 가져오지 못했습니다",
       "basedOn": "기반 템플릿",
       "changeTemplate": "템플릿 변경",
+      "empty": "Empty",
+      "emptyDescription": "비어 있는 6단계 러너로 시작합니다.",
       "id": "ID",
       "name": "이름",
       "description": "설명",
