@@ -36,3 +36,22 @@ Supported levels are `debug`, `info`, `warn`, `warning`, and `error`.
 - Include a stable `source` so multiple target services remain distinguishable.
 - Prefer structured results with `ctx.emit_result()` for machine-consumed
   evidence such as scores, metrics, or proposals.
+
+## Child-process output
+
+`ctx.playwright_journey()` and `ctx.complete_model()` automatically record
+their start and completion state as target logs. For other bounded external
+adapters or agents, opt in to forwarding child output as shown below.
+
+For a bounded external adapter or agent, opt in to forwarding its non-empty
+standard-output and standard-error lines to target logs. Orbit retains the
+same output in workflow logs, while the `source` keeps the target stream
+identifiable.
+
+```python
+ctx.exec(
+    ["python", "agent.py", "run-once"],
+    timeout=300,
+    target_log_source="support-agent",
+)
+```

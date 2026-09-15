@@ -26,7 +26,12 @@ def command():
 
 def invoke(ctx, action):
     # One bounded call per phase: the adapter must never start its own daemon.
-    return ctx.exec([*command(), action], cwd=ctx.project_root, timeout=3600)
+    return ctx.exec(
+        [*command(), action],
+        cwd=ctx.project_root,
+        timeout=3600,
+        target_log_source="selenium-adapter",
+    )
 
 
 def evidence(value):
@@ -68,7 +73,6 @@ def before_each(ctx):
 def execute(ctx):
     result = evidence(invoke(ctx, "run-once"))
     ctx.emit_result({"selenium_journey": {"iteration": ctx.loop_index, "result": result}})
-    ctx.target_log("Selenium adapter completed one bounded journey", level="info", source="selenium-adapter")
 
 
 @graph.step(
