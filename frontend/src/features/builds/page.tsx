@@ -985,6 +985,8 @@ export function BuildsPage(props: {
     locale,
   );
   const translationCopy = locales[locale].templateTranslation;
+  const allQuickStartsTranslated =
+    items.length > 0 && items.every((item) => Boolean(translations.content(item.id)));
   const quickStartLabels = localeMessages<
     Record<string, { name: string; description: string }>
   >(locale, "quickStartLabels");
@@ -1280,9 +1282,9 @@ export function BuildsPage(props: {
                 <button
                   className="ghost"
                   type="button"
-                  disabled={translations.loading}
+                  disabled={translations.loading || translations.cacheLoading}
                   onClick={
-                    translations.content(items[0]?.id ?? "")
+                    allQuickStartsTranslated
                       ? () => translations.showOriginal()
                       : () => translations.translate()
                   }
@@ -1290,7 +1292,9 @@ export function BuildsPage(props: {
                   <Languages size={15} />
                   {translations.loading
                     ? translationCopy.translating
-                    : translations.content(items[0]?.id ?? "")
+                    : translations.cacheLoading
+                      ? translationCopy.checkingCache
+                    : allQuickStartsTranslated
                       ? translationCopy.showOriginal
                       : translationCopy.translate}
                 </button>
@@ -1301,15 +1305,19 @@ export function BuildsPage(props: {
               </div>
             </div>
             <div className="quick-start-list">
-              {items.map((item) => (
-                <QuickStartCard
-                  key={item.id}
-                  item={item}
-                  translation={translations.content(item.id)}
-                  labels={quickStartLabels[item.id]}
-                  pick={setPicked}
-                />
-              ))}
+              {translations.cacheLoading ? (
+                <p className="hint">{translationCopy.checkingCache}</p>
+              ) : (
+                items.map((item) => (
+                  <QuickStartCard
+                    key={item.id}
+                    item={item}
+                    translation={translations.content(item.id)}
+                    labels={quickStartLabels[item.id]}
+                    pick={setPicked}
+                  />
+                ))
+              )}
             </div>
             {(error || translations.error) && (
               <small className="hint">{error || translationCopy.failed}</small>

@@ -993,6 +993,27 @@ def test_template_translation_cache_only_accepts_display_text_shape(tmp_path, mo
         )
 
 
+def test_cached_template_translation_endpoint_returns_only_existing_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "TEMPLATE_TRANSLATIONS", tmp_path / "template-translations.json")
+    quick_start_id = "openorbit.user-journey-smoke-test"
+    source = main_module.store.template_translation_input("quick-start", quick_start_id)
+    main_module.store.save_template_translation("quick-start", quick_start_id, "ko", source, source)
+
+    cached = TestClient(app).post(
+        "/api/template-translations/cached",
+        json={"kind": "quick-start", "template_id": quick_start_id, "locale": "ko"},
+    )
+    missing = TestClient(app).post(
+        "/api/template-translations/cached",
+        json={"kind": "quick-start", "template_id": quick_start_id, "locale": "ja"},
+    )
+
+    assert cached.status_code == 200
+    assert cached.json() == {"content": source}
+    assert missing.status_code == 200
+    assert missing.json() == {"content": None}
+
+
 def test_quick_start_translation_includes_placeholders_and_tooltips(monkeypatch):
     store = store_module.ConsoleStore()
     manifest = {

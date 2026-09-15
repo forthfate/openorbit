@@ -597,6 +597,7 @@
     "templateTranslation": {
       "translate": "번역",
       "translating": "번역 중…",
+      "checkingCache": "저장된 번역을 확인하는 중…",
       "showOriginal": "원문 보기",
       "failed": "템플릿 번역에 실패했습니다. 다시 시도해 주세요."
     },
@@ -631,7 +632,7 @@
       "importFailed": "템플릿을 가져오지 못했습니다",
       "basedOn": "기반 템플릿",
       "changeTemplate": "템플릿 변경",
-      "empty": "Empty",
+      "empty": "비어 있음",
       "emptyDescription": "비어 있는 6단계 러너로 시작합니다.",
       "id": "ID",
       "name": "이름",

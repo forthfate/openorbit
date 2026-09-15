@@ -598,6 +598,7 @@
     "templateTranslation": {
       "translate": "Translate",
       "translating": "Translating…",
+      "checkingCache": "Checking saved translations…",
       "showOriginal": "Show original",
       "failed": "Template translation failed. Please try again."
     },

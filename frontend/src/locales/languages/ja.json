@@ -597,6 +597,7 @@
     "templateTranslation": {
       "translate": "翻訳",
       "translating": "翻訳中…",
+      "checkingCache": "保存済みの翻訳を確認中…",
       "showOriginal": "原文を表示",
       "failed": "テンプレートの翻訳に失敗しました。もう一度お試しください。"
     },
@@ -631,7 +632,7 @@
       "importFailed": "テンプレートをインポートできませんでした",
       "basedOn": "テンプレートに基づく",
       "changeTemplate": "テンプレートを変更",
-      "empty": "Empty",
+      "empty": "なし",
       "emptyDescription": "空の6フェーズランナーから始めます。",
       "id": "ID",
       "name": "名前",
