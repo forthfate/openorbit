@@ -474,11 +474,13 @@ export function EvaluationsPage({
           <strong className="run-build__name">
             {r.build_name ?? r.build_id}
             {r.build_id && orphanedBuildIds?.has(r.build_id) && (
-              <Tooltip content={l.orphanedBuild}>
-                <span className="run-build__orphan" aria-label={l.orphanedBuild}>
-                  <Unlink size={14} aria-hidden="true" />
-                </span>
-              </Tooltip>
+              <span
+                className="run-build__orphan"
+                aria-label={l.orphanedBuild}
+                title={l.orphanedBuild}
+              >
+                <Unlink size={14} aria-hidden="true" />
+              </span>
             )}
           </strong>
           <code>{r.id}</code>

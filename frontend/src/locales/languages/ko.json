@@ -386,6 +386,7 @@
       "buildListDescription": "대상, 워크플로, 재사용 자산을 연결한 반복 태스크를 관리합니다.",
       "createBuild": "빌드 생성",
       "name": "이름",
+      "tasks": "태스크",
       "repository": "저장소",
       "prompt": "프롬프트",
       "purpose": "목적",

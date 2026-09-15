@@ -387,6 +387,7 @@
       "buildListDescription": "Create and manage recurring tasks that connect a target, workflow, and reusable assets.",
       "createBuild": "Create build",
       "name": "Name",
+      "tasks": "Tasks",
       "repository": "Repository",
       "prompt": "Prompt",
       "purpose": "Purpose",
