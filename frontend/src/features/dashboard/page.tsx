@@ -51,6 +51,20 @@ type OperationsCopy = {
 };
 type DashboardHelp = { trend: string };
 type OverviewCopy = { title: string; description: string };
+type RunUiCopy = {
+  queued: string;
+  awaitingApproval: string;
+  running: string;
+  succeeded: string;
+  failed: string;
+  cancelled: string;
+  beforeAll: string;
+  beforeEach: string;
+  execute: string;
+  verify: string;
+  afterEach: string;
+  afterAll: string;
+};
 
 function DashboardSkeleton() {
   return <>
@@ -217,12 +231,28 @@ export function DashboardPage({
     overview = localeMessages<OverviewCopy>(locale, "dashboardOverview"),
     sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails"),
     dashboard = locales[locale].dashboardUi,
+    runUi = locales[locale].runUi as RunUiCopy,
     quickStartLabels = localeMessages<
       Record<string, { name: string; description: string }>
     >(locale, "quickStartLabels"),
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length,
     [quickStarts, setQuickStarts] = useState<QuickStart[]>([]);
+  const runLabel = (value: string) =>
+    ({
+      queued: runUi.queued,
+      awaiting_approval: runUi.awaitingApproval,
+      running: runUi.running,
+      succeeded: runUi.succeeded,
+      failed: runUi.failed,
+      cancelled: runUi.cancelled,
+      before_all: runUi.beforeAll,
+      before_each: runUi.beforeEach,
+      execute: runUi.execute,
+      verify: runUi.verify,
+      after_each: runUi.afterEach,
+      after_all: runUi.afterAll,
+    })[value] ?? value;
   useEffect(() => {
     api<QuickStart[]>("/api/quick-starts")
       .then((items) => setQuickStarts(items.slice(0, 4)))
@@ -314,8 +344,8 @@ export function DashboardPage({
             >
               <small>{`${eventLabel} · ${relativeRunTime(eventTime, locale)}`}</small>
               <strong>{run.build_name ?? run.workflow_name}</strong>
-              <span>{run.current_phase ?? run.status}</span>
-              <StatusBadge value={run.status} />
+              <span>{runLabel(run.current_phase ?? run.status)}</span>
+              <StatusBadge value={run.status} label={runLabel(run.status)} />
             </button>
           );
         })}
