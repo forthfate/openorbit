@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import store as store_module
+from .assistant_graph import OrbitAssistantGraph, build_assistant_prompt
 from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
 from .mcp_server import create_mcp_server
@@ -1176,24 +1177,13 @@ def chat(values: ChatMessage, request: Request):
     )
     try:
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
-        history = "\n".join(f"{turn.role.title()}: {turn.content}" for turn in values.history)
-        prompt = (
-            "You are Orbit, a concise assistant for the local OpenOrbit control room.\n"
-            "The local OpenAPI contract is available at /api/openapi.json; use it as the source of truth "
-            "when explaining API endpoints, parameters, and response shapes.\n"
-        )
-        if locale := request_locale(request):
-            prompt += f"Respond in BCP 47 locale '{locale}'.\n"
-        if history:
-            prompt += f"Conversation so far:\n{history}\n\n"
-        prompt += f"User: {values.content}\nAssistant:"
         tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
-        definitions = tool_executor.definitions()
-        response = (
-            provider.complete_with_tools(settings, prompt, definitions, tool_executor.execute)
-            if definitions
-            else provider.complete(settings, prompt)
+        prompt = build_assistant_prompt(
+            values.content,
+            [(turn.role, turn.content) for turn in values.history],
+            request_locale(request),
         )
+        response = OrbitAssistantGraph(provider, settings, tool_executor).invoke(prompt)
         return {"response": response, "profile_name": profile_name}
     except RuntimeError as error:
         raise HTTPException(409, str(error))
