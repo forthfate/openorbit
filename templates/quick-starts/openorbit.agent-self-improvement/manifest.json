@@ -13,7 +13,8 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "Agent self-improvement"
+      "default": "Agent self-improvement",
+      "placeholder": "e.g. Support agent prompt improvement"
     },
     {
       "key": "repository",

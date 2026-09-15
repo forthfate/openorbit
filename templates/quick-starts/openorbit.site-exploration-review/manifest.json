@@ -13,7 +13,8 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "Site exploration review"
+      "default": "Site exploration review",
+      "placeholder": "e.g. Production site exploration review"
     },
     {
       "key": "repository",
@@ -42,7 +43,8 @@
       "label": "AI model profile name",
       "type": "string",
       "required": true,
-      "default": "Site exploration AI"
+      "default": "Site exploration AI",
+      "placeholder": "e.g. Production site exploration supervisor"
     },
     {
       "key": "provider",
@@ -80,14 +82,16 @@
       "label": "Region",
       "type": "string",
       "required": true,
-      "default": "us-east-1"
+      "default": "us-east-1",
+      "placeholder": "e.g. eastus"
     },
     {
       "key": "secret_env",
       "label": "API key environment variable",
       "type": "string",
       "required": true,
-      "default": "AZURE_OPENAI_API_KEY"
+      "default": "AZURE_OPENAI_API_KEY",
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY"
     }
   ],
   "assets": {

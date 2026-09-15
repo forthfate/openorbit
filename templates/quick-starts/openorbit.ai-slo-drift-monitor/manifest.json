@@ -13,7 +13,8 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "AI operational SLO monitor"
+      "default": "AI operational SLO monitor",
+      "placeholder": "e.g. Production AI SLO monitor"
     },
     {
       "key": "repository",
@@ -43,7 +44,8 @@
       "label": "AI model profile name",
       "type": "string",
       "required": true,
-      "default": "AI operations supervisor"
+      "default": "AI operations supervisor",
+      "placeholder": "e.g. Production AI operations supervisor"
     },
     {
       "key": "provider",
@@ -81,14 +83,16 @@
       "label": "Region",
       "type": "string",
       "required": true,
-      "default": "us-east-1"
+      "default": "us-east-1",
+      "placeholder": "e.g. eastus"
     },
     {
       "key": "secret_env",
       "label": "API key environment variable",
       "type": "string",
       "required": true,
-      "default": "AZURE_OPENAI_API_KEY"
+      "default": "AZURE_OPENAI_API_KEY",
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY"
     }
   ],
   "assets": {
