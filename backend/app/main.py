@@ -468,7 +468,7 @@ class PipelineAction(BaseModel):
 class RunnerAssetUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
-    source: str = Field(min_length=1, max_length=100_000)
+    source: str = Field(min_length=1, max_length=250_000)
     template_id: str | None = Field(default=None, max_length=64)
 
 

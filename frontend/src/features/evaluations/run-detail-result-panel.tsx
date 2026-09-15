@@ -1,4 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import CodeMirror from "@uiw/react-codemirror";
+import { html } from "@codemirror/lang-html";
+import { oneDark } from "@codemirror/theme-one-dark";
+import { EditorView } from "@codemirror/view";
 import { CodeXml, Image } from "lucide-react";
 import type { RunStepResult } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
@@ -28,10 +32,41 @@ function browserJourney(result?: Record<string, unknown>) {
   return undefined;
 }
 
+function visualDataFiles(step: RunStepResult): EvidenceArtifact[] {
+  return (step.data_files ?? []).reduce<EvidenceArtifact[]>((artifacts, file, index) => {
+    const path = file.relative_path ?? file.path;
+    if (!path) return artifacts;
+    const name = file.label || file.filename || `#${index + 1}`;
+    if (file.content_type?.startsWith("image/")) artifacts.push({ id: path, name, screenshot: path });
+    if (file.content_type === "text/html") artifacts.push({ id: path, name, html: path });
+    return artifacts;
+  }, []);
+}
+
 function artifactUrl(runId: string, iteration: number, path: string) {
   const normalized = path.replaceAll("\\", "/"), marker = `/loop-${iteration}/`;
-  const relative = normalized.includes(marker) ? normalized.split(marker).at(-1)! : normalized.split("/").at(-1)!;
+  const relative = normalized.includes(marker) ? normalized.split(marker).at(-1)! : normalized;
   return `/api/runs/${encodeURIComponent(runId)}/artifacts/${iteration}/${relative.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+function HtmlEvidenceViewer({ url }: { url: string }) {
+  const [result, setResult] = useState<{ url: string; source?: string; error?: string } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((source) => setResult({ url, source }))
+      .catch((reason: unknown) => {
+        if ((reason as { name?: string }).name !== "AbortError") setResult({ url, error: String(reason) });
+      });
+    return () => controller.abort();
+  }, [url]);
+  if (!result || result.url !== url) return <p className="hint">Loading HTML…</p>;
+  if (result.error) return <pre className="persona-evidence__error">{result.error}</pre>;
+  return <CodeMirror aria-label="HTML evidence source" value={result.source ?? ""} editable={false} height="min(60vh, 640px)" theme={oneDark} extensions={[html(), EditorView.lineWrapping]} basicSetup={{ lineNumbers: true, highlightActiveLine: true, bracketMatching: true, foldGutter: true }} />;
 }
 
 function ResultList({ items, kind, locale, empty }: { items: RecordItem[]; kind: "improvement" | "issue"; locale: Locale; empty: string }) {
@@ -71,7 +106,9 @@ export function EvaluationResultPanel({ error, records, summaries, steps, runId,
     ];
     return fields.filter((field): field is [string | undefined, string] => Boolean(field[1]));
   };
-  const artifactsFor = (iteration: number) => steps.filter((step) => step.loop_index === iteration).flatMap((step) => browserJourney(step.result)?.results ?? []);
+  const artifactsFor = (iteration: number) => steps
+    .filter((step) => step.loop_index === iteration)
+    .flatMap((step) => [...(browserJourney(step.result)?.results ?? []), ...visualDataFiles(step)]);
   const modalArtifacts = evidenceModal?.artifacts.filter((artifact) => evidenceModal.kind === "image" ? Boolean(artifact.screenshot) : Boolean(artifact.html)) ?? [];
-  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items result-items--scrollable">{summaries.map((item) => { const artifacts = artifactsFor(item.iteration), imageArtifacts = artifacts.filter((artifact) => artifact.screenshot), htmlArtifacts = artifacts.filter((artifact) => artifact.html); return <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span><small>Iteration</small><b>#{item.iteration}</b></span><button className="ghost icon-button" type="button" disabled={!imageArtifacts.length} aria-label={l.viewImageEvidence} title={l.viewImageEvidence} onClick={() => setEvidenceModal({ kind: "image", artifacts: imageArtifacts, iteration: item.iteration })}><Image size={16} /></button><button className="ghost icon-button" type="button" disabled={!htmlArtifacts.length} aria-label={l.viewHtmlEvidence} title={l.viewHtmlEvidence} onClick={() => setEvidenceModal({ kind: "html", artifacts: htmlArtifacts, iteration: item.iteration })}><CodeXml size={16} /></button></div></article>; })}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}<Modal open={Boolean(evidenceModal)} title={evidenceModal?.kind === "image" ? l.imageEvidence ?? "" : l.htmlEvidence ?? ""} onClose={() => setEvidenceModal(null)} className="modal--evidence">{modalArtifacts.map((artifact, index) => <figure className="persona-evidence" key={`${artifact.id ?? index}-${evidenceModal?.kind}`}><figcaption>{artifact.name ?? artifact.id ?? `#${index + 1}`}</figcaption>{evidenceModal?.kind === "image" ? <img src={artifactUrl(runId, evidenceModal.iteration, artifact.screenshot!)} alt={artifact.name ?? artifact.id ?? ""} /> : <iframe title={artifact.name ?? artifact.id ?? `#${index + 1}`} sandbox="" src={artifactUrl(runId, evidenceModal!.iteration, artifact.html!)} />}</figure>)}</Modal></>;
+  return <>{error}{records.length ? <>{summaries.length > 0 && <section className="result-behavior-summaries"><h3>{l.observedBehavior}</h3><div className="result-items result-items--scrollable">{summaries.map((item) => { const artifacts = artifactsFor(item.iteration), imageArtifacts = artifacts.filter((artifact) => artifact.screenshot), htmlArtifacts = artifacts.filter((artifact) => artifact.html); return <article className="result-row result-behavior-trace" key={item.iteration}><time className="result-row__time">{time(locale, item.recordedAt)}</time><div className="result-row__body">{traceFields(item).length ? <dl>{traceFields(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : <p>{item.summary}</p>}</div><div className="result-row__metrics"><span className="result-row__iteration"><small>Iteration</small><b>#{item.iteration}</b></span><span className="result-row__evidence">{imageArtifacts.length > 0 && <button className="ghost icon-button" type="button" aria-label={l.viewImageEvidence} title={l.viewImageEvidence} onClick={() => setEvidenceModal({ kind: "image", artifacts: imageArtifacts, iteration: item.iteration })}><Image size={16} /></button>}{htmlArtifacts.length > 0 && <button className="ghost icon-button" type="button" aria-label={l.viewHtmlEvidence} title={l.viewHtmlEvidence} onClick={() => setEvidenceModal({ kind: "html", artifacts: htmlArtifacts, iteration: item.iteration })}><CodeXml size={16} /></button>}</span></div></article>; })}</div></section>}<section><h3>{l.proposals}</h3><ResultList locale={locale} kind="improvement" items={improvements} empty={l.noResults ?? ""} /></section><section><h3>{l.issues}</h3><ResultList locale={locale} kind="issue" items={issues} empty={l.noResults ?? ""} /></section></> : <p className="hint result-empty">{l.noMatchingResults}</p>}<Modal open={Boolean(evidenceModal)} title={evidenceModal?.kind === "image" ? l.imageEvidence ?? "" : l.htmlEvidence ?? ""} onClose={() => setEvidenceModal(null)} className="modal--evidence">{modalArtifacts.map((artifact, index) => <figure className="persona-evidence" key={`${artifact.id ?? index}-${evidenceModal?.kind}`}><figcaption>{artifact.name ?? artifact.id ?? `#${index + 1}`}</figcaption>{evidenceModal?.kind === "image" ? <img src={artifactUrl(runId, evidenceModal.iteration, artifact.screenshot!)} alt={artifact.name ?? artifact.id ?? ""} /> : <HtmlEvidenceViewer url={artifactUrl(runId, evidenceModal!.iteration, artifact.html!)} />}</figure>)}</Modal></>;
 }
