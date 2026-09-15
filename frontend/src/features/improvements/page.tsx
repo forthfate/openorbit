@@ -424,14 +424,17 @@ function ProposalHistory({
   t,
   locale,
   buildId,
+  hours,
 }: {
   t: (typeof copy)["en"];
   locale: Locale;
   buildId?: string;
+  hours: number;
 }) {
   const [items, setItems] = useState<ProposalLifecycle[]>([]),
     [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
-    [selected, setSelected] = useState<ProposalLifecycle | null>(null);
+    [selected, setSelected] = useState<ProposalLifecycle | null>(null),
+    [rangeStart] = useState(() => Date.now() - hours * 60 * 60 * 1000);
   useEffect(() => {
     api<ProposalLifecycle[]>("/api/v1/improvements/proposals")
       .then(setItems)
@@ -482,7 +485,8 @@ function ProposalHistory({
       builds.set(resolvedBuildId, build);
       return group;
     };
-    for (const item of items.filter((item) => !buildId || item.build_id === buildId)) {
+    const inRange = (value?: string) => !value || (Date.parse(value) || 0) >= rangeStart;
+    for (const item of items.filter((item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at))) {
       iteration(
         item.build_id,
         item.build_name,
@@ -492,7 +496,7 @@ function ProposalHistory({
       ).items.push(item);
     }
     for (const item of iterationData.filter(
-      (item) => !buildId || item.build_id === buildId,
+      (item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at),
     )) {
       iteration(
         item.build_id,
@@ -519,7 +523,7 @@ function ProposalHistory({
               ?.recordedAt?.localeCompare(a.iterations.at(-1)?.recordedAt || "") || 0,
         ),
     }));
-  }, [items, iterationData, buildId]);
+  }, [items, iterationData, buildId, rangeStart]);
   const statusLabel = (value: string) =>
     value === "rejected"
       ? t.rejected
@@ -532,7 +536,7 @@ function ProposalHistory({
       : "";
   const evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations");
   return (
-    <section className="cycle-proposal-history">
+    <section className="panel cycle-proposal-history">
       <h3>
         <SectionInfo title={t.history} description={t.historyHint} />
       </h3>
@@ -690,14 +694,15 @@ function ProposalHistory({
 function CycleImprovementAI({
   locale,
   build,
+  hours,
 }: {
   locale: Locale;
   build: string;
+  hours: number;
 }) {
   const [data, setData] = useState<ImprovementAnalytics>(),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
-    [hours, setHours] = useState(720),
     t = locales[locale].cycle;
   useEffect(() => {
     api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`)
@@ -735,15 +740,6 @@ function CycleImprovementAI({
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
-        <label>
-          {t.range}
-          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-            <option value={24}>24h</option>
-            <option value={72}>3d</option>
-            <option value={168}>7d</option>
-            <option value={720}>30d</option>
-          </select>
-        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (
@@ -783,7 +779,6 @@ function CycleImprovementAI({
               </div>
             )}
           </div>
-          <ProposalHistory t={copy[locale]} locale={locale} buildId={build} />
         </>
       )}
     </section>
@@ -878,7 +873,8 @@ export function ImprovementsPage({
     [builds, setBuilds] = useState<Build[]>([]),
     [initialLoading, setInitialLoading] = useState(true),
     [selectedRun, setSelectedRun] = useState<Run | null>(null),
-    [retryingRun, setRetryingRun] = useState<Run | null>(null);
+    [retryingRun, setRetryingRun] = useState<Run | null>(null),
+    [hours, setHours] = useState(720);
   useEffect(() => {
     api<Build[]>("/api/builds")
       .then((next) => {
@@ -922,8 +918,19 @@ export function ImprovementsPage({
             ))}
           </select>
         </label>
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+          </select>
+        </label>
       </section>
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
+      <CycleImprovementAI locale={locale} build={build} hours={hours} />
+      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
       {build && <RelatedRuns
         buildId={build}
         runs={runs}
@@ -934,7 +941,6 @@ export function ImprovementsPage({
         onSelect={setSelectedRun}
       />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
-      <CycleImprovementAI locale={locale} build={build} />
       {selectedRun && <EvaluationsPage
         detailOnly
         locale={locale}
