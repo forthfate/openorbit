@@ -350,6 +350,7 @@ export default function App() {
         onReject={rejectRun}
         onEmergencyStop={() => setConfirmingEmergencyStop(true)}
         onDeleteRuns={deleteRuns}
+        knownBuilds={room.builds}
       />
     ),
     improvements: <ImprovementsPage

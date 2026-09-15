@@ -1,6 +1,7 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, Unlink, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Build,
   Run,
   WorkflowGraphNode,
   CommitChange,
@@ -113,6 +114,7 @@ export function EvaluationsPage({
   onEmergencyStop,
   onDeleteRuns,
   locale,
+  knownBuilds,
   initialSelectedRun,
   onSelectedRunClose,
   detailOnly = false,
@@ -125,6 +127,7 @@ export function EvaluationsPage({
   onEmergencyStop: () => void;
   onDeleteRuns: (ids: string[]) => Promise<unknown>;
   locale: Locale;
+  knownBuilds?: Build[];
   initialSelectedRun?: Run | null;
   onSelectedRunClose?: () => void;
   detailOnly?: boolean;
@@ -182,6 +185,16 @@ export function EvaluationsPage({
     [draftResultImprovementStatus, setDraftResultImprovementStatus] = useState("all"),
     [draftResultIssueSeverity, setDraftResultIssueSeverity] = useState("all"),
     [draftResultIssueStatus, setDraftResultIssueStatus] = useState("all");
+  const orphanedBuildIds = useMemo(
+    () => knownBuilds === undefined
+      ? null
+      : new Set(
+          runs
+            .map((run) => run.build_id)
+            .filter((buildId): buildId is string => Boolean(buildId) && !knownBuilds.some((build) => build.id === buildId)),
+        ),
+    [knownBuilds, runs],
+  );
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
@@ -458,7 +471,16 @@ export function EvaluationsPage({
       header: t.build,
       render: (r) => (
         <span className="run-build">
-          <strong>{r.build_name ?? r.build_id}</strong>
+          <strong className="run-build__name">
+            {r.build_name ?? r.build_id}
+            {r.build_id && orphanedBuildIds?.has(r.build_id) && (
+              <Tooltip content={l.orphanedBuild}>
+                <span className="run-build__orphan" aria-label={l.orphanedBuild}>
+                  <Unlink size={14} aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
+          </strong>
           <code>{r.id}</code>
         </span>
       ),

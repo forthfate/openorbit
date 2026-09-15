@@ -734,6 +734,7 @@
     "evaluations": {
       "title": "실행 이력",
       "task": "태스크",
+      "orphanedBuild": "이 실행의 빌드가 더 이상 존재하지 않습니다.",
       "evaluation": "결과",
       "iteration": "반복",
       "detail": "실행 상세",

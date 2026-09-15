@@ -735,6 +735,7 @@
     "evaluations": {
       "title": "Runs",
       "task": "Task",
+      "orphanedBuild": "The build for this run no longer exists.",
       "evaluation": "Result",
       "iteration": "Iteration",
       "detail": "Run detail",

@@ -734,6 +734,7 @@
     "evaluations": {
       "title": "実行履歴",
       "task": "タスク",
+      "orphanedBuild": "この実行のビルドはもう存在しません。",
       "evaluation": "結果",
       "iteration": "反復",
       "detail": "実行の詳細",
