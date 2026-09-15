@@ -262,19 +262,19 @@
     },
     "dashboardOperations": {
       "title": "태스크 운영 상태",
-      "description": "최근 24시간의 피드백, 수용된 변경, 문제, 점수를 확인합니다.",
+      "description": "최근 24시간의 피드백, 수용 가능한 제안, 문제, 점수를 확인합니다.",
       "tooltip": "완료된 평가가 최근 24시간 동안 보존한 감독관 증거를 바탕으로 계산합니다. 대상 시스템의 실시간 가용성을 뜻하지는 않습니다.",
       "feedback": "피드백",
-      "accepted": "수용",
+      "acceptable": "수용 가능",
       "issues": "보고된 문제",
       "score": "감독관 점수",
-      "trend": "피드백 및 수용된 개선",
+      "trend": "피드백 및 수용 가능한 개선",
       "none": "최근 24시간 감독관 피드백이 없습니다.",
       "previous": "이전 24시간 대비"
     },
     "dashboardFeedbackTrends": {
       "title": "피드백 추이",
-      "description": "빌드별 피드백, 수용 결과, 이슈, 실행 상태의 추이를 확인합니다.",
+      "description": "빌드별 피드백, 수용 가능 제안, 이슈, 실행 상태의 추이를 확인합니다.",
       "range": "기간",
       "feedbackVolume": "빌드별 피드백",
       "activeTrend": "실행 중 추이",
@@ -282,17 +282,17 @@
       "issueSeverity": "보고된 문제 심각도",
       "runHealth": "실행 상태",
       "activeCount": "실행 중",
-      "feedbackCount": "피드백 수", "adopted": "적용됨", "rejected": "기각됨", "proposed": "제안됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
+      "feedbackCount": "피드백 수", "acceptable": "수용 가능", "rejected": "기각됨", "proposed": "제안됨", "low": "낮음", "medium": "중간", "high": "높음", "critical": "심각", "succeeded": "성공", "failed": "실패", "cancelled": "취소됨", "running": "실행 중"
     },
     "improvementEvaluationTrends": {
       "title": "반복 개선 추이",
-      "description": "선택한 빌드의 반복별 수용된 개선 피드백과 감독관 점수 변화를 확인합니다.",
+      "description": "선택한 빌드의 반복별 수용 가능한 개선 피드백과 감독관 점수 변화를 확인합니다.",
       "range": "기간",
-      "iterationTrend": "반복별 수용 피드백 및 점수",
-      "accepted": "수용됨", "score": "점수", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다."
+      "iterationTrend": "반복별 수용 가능 피드백 및 점수",
+      "acceptable": "수용 가능", "score": "점수", "noIterationFeedback": "이 기간에 반복 피드백이 없습니다."
     },
     "dashboardHelp": {
-      "trend": "시간대별 감독관 피드백과 같은 기간에 수용된 개선을 비교합니다."
+      "trend": "시간대별 감독관 피드백과 같은 기간에 수용 가능한 개선을 비교합니다."
     },
     "settings": "설정",
     "settingsLogs": {
@@ -572,7 +572,7 @@
       "unlimited": "제한 없음",
       "evaluation": "결과",
       "feedbackVolume": "빌드별 피드백",
-      "iterationTrend": "반복별 수용 피드백 및 점수",
+      "iterationTrend": "반복별 수용 가능 피드백 및 점수",
       "activeTrend": "실행 중 추이",
       "feedbackStatus": "피드백 상태 분포",
       "issueSeverity": "보고된 문제 심각도",
@@ -583,6 +583,7 @@
       "historyHint": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",
       "allBuilds": "전체 빌드",
       "allStates": "전체 상태",
+      "acceptable": "수용 가능",
       "rejected": "기각됨",
       "proposed": "제안됨",
       "decisionReason": "결정 사유",
@@ -597,7 +598,6 @@
       "feedbackCount": "피드백 수",
       "activeCount": "실행 중",
       "noIterationFeedback": "이 기간에 반복 피드백이 없습니다.",
-      "adopted": "적용됨",
       "low": "낮음",
       "medium": "중간",
       "high": "높음",
@@ -789,8 +789,8 @@
     "chartHints": {
       "feedbackByBuild": "빌드별로 기록된 감독관 피드백의 양을 비교합니다.",
       "activeRuns": "시간대별로 실행 중이었던 실행 수를 확인합니다.",
-      "iterationTrend": "반복별 수용된 피드백 수와 감독관 점수를 추적합니다.",
-      "feedbackStatus": "빌드별 제안·수용·기각 피드백을 비교합니다.",
+      "iterationTrend": "반복별 수용 가능 피드백 수와 감독관 점수를 추적합니다.",
+      "feedbackStatus": "빌드별 제안·수용 가능·기각 피드백을 비교합니다.",
       "issueSeverity": "심각도별로 보고된 문제의 추이를 확인합니다.",
       "runHealth": "성공·실패·취소·실행 중인 실행 상태를 비교합니다."
     }

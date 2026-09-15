@@ -177,7 +177,7 @@ def runs():
         ]
         item["proposed_improvements"] = len(improvements)
         item["approved_improvements"] = sum(
-            improvement.get("status") == "adopted" for improvement in improvements
+            improvement.get("status") in {"adopted", "accepted"} for improvement in improvements
         )
         item["reported_issues"] = len(issues)
         values.append(item)
@@ -1267,7 +1267,7 @@ def list_improvements_v1():
 )
 def list_proposal_lifecycles_v1(
     build_id: str | None = None,
-    status: Literal["proposed", "accepted", "rejected", "applied"] | None = None,
+    status: Literal["proposed", "acceptable", "accepted", "rejected", "applied"] | None = None,
 ):
     return store.proposal_lifecycles(build_id, status)
 

@@ -650,7 +650,7 @@ def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):
             {
                 "iteration": 1,
                 "response": {
-                    "improvements": [{"title": "Add refund intake", "status": "adopted"}],
+                    "improvements": [{"title": "Add refund intake", "status": "accepted"}],
                     "reported_issues": [{"title": "Missing refund details"}],
                 },
             },
@@ -1371,7 +1371,7 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
                     "recorded_at": "2026-01-01T00:00:00+00:00",
                     "response": {
                         "improvements": [
-                            {"title": "Keep evidence", "target": "prompt", "status": "adopted"},
+                            {"title": "Keep evidence", "target": "prompt", "status": "acceptable"},
                             {"title": "Remove noise", "target": "runner", "status": "proposed"},
                         ],
                         "reported_issues": [],
@@ -1381,7 +1381,7 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
         )
     )
     lifecycle = store.proposal_lifecycles("build-1")
-    assert [item["status"] for item in lifecycle] == ["accepted", "proposed"]
+    assert [item["status"] for item in lifecycle] == ["acceptable", "proposed"]
     assert {item["title"] for item in lifecycle} == {"Keep evidence", "Remove noise"}
     assert lifecycle[0]["data_files"] == [
         {

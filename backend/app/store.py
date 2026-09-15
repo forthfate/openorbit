@@ -92,7 +92,7 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"current_action\":\"string\",\"decision\":\"string\",\"next_action\":\"string\",\"evidence\":\"string\"}},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning. Keep the visible journey concise and written from the persona's perspective: persona_goal is the persona's stable wish; current_action is the one meaningful action taken in this iteration; decision is the resulting judgment or choice; next_action is the one specific, safe next action. Write each field as one to three natural sentences in the selected output language. Follow that language's normal grammar, ellipsis, and point of view; do not mechanically repeat a subject or pronoun across fields. Do not describe navigation, waits, screenshots, generic control inspection, or other repeated mechanics in any visible journey field. evidence is a concise source-backed factual record for the evidence drawer, not a visible journey item. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
@@ -106,13 +106,13 @@ __ORBIT_MANAGER_AI_PROMPT__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|adopted|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
   \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
 PROPOSAL_DECISION_POLICY = """# Improvement decision policy
 Decide each improvement status independently from the evaluation approval score.
-Use `adopted` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `adopted` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
+Use `acceptable` for a prompt-only change when it is low-risk, additive, reversible through the retained prompt version, directly supported by the observed evidence, and has measurable acceptance evidence. Prefer `acceptable` for such changes; do not defer it merely to wait for another iteration or a repeated candidate fingerprint.
 Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 MANAGER_OUTPUT_LANGUAGE_SLOT = "__ORBIT_MANAGER_OUTPUT_LANGUAGE__"
@@ -120,7 +120,7 @@ NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
 # - PROJECT_ROOT is a Git repository.
 # - The build selects fixed target-AI prompts and a configured model
 #   profile, plus a readable managed_prompt_path on its Target Environment.
-# - Only supervisor feedback explicitly marked adopted is applied to the prompt.
+# - Only human-accepted feedback is applied to the prompt.
 # This runner never commits target changes; ctx.update_file keeps rollback versions.
 
 import hashlib
@@ -241,11 +241,11 @@ def before_each(ctx):
     # Keep the target's complete pre-evaluation state outside commit history.
     # The call is idempotent because before_each runs for every iteration.
     ctx.save_before_each_snapshot()
-    # Apply the latest accepted supervisor feedback before the next validation.
+    # Apply only feedback accepted by a human before the next validation.
     feedback = ctx.previous_supervisor_feedback
     accepted = [
         proposal for proposal in feedback.get("improvements", [])
-        if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
+        if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() == "accepted"
     ]
     requires_human_approval = bool(
         ctx.build.get("require_human_approval_before_apply", False)
@@ -1762,7 +1762,7 @@ if __name__ == "__main__":
                     "prompt_template": {
                         "name": "${build_name} policy",
                         "version": 1,
-                        "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement adopted only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
+                        "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
                     },
                     "test_case_set": {
                         "name": "${build_name} validation",
@@ -3283,6 +3283,8 @@ if __name__ == "__main__":
                     decision = (
                         "accepted"
                         if source_status in {"adopted", "accepted"}
+                        else "acceptable"
+                        if source_status == "acceptable"
                         else "rejected"
                         if source_status == "rejected"
                         else "pending"
@@ -3783,7 +3785,7 @@ if __name__ == "__main__":
         previous_summary_start = summary_start - timedelta(hours=24)
         summary = {
             "feedback": 0,
-            "accepted": 0,
+            "acceptable": 0,
             "issues": 0,
             "scores": [],
             "previous_scores": [],
@@ -3805,7 +3807,7 @@ if __name__ == "__main__":
             )
             trend = trends_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "points": []})
             status_counts = feedback_status_by_build.setdefault(
-                build_id, {"build_id": build_id, "name": name, "proposed": 0, "adopted": 0, "rejected": 0}
+                build_id, {"build_id": build_id, "name": name, "proposed": 0, "acceptable": 0, "rejected": 0}
             )
             for record in run.supervisor_results:
                 recorded_at = parse_timestamp(record.get("recorded_at"))
@@ -3826,11 +3828,11 @@ if __name__ == "__main__":
                 score = evaluation.get("score") if isinstance(evaluation.get("score"), (int, float)) else None
                 if recorded_at >= summary_start:
                     summary["feedback"] += len(improvements) + len(issues)
-                    summary["accepted"] += len(
+                    summary["acceptable"] += len(
                         [
                             item
                             for item in improvements
-                            if isinstance(item, dict) and item.get("status") == "adopted"
+                            if isinstance(item, dict) and item.get("status") == "acceptable"
                         ]
                     )
                     summary["issues"] += len(issues)
@@ -3844,7 +3846,7 @@ if __name__ == "__main__":
                 for improvement in improvements:
                     if isinstance(improvement, dict) and improvement.get("status") in {
                         "proposed",
-                        "adopted",
+                        "acceptable",
                         "rejected",
                     }:
                         status_counts[str(improvement["status"])] += 1
@@ -3864,11 +3866,11 @@ if __name__ == "__main__":
                         "run_id": run.id,
                         "iteration": record.get("iteration", 0),
                         "recorded_at": recorded_at.isoformat(),
-                        "accepted_count": len(
+                        "acceptable_count": len(
                             [
                                 item
                                 for item in improvements
-                                if isinstance(item, dict) and item.get("status") == "adopted"
+                                if isinstance(item, dict) and item.get("status") == "acceptable"
                             ]
                         ),
                         "feedback_count": len(improvements) + len(issues),
@@ -3929,7 +3931,7 @@ if __name__ == "__main__":
             "window_hours": requested_hours,
             "operational_summary": {
                 "feedback": summary["feedback"],
-                "accepted": summary["accepted"],
+                "acceptable": summary["acceptable"],
                 "issues": summary["issues"],
                 "average_score": average_score,
                 "score_delta": round(average_score - previous_average, 1)
@@ -3994,7 +3996,7 @@ if __name__ == "__main__":
             ]
             item["proposed_improvements"] = len(improvements)
             item["approved_improvements"] = len(
-                [item for item in improvements if item.get("status") == "adopted"]
+                [item for item in improvements if item.get("status") in {"adopted", "accepted"}]
             )
             item["reported_issues"] = len(issues)
             item["approval_score"] = builds_by_id[run.build_id].get("approval_score")
@@ -4798,7 +4800,9 @@ if __name__ == "__main__":
                 for improvement in result["improvements"]:
                     improvement.setdefault("reported_at", reported_at)
                     improvement.setdefault("effect_score", (result.get("evaluation") or {}).get("score"))
-                    improvement.setdefault("attempted", improvement.get("status") in {"adopted", "rejected"})
+                    improvement.setdefault(
+                        "attempted", improvement.get("status") in {"adopted", "accepted", "rejected"}
+                    )
                 for issue in result["reported_issues"]:
                     issue.setdefault("reported_at", reported_at)
                 run = self._load(run_id)

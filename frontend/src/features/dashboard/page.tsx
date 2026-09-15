@@ -42,7 +42,7 @@ type OperationsCopy = {
   description: string;
   tooltip: string;
   feedback: string;
-  accepted: string;
+  acceptable: string;
   issues: string;
   score: string;
   trend: string;
@@ -109,14 +109,14 @@ function OperationalHealth({ locale }: { locale: Locale }) {
   const trend = useMemo(() => {
     const grouped = new Map<
       string,
-      { time: string; feedback: number; accepted: number }
+      { time: string; feedback: number; acceptable: number }
     >();
     for (const item of analytics?.iteration_trends ?? [])
       for (const point of item.points) {
         const time = new Date(point.recorded_at).toISOString().slice(0, 13);
-        const row = grouped.get(time) ?? { time, feedback: 0, accepted: 0 };
+        const row = grouped.get(time) ?? { time, feedback: 0, acceptable: 0 };
         row.feedback += point.feedback_count;
-        row.accepted += point.accepted_count;
+        row.acceptable += point.acceptable_count;
         grouped.set(time, row);
       }
     return [...grouped.values()].sort((a, b) => a.time.localeCompare(b.time));
@@ -143,7 +143,7 @@ function OperationalHealth({ locale }: { locale: Locale }) {
       </div>
       <div className="dashboard-health-metrics">
         <MetricCard label={copy.feedback} value={`${summary?.feedback ?? 0}`} />
-        <MetricCard label={copy.accepted} value={`${summary?.accepted ?? 0}`} />
+        <MetricCard label={copy.acceptable} value={`${summary?.acceptable ?? 0}`} />
         <MetricCard label={copy.issues} value={`${summary?.issues ?? 0}`} />
         <MetricCard
           label={copy.score}
@@ -182,8 +182,8 @@ function OperationalHealth({ locale }: { locale: Locale }) {
                 radius={[4, 4, 0, 0]}
               />
               <Bar
-                dataKey="accepted"
-                name={copy.accepted}
+                dataKey="acceptable"
+                name={copy.acceptable}
                 fill="#79c99e"
                 radius={[4, 4, 0, 0]}
               />

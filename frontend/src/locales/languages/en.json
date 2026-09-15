@@ -263,19 +263,19 @@
     },
     "dashboardOperations": {
       "title": "Task health",
-      "description": "Review feedback, accepted changes, issues, and scores from the last 24 hours.",
+      "description": "Review feedback, acceptable proposals, issues, and scores from the last 24 hours.",
       "tooltip": "Calculated from supervisor evidence retained by completed runs during the last 24 hours; it does not represent live target availability.",
       "feedback": "Feedback",
-      "accepted": "Accepted",
+      "acceptable": "Acceptable",
       "issues": "Reported issues",
       "score": "Supervisor score",
-      "trend": "Feedback and accepted changes",
+      "trend": "Feedback and acceptable proposals",
       "none": "No supervisor feedback in the last 24 hours.",
       "previous": "vs previous 24h"
     },
     "dashboardFeedbackTrends": {
       "title": "Feedback trends",
-      "description": "Review feedback volume, acceptance, issues, and run health across builds.",
+      "description": "Review feedback volume, acceptable proposals, issues, and run health across builds.",
       "range": "Range",
       "feedbackVolume": "Feedback by build",
       "activeTrend": "Active runs over time",
@@ -283,17 +283,17 @@
       "issueSeverity": "Reported issue severity",
       "runHealth": "Run health",
       "activeCount": "Active runs",
-      "feedbackCount": "Feedback count", "adopted": "Adopted", "rejected": "Rejected", "proposed": "Proposed", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
+      "feedbackCount": "Feedback count", "acceptable": "Acceptable", "rejected": "Rejected", "proposed": "Proposed", "low": "Low", "medium": "Medium", "high": "High", "critical": "Critical", "succeeded": "Succeeded", "failed": "Failed", "cancelled": "Cancelled", "running": "Running"
     },
     "improvementEvaluationTrends": {
       "title": "Iteration improvement trend",
-      "description": "Review accepted improvement feedback and supervisor-score changes in each iteration of the selected build.",
+      "description": "Review acceptable improvement feedback and supervisor-score changes in each iteration of the selected build.",
       "range": "Range",
-      "iterationTrend": "Accepted feedback & score by iteration",
-      "accepted": "Accepted", "score": "Score", "noIterationFeedback": "No iteration feedback in this period."
+      "iterationTrend": "Acceptable feedback & score by iteration",
+      "acceptable": "Acceptable", "score": "Score", "noIterationFeedback": "No iteration feedback in this period."
     },
     "dashboardHelp": {
-      "trend": "Compare hourly supervisor feedback with the improvements accepted during the same period."
+      "trend": "Compare hourly supervisor feedback with acceptable proposals from the same period."
     },
     "settings": "Settings",
     "settingsLogs": {
@@ -573,7 +573,7 @@
       "unlimited": "No limit",
       "evaluation": "Result",
       "feedbackVolume": "Feedback by build",
-      "iterationTrend": "Accepted feedback & score by iteration",
+      "iterationTrend": "Acceptable feedback & score by iteration",
       "activeTrend": "Active runs over time",
       "feedbackStatus": "Feedback status distribution",
       "issueSeverity": "Reported issue severity",
@@ -584,6 +584,7 @@
       "historyHint": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",
       "allBuilds": "All builds",
       "allStates": "All states",
+      "acceptable": "Acceptable",
       "rejected": "Rejected",
       "proposed": "Proposed",
       "decisionReason": "Decision reason",
@@ -598,7 +599,6 @@
       "feedbackCount": "Feedback count",
       "activeCount": "Active runs",
       "noIterationFeedback": "No iteration feedback in this period.",
-      "adopted": "Adopted",
       "low": "Low",
       "medium": "Medium",
       "high": "High",
@@ -790,8 +790,8 @@
     "chartHints": {
       "feedbackByBuild": "Compare the volume of supervisor feedback recorded for each build.",
       "activeRuns": "See how many runs were active at each point in time.",
-      "iterationTrend": "Track accepted feedback and supervisor score for each iteration.",
-      "feedbackStatus": "Compare proposed, adopted, and rejected feedback by build.",
+      "iterationTrend": "Track acceptable feedback and supervisor score for each iteration.",
+      "feedbackStatus": "Compare proposed, acceptable, and rejected feedback by build.",
       "issueSeverity": "Track reported issues over time by severity.",
       "runHealth": "Compare succeeded, failed, cancelled, and running runs."
     }
