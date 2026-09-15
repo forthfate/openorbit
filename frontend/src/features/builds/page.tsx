@@ -669,7 +669,6 @@ function Quick({
     ),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
     [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
     [graphLoading, setGraphLoading] = useState(true),
     [graphError, setGraphError] = useState("");
@@ -692,8 +691,8 @@ function Quick({
     try {
       await create(item.id, v);
       close();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.creationFailed);
+    } catch {
+      // The parent reports creation failures through the shared toast.
     } finally {
       setBusy(false);
     }
@@ -767,7 +766,6 @@ function Quick({
         </div>
       )}
       <div className="modal-actions">
-        {error && <small className="hint">{error}</small>}
         {review ? (
           <>
             <button className="ghost" onClick={() => setReview(false)}>
