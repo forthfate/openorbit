@@ -4,7 +4,6 @@
 # This runner follows only same-site links and excludes destructive-looking routes.
 
 import json
-import subprocess
 from pathlib import Path
 from typing import TypedDict
 
@@ -46,18 +45,25 @@ const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase
       const candidates = links.filter(item => { try { const url = new URL(item.href); return url.origin === origin && !blocked.test(url.pathname + " " + item.text); } catch { return false; } });
       if (!candidates.length) break; const target = candidates[step % candidates.length]; await page.locator("a[href]").nth(target.index).click({timeout:5000}); await page.waitForLoadState("domcontentloaded", {timeout:10000}).catch(() => {}); await page.waitForTimeout(300);
     }
-    await page.screenshot({path:input.screenshot, fullPage:true}); console.log(JSON.stringify({visited, screenshot:input.screenshot}));
+    await page.screenshot({path:input.screenshot, fullPage:true}); console.log(`site exploration completed: ${visited.length} page(s)`); console.log('__ORBIT_SITE_EXPLORATION_RESULT__'+JSON.stringify({visited, screenshot:input.screenshot}));
   } finally { await browser.close(); } })().catch(error => { console.error(error); process.exit(1); });"""
-    result = subprocess.run(
+    output = ctx.exec(
         ["node", "-e", script, module, json.dumps(payload)],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
         timeout=120,
+        target_log_source="site-exploration",
+        target_log_exclude_prefixes=("__ORBIT_SITE_EXPLORATION_RESULT__",),
     )
-    if result.returncode:
-        raise RuntimeError(result.stdout[-4000:] or "Site exploration failed")
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    result = next(
+        (
+            line.removeprefix("__ORBIT_SITE_EXPLORATION_RESULT__")
+            for line in reversed(output.splitlines())
+            if line.startswith("__ORBIT_SITE_EXPLORATION_RESULT__")
+        ),
+        "",
+    )
+    if not result:
+        raise RuntimeError("site exploration did not return structured evidence")
+    return json.loads(result)
 
 
 def form_opinion(state):

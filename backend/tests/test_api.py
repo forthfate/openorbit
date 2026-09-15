@@ -134,7 +134,7 @@ def test_runner_exec_can_forward_child_output_to_target_logs(tmp_path, monkeypat
         "from orbit_sdk import runner\n"
         "@runner.phase('execute')\n"
         "def run(ctx):\n"
-        "    ctx.exec([sys.executable, '-c', \"print('adapter ready')\"], target_log_source='test-adapter')\n"
+        "    ctx.exec([sys.executable, '-c', \"import sys; print(sys.stdin.read()); print('adapter ready'); print('__ORBIT_ADAPTER_RESULT__{\\\"ok\\\": true}')\"], input='adapter input', target_log_source='test-adapter', target_log_exclude_prefixes=('__ORBIT_ADAPTER_RESULT__',))\n"
         "if __name__ == '__main__': runner.main()\n",
         encoding="utf-8",
     )
@@ -167,8 +167,11 @@ def test_runner_exec_can_forward_child_output_to_target_logs(tmp_path, monkeypat
     step = store._load("forwarded-target-log-run").step_results[-1]
     assert "adapter ready" in step["output"]
     assert [(entry["source"], entry["message"]) for entry in step["target_logs"]] == [
+        ("test-adapter", "adapter input"),
         ("test-adapter", "adapter ready"),
     ]
+    assert "__ORBIT_ADAPTER_RESULT__" in step["output"]
+    assert "adapter input" in step["output"]
 
 
 def test_running_workflow_function_is_retained_before_its_step_finishes(tmp_path, monkeypatch):

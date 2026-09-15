@@ -1733,7 +1733,9 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         cwd: Path | None = None,
         timeout: int | None = None,
         env: dict[str, str] | None = None,
+        input: str | None = None,
         target_log_source: str | None = None,
+        target_log_exclude_prefixes: tuple[str, ...] = (),
     ) -> str:
         """Run one bounded child command and return its captured output.
 
@@ -1746,8 +1748,12 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             cwd: Child working directory; defaults to the target repository.
             timeout: Maximum duration in seconds; no timeout when omitted.
             env: Environment values that supplement the runner environment.
+            input: Optional standard input sent to the child before its output
+                is collected.
             target_log_source: When set, forward bounded child-output lines to
                 the target-log stream under this source name.
+            target_log_exclude_prefixes: Output prefixes retained for the caller
+                but excluded from target logs, for structured child results.
 
         Returns:
             Combined standard output and standard error from the child.
@@ -1762,17 +1768,23 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             cwd=cwd or self.target_repository,
             env={**self.environment, **(env or {})},
             text=True,
+            stdin=subprocess.PIPE if input is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
         lines: list[str] = []
+
+        if input is not None:
+            assert process.stdin is not None
+            process.stdin.write(input)
+            process.stdin.close()
 
         def forward_output() -> None:
             assert process.stdout is not None
             for line in process.stdout:
                 lines.append(line)
                 print(line, end="", flush=True)
-                if target_log_source and line.strip():
+                if target_log_source and line.strip() and not line.startswith(target_log_exclude_prefixes):
                     self.target_log(line.strip(), source=target_log_source)
 
         reader = threading.Thread(target=forward_output, daemon=True)
