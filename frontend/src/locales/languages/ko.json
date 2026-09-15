@@ -332,6 +332,7 @@
       "managementStatus": "관리 상태",
       "proposalStatus": "제안 상태",
       "aiDecision": "AI 판단",
+      "decisionRationale": "AI 결정 사유",
       "persona": "페르소나",
       "proposed": "제안됨",
       "acceptable": "수용 가능",

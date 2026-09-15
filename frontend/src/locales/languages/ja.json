@@ -332,6 +332,7 @@
       "managementStatus": "管理状態",
       "proposalStatus": "提案状態",
       "aiDecision": "AI 判断",
+      "decisionRationale": "AI 判断の理由",
       "persona": "ペルソナ",
       "proposed": "提案",
       "acceptable": "採用可能",

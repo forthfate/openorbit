@@ -333,6 +333,7 @@
       "managementStatus": "Management status",
       "proposalStatus": "Proposal status",
       "aiDecision": "AI decision",
+      "decisionRationale": "AI decision rationale",
       "persona": "Persona",
       "proposed": "Proposed",
       "acceptable": "Acceptable",
