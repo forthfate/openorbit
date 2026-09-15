@@ -523,6 +523,11 @@ def import_quick_start(values: QuickStartImport):
     return safely(lambda: store.import_quick_start(values.manifest))
 
 
+@app.post("/api/quick-starts/{quick_start_id}/preview-graph")
+def preview_quick_start_graph(quick_start_id: str):
+    return safely(lambda: store.preview_quick_start_graph(quick_start_id))
+
+
 @app.post("/api/quick-starts/{quick_start_id}/instantiate", status_code=201)
 def instantiate_quick_start(quick_start_id: str, values: QuickStartInstantiate):
     return safely(lambda: store.instantiate_quick_start(quick_start_id, values.inputs))

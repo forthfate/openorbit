@@ -497,6 +497,8 @@
       "createAssetsAndBuild": "Create assets and a build",
       "creating": "Creating…",
       "quickStartReview": "A runner, policy, test set, execution environment, target environment, and build will be created.",
+      "quickStartWorkflowDescription": "Preview how this runner will move through its workflow when it runs.",
+      "runnerWorkflowDescription": "Preview how the selected runner will move through its workflow when it runs.",
       "chatOpen": "Open chat assistant",
       "chatCollapse": "Collapse chat",
       "chatTitle": "Orbit assistant",

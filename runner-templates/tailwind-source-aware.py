@@ -72,11 +72,25 @@ def verify(ctx):
     ctx.log("Published Tailwind source context with rendered browser evidence")
 
 
+@graph.step(
+    "close-tailwind-cycle",
+    title="Close Tailwind browser cycle",
+    phase="after_each",
+    inputs=["review_ready"],
+    outputs=["cycle_complete"],
+)
 @runner.phase("after_each")
 def after_each(ctx):
     ctx.log("Completed one bounded Tailwind browser journey")
 
 
+@graph.step(
+    "finalize-tailwind-journey",
+    title="Finalize Tailwind browser evaluation",
+    phase="after_all",
+    inputs=["cycle_complete"],
+    outputs=["journey_complete"],
+)
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the Tailwind browser evaluation")

@@ -1258,6 +1258,21 @@ def test_site_exploration_quick_start_uses_the_langgraph_runner():
     assert "logout|signout|delete" in runner["source"]
 
 
+def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch):
+    store = store_module.ConsoleStore()
+    captured = {}
+    expected = {"nodes": [{"id": "start"}], "edges": []}
+
+    def preview(source):
+        captured["source"] = source
+        return expected
+
+    monkeypatch.setattr(store, "preview_runner_graph", preview)
+
+    assert store.preview_quick_start_graph("openorbit.agent-self-improvement") == expected
+    assert "@runner.phase" in captured["source"]
+
+
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [

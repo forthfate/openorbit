@@ -1967,6 +1967,11 @@ if __name__ == "__main__":
         manifests = [*self._built_in_quick_starts(), *custom]
         return [self._public_quick_start(item) for item in manifests]
 
+    def preview_quick_start_graph(self, quick_start_id: str) -> dict[str, Any] | None:
+        """Return a Quick Start runner's visual workflow before it is created."""
+        manifest = self._validate_quick_start(self._quick_start(quick_start_id))
+        return self.preview_runner_graph(manifest["assets"]["runner"]["source"])
+
     def _quick_start(self, quick_start_id: str) -> dict[str, Any]:
         for manifest in self._built_in_quick_starts():
             if manifest["id"] == quick_start_id:

@@ -121,11 +121,25 @@ def verify(ctx):
     ctx.log("Retained browser evidence and the next-iteration handoff")
 
 
+@graph.step(
+    "close-journey-cycle",
+    title="Close browser journey cycle",
+    phase="after_each",
+    inputs=["next_iteration"],
+    outputs=["cycle_complete"],
+)
 @runner.phase("after_each")
 def after_each(ctx):
     ctx.log("Completed one bounded continuous browser journey")
 
 
+@graph.step(
+    "finalize-browser-journey",
+    title="Finalize browser journey",
+    phase="after_all",
+    inputs=["cycle_complete"],
+    outputs=["journey_complete"],
+)
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the continuous browser journey")

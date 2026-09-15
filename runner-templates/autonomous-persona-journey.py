@@ -215,6 +215,13 @@ def verify(ctx):
     ctx.log("Completed one bounded persona action with rendered evidence")
 
 
+@graph.step(
+    "reflect",
+    title="Reflect on persona evidence",
+    phase="after_each",
+    inputs=["action_evidence"],
+    outputs=["next_iteration"],
+)
 @runner.phase("after_each")
 def after_each(ctx):
     state = load_state(ctx)
@@ -275,6 +282,13 @@ Current state:\n""" + json.dumps(state, ensure_ascii=False)
     ctx.log("Retained persona feeling, learning, deduplicated issues, and next intent")
 
 
+@graph.step(
+    "finalize-persona-journey",
+    title="Finalize persona journey",
+    phase="after_all",
+    inputs=["next_iteration"],
+    outputs=["journey_complete"],
+)
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the autonomous persona journey")
