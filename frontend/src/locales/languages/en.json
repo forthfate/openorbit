@@ -78,6 +78,25 @@
       "title": "OpenOrbit",
       "titleSeparator": " - "
     },
+    "systemReadiness": {
+      "title": "System setup required",
+      "description": "Essential system requirements are unavailable, so OpenOrbit's core features cannot operate normally.",
+      "openSettings": "Open settings",
+      "checks": {
+        "system_ai": {
+          "title": "System AI",
+          "details": {
+            "profile_not_selected": "Select a System AI model.",
+            "profile_not_found": "The selected System AI profile no longer exists.",
+            "model_not_set": "The selected profile needs a model or deployment name.",
+            "endpoint_not_set": "The selected Azure profile needs an endpoint.",
+            "secret_not_available": "The selected profile's secret environment variable is unavailable.",
+            "credentials_not_available": "Configure AWS credentials or an AWS CLI profile."
+          }
+        },
+        "git": { "title": "Git", "details": { "not_installed": "Install Git, then restart the OpenOrbit server." } }
+      }
+    },
     "navigationAccessibility": {
       "expandNavigation": "Expand navigation",
       "collapseNavigation": "Collapse navigation",

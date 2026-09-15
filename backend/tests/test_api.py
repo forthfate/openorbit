@@ -27,6 +27,32 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_system_readiness_reports_missing_system_ai_and_git(monkeypatch):
+    monkeypatch.setattr(
+        main_module.store,
+        "application_settings",
+        lambda: {"chat_model_profile_name": ""},
+    )
+    monkeypatch.setattr(main_module.store, "profiles", lambda: [])
+    monkeypatch.setattr(main_module.shutil, "which", lambda _: None)
+
+    response = TestClient(app).get("/api/system/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ready": False,
+        "checks": [
+            {
+                "id": "system_ai",
+                "status": "blocked",
+                "detail": "profile_not_selected",
+                "settings_page": "settings",
+            },
+            {"id": "git", "status": "blocked", "detail": "not_installed", "settings_page": None},
+        ],
+    }
+
+
 def test_mcp_server_exposes_openapi_backed_control_room_tools():
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
     initialize = {
