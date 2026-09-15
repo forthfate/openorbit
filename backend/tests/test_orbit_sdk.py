@@ -140,11 +140,11 @@ def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatc
     assert json.loads(manifest.read_text(encoding="utf-8"))["history"][0]["id"] == version["id"]
 
 
-def test_runner_state_is_build_scoped_and_retained_between_invocations(tmp_path, monkeypatch):
+def test_runner_state_is_scoped_and_retained_between_invocations(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
-    resources = {"build": {"id": "persona-quality"}}
+    resources = {"build": {"id": "persona-quality", "runner_id": "persona-journey-runner"}}
     encoded = b64encode(json.dumps(resources).encode()).decode()
 
     saved = sdk.RunnerContext(
@@ -154,6 +154,13 @@ def test_runner_state_is_build_scoped_and_retained_between_invocations(tmp_path,
         loop_index=2,
         environment={"ORBIT_RUNNER_RESOURCES": encoded, "ORBIT_RUN_ID": "run-456"},
     ).save_state("persona-journey", {"personas": {"haruka": {"stage": 2}}})
+    shared = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded, "ORBIT_RUN_ID": "run-456"},
+    ).save_state("shared-settings", {"enabled": True}, scope="build")
 
     next_context = sdk.RunnerContext(
         phase="execute",
@@ -163,8 +170,23 @@ def test_runner_state_is_build_scoped_and_retained_between_invocations(tmp_path,
         environment={"ORBIT_RUNNER_RESOURCES": encoded},
     )
     assert saved["name"] == "persona-journey"
+    assert saved["scope"] == "runner"
+    assert shared["scope"] == "build"
     assert next_context.load_state("persona-journey") == {"personas": {"haruka": {"stage": 2}}}
+    assert next_context.load_state("shared-settings", scope="build") == {"enabled": True}
     assert next_context.load_state("missing", default={}) == {}
+    assert (
+        tmp_path
+        / "orbit-data"
+        / "runner-state"
+        / "persona-quality"
+        / "runners"
+        / "persona-journey-runner"
+        / "persona-journey.json"
+    ).exists()
+    assert (
+        tmp_path / "orbit-data" / "runner-state" / "persona-quality" / "build" / "shared-settings.json"
+    ).exists()
 
 
 def test_rollback_file_restores_a_version_and_can_be_undone(tmp_path, monkeypatch):

@@ -91,6 +91,8 @@ type ImprovementCopy = {
   noStoredState: string;
   updated: string;
   rawState: string;
+  buildState: string;
+  runnerState: string;
   relatedRuns: string;
   relatedRunsHint: string;
   noRelatedRuns: string;
@@ -827,7 +829,10 @@ function StoredState({
             return (
               <article key={state.name}>
                 <header>
-                  <strong>{state.name}</strong>
+                  <span className="stored-state__name">
+                    <strong>{state.name}</strong>
+                    <em>{state.scope === "build" ? t.buildState : `${t.runnerState}: ${state.runner_id ?? "—"}`}</em>
+                  </span>
                   <small>{t.updated} {timestamp(locale, state.updated_at)}</small>
                 </header>
                 {personas && Object.keys(personas).length > 0 && (
