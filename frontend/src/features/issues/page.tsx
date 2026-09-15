@@ -93,8 +93,8 @@ export function IssuesPage({
     [builds, setBuilds] = useState<Build[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
     [build, setBuild] = useState(""),
-    [managed, setManaged] = useState(""),
-    [decision, setDecision] = useState(""),
+    [managedStatuses, setManagedStatuses] = useState<Set<string>>(new Set()),
+    [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
     [modalTab, setModalTab] = useState<"details" | "history">("details"),
@@ -177,8 +177,8 @@ export function IssuesPage({
       .filter(
         (x) =>
           (!build || x.build_id === build) &&
-          (!managed || x.management_status === managed) &&
-          (!decision || x.status === decision),
+          (!managedStatuses.size || managedStatuses.has(x.management_status)) &&
+          (!decisions.size || decisions.has(x.status)),
       )
       .map((x, index) => ({ ...x, id: x.proposal_id, index: index + 1 }));
   const save = () =>
@@ -224,6 +224,20 @@ export function IssuesPage({
       })
       .catch((error) => onNotice(error.message, "warning"));
   };
+  const toggleManagedStatus = (status: string) =>
+    setManagedStatuses((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  const toggleDecision = (status: string) =>
+    setDecisions((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
   const columns: Column<IssueRow>[] = [
     {
       id: "select",
@@ -310,7 +324,7 @@ export function IssuesPage({
       sortValue: (x) => x.management_status,
     },
   ];
-  const filterCount = Number(!!managed) + Number(!!decision);
+  const filterCount = managedStatuses.size + decisions.size;
   return (
     <>
       <section className="improvements-build-selector">
@@ -359,8 +373,8 @@ export function IssuesPage({
                 <button
                   className="ghost"
                   onClick={() => {
-                    setManaged("");
-                    setDecision("");
+                    setManagedStatuses(new Set());
+                    setDecisions(new Set());
                   }}
                 >
                   {locales[locale].runUi.reset}
@@ -372,12 +386,9 @@ export function IssuesPage({
                   {statuses.map((value) => (
                     <label key={value}>
                       <input
-                        type="radio"
-                        name="issue-status"
-                        checked={managed === value}
-                        onChange={() =>
-                          setManaged(managed === value ? "" : value)
-                        }
+                        type="checkbox"
+                        checked={managedStatuses.has(value)}
+                        onChange={() => toggleManagedStatus(value)}
                       />
                       {label(value)}
                     </label>
@@ -391,12 +402,9 @@ export function IssuesPage({
                     (value) => (
                       <label key={value}>
                         <input
-                          type="radio"
-                          name="issue-decision"
-                          checked={decision === value}
-                          onChange={() =>
-                            setDecision(decision === value ? "" : value)
-                          }
+                          type="checkbox"
+                          checked={decisions.has(value)}
+                          onChange={() => toggleDecision(value)}
                         />
                         {decisionLabel(value)}
                       </label>
