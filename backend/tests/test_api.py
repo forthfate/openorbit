@@ -27,6 +27,43 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_mcp_server_exposes_openapi_backed_control_room_tools():
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    initialize = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "openorbit-test", "version": "1"},
+        },
+    }
+    with TestClient(app, base_url="http://localhost:3000") as client:
+        connected = client.post("/mcp/", headers=headers, json=initialize)
+        assert connected.status_code == 200
+        session_id = connected.headers["mcp-session-id"]
+        session_headers = {**headers, "mcp-session-id": session_id}
+
+        tools = client.post(
+            "/mcp/",
+            headers=session_headers,
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        resources = client.post(
+            "/mcp/",
+            headers=session_headers,
+            json={"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}},
+        )
+
+    assert tools.status_code == 200
+    assert '"name":"get_status"' in tools.text
+    assert '"name":"start_pipeline"' in tools.text
+    assert '"name":"act_on_pipeline"' in tools.text
+    assert resources.status_code == 200
+    assert "openorbit://openapi" in resources.text
+
+
 def test_request_locale_prefers_the_browser_accept_language_priority():
     request = Request(
         {

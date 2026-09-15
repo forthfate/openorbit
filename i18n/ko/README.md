@@ -243,6 +243,9 @@ OpenOrbit는 로컬의, 버전이 관리되는 API를 노출합니다.
 - Swagger UI: `http://localhost:3000/api/docs`
 - OpenAPI 문서: `http://localhost:3000/api/openapi.json`
 - API base: `http://localhost:3000/api/v1`
+- MCP(Streamable HTTP): `http://localhost:3000/mcp/`
+
+MCP 클라이언트는 `http://localhost:3000/mcp/`에 연결하면 프로젝트와 파이프라인을 조회하고, 실행·승인 작업 및 개선안 수명주기를 다룰 수 있습니다. `openorbit://openapi` 리소스는 전체 v1 HTTP API의 OpenAPI 계약을 제공합니다. MCP도 로컬 전용이며 기본 인증을 제공하지 않으므로, 신뢰할 수 없는 네트워크에 직접 노출하지 마세요.
 
 엔드포인트 세부 정보는 [API 레퍼런스](../../docs/API.md)를 참고하세요. 재사용 가능한 자동화를 추가하려면 명시적인 라이프사이클 단계를 갖는 Python 러너를 생성하세요.
 

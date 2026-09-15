@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -13,9 +14,21 @@ from pydantic import BaseModel, Field
 from . import store as store_module
 from .assistant_tools import AssistantToolExecutor
 from .docker import preflight_docker
+from .mcp_server import create_mcp_server
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .store import ConsoleStore
 from .terminal import serve_terminal
+
+
+@asynccontextmanager
+async def application_lifespan(_: FastAPI):
+    """Run the MCP session manager for the same lifetime as the API server."""
+    async with mcp_server.session_manager.run():
+        try:
+            yield
+        finally:
+            store.shutdown()
+
 
 app = FastAPI(
     title="OpenOrbit API",
@@ -54,6 +67,7 @@ operator's machine.
         {"name": "Improvements", "description": "Read-only supervisor feedback and analytics."},
         {"name": "System", "description": "Local service health and capabilities."},
     ],
+    lifespan=application_lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -64,12 +78,6 @@ app.add_middleware(
 store = ConsoleStore()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
-
-
-@app.on_event("shutdown")
-def stop_active_runner_processes() -> None:
-    """Prevent browsers from outliving the local API process on reload."""
-    store.shutdown()
 
 
 def safely(action):
@@ -1449,6 +1457,12 @@ def sdk_docs(path: str):
     if index.is_file():
         return FileResponse(index)
     raise HTTPException(404, "SDK documentation page was not found.")
+
+
+# Streamable HTTP transport for MCP clients. The mounted application's root
+# is the protocol endpoint, so the public URL is /mcp/.
+mcp_server = create_mcp_server(lambda: store, app.openapi)
+app.mount("/mcp", mcp_server.streamable_http_app())
 
 
 @app.get("/{path:path}", include_in_schema=False)
