@@ -6,6 +6,18 @@ each execution is a **pipeline**. The interactive OpenAPI documentation is
 available from a running server at `/api/docs`; the raw contract is
 `/api/openapi.json`.
 
+## MCP server
+
+The same local process exposes a Streamable HTTP [Model Context Protocol
+(MCP)](https://modelcontextprotocol.io/) endpoint at `/mcp/`. Point an MCP
+client at `http://localhost:3000/mcp/`. It provides project and pipeline
+inspection, pipeline start and approval actions, improvement lifecycle lookup,
+and an emergency-stop tool. The `openorbit://openapi` MCP resource exposes the
+generated OpenAPI contract for the full v1 HTTP API.
+
+MCP has the same local-first security boundary as the HTTP API: it has no
+built-in authentication and must not be exposed directly to untrusted networks.
+
 ## Local-first security
 
 The API has no built-in authentication in this release. It is intended for the

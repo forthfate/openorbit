@@ -37,6 +37,19 @@ test('collapses the sidebar and preserves the preference after reload', async ({
   await page.getByRole('button', { name: 'Expand navigation' }).click()
 })
 
+test('uses the default local MCP connection through the Orbit assistant', async ({ page }) => {
+  await page.goto('/dashboard')
+  await page.getByRole('button', { name: 'Open Orbit assistant' }).click()
+  const assistant = page.getByLabel('Orbit assistant')
+  await assistant.getByRole('textbox', { name: 'Message' }).fill(
+    'Use the OpenOrbit MCP get_status tool and briefly report the local service health.',
+  )
+  await assistant.getByRole('button', { name: 'Send message' }).click()
+  const response = assistant.locator('.chat-message--assistant').last()
+  await expect(response).not.toContainText('Chat request failed.', { timeout: 30_000 })
+  await expect(response).toContainText(/health|healthy|status|ok/i, { timeout: 30_000 })
+})
+
 test('opens the build and profile editors with editable lifecycle fields', async ({ page }) => {
   await page.goto('/builds')
   await expect(page.getByRole('heading', { name: 'Builds' })).toBeVisible()
