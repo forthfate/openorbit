@@ -11,6 +11,8 @@ import { intlLocales, localeMessages, locales, type Locale } from "../../locales
 import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
+import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { Pagination } from "../../components/ui/pagination";
 
 type Copy = {
   title: string;
@@ -103,7 +105,9 @@ export function IssuesPage({
     [managementStatus, setManagementStatus] = useState("unreviewed"),
     [run, setRun] = useState(""),
     [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set()),
-    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(15);
   const filterMenu = useRef<HTMLDivElement>(null);
   const load = () =>
     api<IssueManagementItem[]>("/api/v1/issue-management")
@@ -181,6 +185,9 @@ export function IssuesPage({
           (!decisions.size || decisions.has(x.status)),
       )
       .map((x, index) => ({ ...x, id: x.proposal_id, index: index + 1 }));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const save = () =>
     selected &&
     api<IssueManagementItem>(
@@ -198,7 +205,7 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
-  const allSelected = rows.length > 0 && rows.every((item) => selectedIssueIds.has(item.proposal_id));
+  const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
   const toggleIssue = (proposalId: string) =>
     setSelectedIssueIds((current) => {
       const next = new Set(current);
@@ -209,8 +216,8 @@ export function IssuesPage({
   const toggleAll = () =>
     setSelectedIssueIds((current) => {
       const next = new Set(current);
-      if (allSelected) rows.forEach((item) => next.delete(item.proposal_id));
-      else rows.forEach((item) => next.add(item.proposal_id));
+      if (allSelected) pagedRows.forEach((item) => next.delete(item.proposal_id));
+      else pagedRows.forEach((item) => next.add(item.proposal_id));
       return next;
     });
   const confirmDeleteSelected = () => {
@@ -225,19 +232,25 @@ export function IssuesPage({
       .catch((error) => onNotice(error.message, "warning"));
   };
   const toggleManagedStatus = (status: string) =>
-    setManagedStatuses((current) => {
+    {
+      setPage(1);
+      setManagedStatuses((current) => {
       const next = new Set(current);
       if (next.has(status)) next.delete(status);
       else next.add(status);
       return next;
-    });
+      });
+    };
   const toggleDecision = (status: string) =>
-    setDecisions((current) => {
+    {
+      setPage(1);
+      setDecisions((current) => {
       const next = new Set(current);
       if (next.has(status)) next.delete(status);
       else next.add(status);
       return next;
-    });
+      });
+    };
   const columns: Column<IssueRow>[] = [
     {
       id: "select",
@@ -246,7 +259,7 @@ export function IssuesPage({
           aria-label="Select all issues"
           type="checkbox"
           checked={allSelected}
-          disabled={!rows.length}
+          disabled={!pagedRows.length}
           onChange={toggleAll}
         />
       ),
@@ -332,7 +345,10 @@ export function IssuesPage({
           {t.build}
           <select
             value={build}
-            onChange={(event) => setBuild(event.target.value)}
+            onChange={(event) => {
+              setBuild(event.target.value);
+              setPage(1);
+            }}
           >
             {sortedBuilds.map((item) => (
               <option key={item.id} value={item.id}>
@@ -366,6 +382,14 @@ export function IssuesPage({
               <span className="nav-run-count">{filterCount}</span>
             )}
           </button>
+          <PageSizeSelect
+            locale={locale}
+            value={pageSize}
+            onChange={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+          />
           {filtersOpen && (
             <div className="run-filters run-filter-popover">
               <div className="run-filter-popover__header">
@@ -375,6 +399,7 @@ export function IssuesPage({
                   onClick={() => {
                     setManagedStatuses(new Set());
                     setDecisions(new Set());
+                    setPage(1);
                   }}
                 >
                   {locales[locale].runUi.reset}
@@ -429,7 +454,7 @@ export function IssuesPage({
         </div>
         <DataTable
           columns={columns}
-          rows={rows}
+          rows={pagedRows}
           empty={t.empty}
           onRowClick={(item) => {
             setSelected(item);
@@ -441,6 +466,14 @@ export function IssuesPage({
           }}
           className="issue-management-table"
           gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
+        />
+        <Pagination
+          locale={locale}
+          page={currentPage}
+          totalPages={totalPages}
+          totalItems={rows.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
         />
       </section>
       <ConfirmDialog
