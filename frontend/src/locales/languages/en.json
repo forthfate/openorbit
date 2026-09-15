@@ -237,6 +237,12 @@
         "cancel": "Cancel",
         "confirm": "Delete"
       },
+      "deleteAsset": {
+        "title": "Delete asset?",
+        "description": "This permanently removes the asset and its configuration.",
+        "cancel": "Cancel",
+        "confirm": "Delete"
+      },
       "emergencyStop": {
         "title": "Stop all active evaluations?",
         "description": "This immediately cancels every active evaluation run. This action cannot be undone.",

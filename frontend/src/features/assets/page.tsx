@@ -163,6 +163,7 @@ function Catalog({
   showRunners = false,
   runners,
   onRefresh,
+  onDelete,
   loading = false,
   locale,
 }: {
@@ -174,14 +175,15 @@ function Catalog({
   showRunners?: boolean;
   runners?: RunnerAsset[];
   onRefresh?: () => Promise<unknown>;
+  onDelete?: (kind: "runner", id: string) => void;
   loading?: boolean;
   locale: Locale;
 }) {
   const isLegacyWorkflowSection = title === text[locale].flows;
   return (
     <>
-      {showRunners && runners && onRefresh && (
-        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} />
+      {showRunners && runners && onRefresh && onDelete && (
+        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} onDelete={onDelete} />
       )}{" "}
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
@@ -817,17 +819,17 @@ function RunnerCatalog({
   items,
   onRefresh,
   loading,
+  onDelete,
 }: {
   locale: Locale;
   items: RunnerAsset[];
   onRefresh: () => Promise<unknown>;
   loading: boolean;
+  onDelete: (kind: "runner", id: string) => void;
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
   const copy = runnerLabels[locale], sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
-  const remove = (id: string) =>
-    api(`/api/runners/${id}`, "DELETE").then(onRefresh);
   return (
     <section className="panel app-settings">
       <div className="panel-title-action">
@@ -860,7 +862,7 @@ function RunnerCatalog({
                 setEditing(item);
                 setOpen(true);
               }}
-              onDelete={() => remove(item.id)}
+              onDelete={() => onDelete("runner", item.id)}
               deleteLabel={copy.delete}
             />
           ))}
@@ -1047,7 +1049,7 @@ function LegacyAssetsPage({
   onRefresh: () => Promise<unknown>;
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
-  onDelete: (kind: "template" | "test-set" | "workflow", id: string) => void;
+  onDelete: (kind: "template" | "test-set" | "runner" | "workflow", id: string) => void;
 }) {
   const createLabel = locales[locale].ui.create,
     l: Record<string, string> = {
@@ -1157,6 +1159,7 @@ function LegacyAssetsPage({
         showRunners
         runners={runners}
         onRefresh={onRefresh}
+        onDelete={onDelete}
         emptyHint={l.emptyFlows}
         title={l.flows}
         tooltip={localeMessages<Record<string, string>>(locale, "sectionDetails").assetRunners}
@@ -1917,6 +1920,7 @@ export function AssetsPage({
       | "profile"
       | "template"
       | "test-set"
+      | "runner"
       | "workflow"
       | "execution-environment"
       | "target-environment",

@@ -236,6 +236,12 @@
         "cancel": "キャンセル",
         "confirm": "削除"
       },
+      "deleteAsset": {
+        "title": "アセットを削除しますか？",
+        "description": "アセットとその設定が完全に削除されます。",
+        "cancel": "キャンセル",
+        "confirm": "削除"
+      },
       "emergencyStop": {
         "title": "すべての実行中評価を緊急停止しますか？",
         "description": "実行中の評価がすべて直ちにキャンセルされます。この操作は元に戻せません。",

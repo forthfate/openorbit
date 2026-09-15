@@ -70,12 +70,24 @@ type ConfirmCopy = {
   cancel: string;
   confirm: string;
 };
+type AssetDeleteKind =
+  | "profile"
+  | "template"
+  | "test-set"
+  | "runner"
+  | "workflow"
+  | "execution-environment"
+  | "target-environment";
 
 export default function App() {
   const [page, setPageState] = useState<Page>(pageFromHash);
   const [locale, setLocaleState] = useState<Locale>(savedLocale);
   const [theme, setThemeState] = useState(savedTheme);
   const [deletingBuild, setDeletingBuild] = useState<string | null>(null);
+  const [deletingAsset, setDeletingAsset] = useState<{
+    kind: AssetDeleteKind;
+    id: string;
+  } | null>(null);
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
   const [quickStartRequest, setQuickStartRequest] = useState(0);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
@@ -224,17 +236,7 @@ export default function App() {
         room.setNotice(e.message);
         throw e;
       });
-  const deleteAsset = (
-    kind:
-      | "profile"
-      | "template"
-      | "test-set"
-      | "runner"
-      | "workflow"
-      | "execution-environment"
-      | "target-environment",
-    id: string,
-  ) => {
+  const deleteAsset = (kind: AssetDeleteKind, id: string) => {
     const path = {
       profile: `/api/settings/profiles/${encodeURIComponent(id)}`,
       template: `/api/prompt-templates/${id}`,
@@ -250,6 +252,12 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
+  };
+  const confirmDeleteAsset = () => {
+    if (!deletingAsset) return;
+    const { kind, id } = deletingAsset;
+    setDeletingAsset(null);
+    deleteAsset(kind, id);
   };
   const deleteBuild = (id: string) => setDeletingBuild(id);
   const confirmDeleteBuild = () => {
@@ -297,7 +305,7 @@ export default function App() {
         onRefresh={room.refresh}
         onCreateWorkflow={createWorkflow}
         onUpdateWorkflow={updateWorkflow}
-        onDelete={deleteAsset}
+        onDelete={(kind, id) => setDeletingAsset({ kind, id })}
       />
     ),
     builds: (
@@ -365,15 +373,17 @@ export default function App() {
         save={save}
         tested={room.settingsTested}
         logs={room.orbitLogs}
-        onDeleteProfile={(id) => deleteAsset("profile", id)}
+        onDeleteProfile={(id) => setDeletingAsset({ kind: "profile", id })}
       />
     ),
   }[page];
   const confirmations = localeMessages<{
     deleteBuild: ConfirmCopy;
+    deleteAsset: ConfirmCopy;
     emergencyStop: ConfirmCopy;
   }>(locale, "confirmations");
   const confirmation = confirmations.deleteBuild;
+  const assetConfirmation = confirmations.deleteAsset;
   const emergencyConfirmation = confirmations.emergencyStop;
   return (
     <AppShell
@@ -398,6 +408,15 @@ export default function App() {
         confirmLabel={confirmation.confirm}
         onCancel={() => setDeletingBuild(null)}
         onConfirm={confirmDeleteBuild}
+      />
+      <ConfirmDialog
+        open={deletingAsset !== null}
+        title={assetConfirmation.title}
+        description={assetConfirmation.description}
+        cancelLabel={assetConfirmation.cancel}
+        confirmLabel={assetConfirmation.confirm}
+        onCancel={() => setDeletingAsset(null)}
+        onConfirm={confirmDeleteAsset}
       />
       <ConfirmDialog
         open={confirmingEmergencyStop}
