@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.user-journey-smoke-test",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "User journey smoke test",
   "description": "Create a browser-based smoke test. Requires a running app and Playwright browser.",
   "publisher": {
@@ -16,14 +16,6 @@
       "default": "Browser quality check",
       "placeholder": "e.g. Production browser smoke test",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
-    },
-    {
-      "key": "repository",
-      "label": "Target repository",
-      "type": "workspace",
-      "required": true,
-      "placeholder": "/absolute/path/to/your-repository",
-      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
@@ -169,7 +161,6 @@
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}",
       "browser_base_url": "${base_url}"
     },
     "model_profile": {

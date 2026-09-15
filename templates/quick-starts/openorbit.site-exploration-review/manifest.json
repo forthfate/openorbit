@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.site-exploration-review",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": "Site exploration review",
   "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph.",
   "publisher": {
@@ -16,14 +16,6 @@
       "default": "Site exploration review",
       "placeholder": "e.g. Production site exploration review",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
-    },
-    {
-      "key": "repository",
-      "label": "Target repository",
-      "type": "workspace",
-      "required": true,
-      "placeholder": "/absolute/path/to/your-repository",
-      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
@@ -135,7 +127,6 @@
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}",
       "browser_base_url": "${base_url}"
     },
     "model_profile": {

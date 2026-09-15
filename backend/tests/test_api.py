@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import orbit_sdk as sdk
@@ -1459,6 +1460,58 @@ def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monke
     assert execution["environment_variables"] == {"ORBIT_PROBE_COMMAND": "uv run ai-eval"}
     assert created["build"]["repeat_interval_minutes"] == 1440
     assert store.profiles()[-1]["endpoint"] == ""
+
+
+def test_browser_quick_starts_create_an_internal_workspace_without_a_repository(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "APP_DATA", tmp_path / "app-data")
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    monkeypatch.setattr(store_module, "QUICK_STARTS", tmp_path / "quick-starts")
+    monkeypatch.setattr(store_module, "QUICK_START_INSTANCES", tmp_path / "quick-start-instances.yaml")
+    monkeypatch.setattr(store_module, "EXECUTION_ENVIRONMENTS", tmp_path / "execution-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_ENVIRONMENTS", tmp_path / "target-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_TEST_CASE_SETS", tmp_path / "target-test-case-sets.yaml")
+    store = store_module.ConsoleStore()
+
+    created = store.instantiate_quick_start(
+        "openorbit.user-journey-smoke-test",
+        {
+            "base_url": "http://localhost:3000",
+            "journey_prompt": "Open the home page.",
+            "acceptance": "The page loads.",
+            "model": "gpt-4o",
+        },
+    )
+
+    quick_starts = {item["id"]: item for item in store._built_in_quick_starts()}
+    target = store._target_environment(created["generated"]["target_environment_id"])
+    for quick_start_id in {
+        "openorbit.continuous-user-journey",
+        "openorbit.critical-flow-proof",
+        "openorbit.site-exploration-review",
+        "openorbit.user-journey-smoke-test",
+    }:
+        assert "repository" not in {
+            parameter["key"] for parameter in quick_starts[quick_start_id]["parameters"]
+        }
+    assert "base_url" not in {
+        parameter["key"] for parameter in quick_starts["openorbit.agent-self-improvement"]["parameters"]
+    }
+    assert target["repository"] == str(
+        tmp_path / "app-data" / "quick-start-workspaces" / created["build"]["id"]
+    )
+    assert Path(target["repository"]).is_dir()
+
+
+def test_quick_start_required_errors_include_the_display_label():
+    store = store_module.ConsoleStore()
+
+    with pytest.raises(ValueError, match=r"User actions \(journey_prompt\) is required"):
+        store.instantiate_quick_start(
+            "openorbit.user-journey-smoke-test", {"base_url": "http://localhost:3000"}
+        )
 
 
 def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):

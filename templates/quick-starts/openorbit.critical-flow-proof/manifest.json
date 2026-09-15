@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.critical-flow-proof",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "name": "Critical flow proof",
   "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
   "publisher": {
@@ -16,14 +16,6 @@
       "default": "Critical flow proof",
       "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
-    },
-    {
-      "key": "repository",
-      "label": "Target repository",
-      "type": "workspace",
-      "required": true,
-      "placeholder": "/absolute/path/to/your-repository",
-      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
@@ -170,7 +162,6 @@
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}",
       "browser_base_url": "${base_url}"
     },
     "model_profile": {

@@ -798,7 +798,8 @@ class ConsoleStore:
             if not values.get(key) and parameter.get("default") is not None:
                 values[key] = str(parameter["default"])
             if parameter.get("required") and not values.get(key):
-                raise ValueError(f"quick start parameter '{key}' is required")
+                label = str(parameter.get("label", "")).strip() or key
+                raise ValueError(f"{label} ({key}) is required")
             values.setdefault(key, "")
         token = uuid.uuid4().hex[:8]
         prefix = re.sub(r"[^a-z0-9]+", "-", quick_start_id.lower()).strip("-")[-36:]
@@ -825,6 +826,7 @@ class ConsoleStore:
             )
         }
         runner_paths = [RUNNERS / f"{generated['runner_id']}.py", RUNNERS / f"{generated['runner_id']}.json"]
+        generated_workspace: Path | None = None
         try:
             runner = self.create_runner({"id": generated["runner_id"], **assets["runner"]})
             prompt = self.create_prompt_template(
@@ -836,9 +838,12 @@ class ConsoleStore:
             execution = self.create_execution_environment(
                 {"id": generated["execution_environment_id"], **assets["execution_environment"]}
             )
-            target = self.create_target_environment(
-                {"id": generated["target_environment_id"], **assets["target_environment"]}
-            )
+            target_values = {"id": generated["target_environment_id"], **assets["target_environment"]}
+            if not str(target_values.get("repository", "")).strip():
+                generated_workspace = APP_DATA / "quick-start-workspaces" / generated["build_id"]
+                generated_workspace.mkdir(parents=True, exist_ok=True)
+                target_values["repository"] = str(generated_workspace)
+            target = self.create_target_environment(target_values)
             if isinstance(assets.get("model_profile"), dict):
                 profile_name = str(assets["model_profile"].get("profile_name", "")).strip()
                 if any(item["profile_name"] == profile_name for item in self.profiles()):
@@ -876,6 +881,8 @@ class ConsoleStore:
                     path.write_bytes(content)
             for path in runner_paths:
                 path.unlink(missing_ok=True)
+            if generated_workspace is not None:
+                shutil.rmtree(generated_workspace, ignore_errors=True)
             raise
 
     def create_runner_template(self, values: dict[str, str]) -> dict[str, str]:

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.agent-self-improvement",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "name": "Agent self-improvement",
   "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
   "publisher": {
@@ -24,14 +24,6 @@
       "required": true,
       "placeholder": "/absolute/path/to/your-git-repository",
       "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
-    },
-    {
-      "key": "base_url",
-      "label": "Browser base URL (optional)",
-      "type": "url",
-      "required": false,
-      "placeholder": "Not used for target-AI response evaluation",
-      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
     },
     {
       "key": "managed_prompt_path",
@@ -160,7 +152,6 @@
     "target_environment": {
       "name": "${build_name} target",
       "repository": "${repository}",
-      "browser_base_url": "${base_url}",
       "managed_prompt_path": "${managed_prompt_path}"
     },
     "model_profile": {

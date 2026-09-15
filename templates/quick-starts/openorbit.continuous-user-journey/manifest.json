@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.continuous-user-journey",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "name": "Continuous user journey",
   "description": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
   "publisher": {
@@ -16,14 +16,6 @@
       "default": "Continuous user journey",
       "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
-    },
-    {
-      "key": "repository",
-      "label": "Target repository",
-      "type": "workspace",
-      "required": true,
-      "placeholder": "/absolute/path/to/your-repository",
-      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
@@ -152,7 +144,6 @@
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}",
       "browser_base_url": "${base_url}"
     },
     "model_profile": {
