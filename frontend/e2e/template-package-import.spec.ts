@@ -37,7 +37,7 @@ test("imports a Quick Start ZIP package through the UI", async ({ page }) => {
       ],
     );
 
-    await page.goto("/#builds");
+    await page.goto("/builds");
     await page.getByRole("button", { name: "Create", exact: true }).click();
     await page.getByRole("button", { name: "Start with Quick Start" }).click();
     await page.locator('input[type="file"]').setInputFiles(archive);
@@ -77,7 +77,7 @@ test("imports a Runner Template ZIP package through the UI", async ({ page }) =>
       ],
     );
 
-    await page.goto("/#assets");
+    await page.goto("/assets");
     const runners = page
       .locator("section.panel.app-settings")
       .filter({ has: page.getByRole("heading", { name: /^Runners/ }) });
