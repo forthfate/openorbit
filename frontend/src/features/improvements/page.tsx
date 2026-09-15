@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   Area,
   AreaChart,
@@ -96,6 +96,13 @@ type ImprovementCopy = {
   relatedRuns: string;
   relatedRunsHint: string;
   noRelatedRuns: string;
+  personaJourneys: string;
+  personaJourneysHint: string;
+  noPersonaJourneys: string;
+  personaGoal: string;
+  currentAction: string;
+  currentDecision: string;
+  nextAction: string;
   started: string;
   currentPhase: string;
   stop: string;
@@ -198,6 +205,114 @@ function RelatedRuns({
       <DataTable columns={columns} rows={visible} onRowClick={onSelect} className="related-runs-table" gridTemplateColumns="minmax(190px,1.4fr) minmax(118px,.85fr) 90px minmax(105px,1fr) minmax(145px,.9fr)" empty={t.noRelatedRuns} />
     </section>
   );
+}
+
+type PersonaJourneyEvent = {
+  id: string;
+  persona: string;
+  run: Run;
+  iteration: number;
+  recordedAt?: string;
+  goal?: string;
+  action?: string;
+  decision?: string;
+  nextAction?: string;
+};
+
+function PersonaJourneyTimeline({
+  buildId, runs, locale, t, hours, onSelect,
+}: {
+  buildId: string;
+  runs: Run[];
+  locale: Locale;
+  t: (typeof copy)["en"];
+  hours: number;
+  onSelect: (run: Run) => void;
+}) {
+  const [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
+  const drag = useRef<{ pointerId: number; startX: number; startScroll: number; moved: boolean } | null>(null);
+  const lanes = useMemo(() => {
+    const groups = new Map<string, PersonaJourneyEvent[]>();
+    for (const run of runs) {
+      if (run.build_id !== buildId) continue;
+      for (const record of run.supervisor_results ?? []) {
+        const trace = record.response?.evaluation?.behavior_trace;
+        if (!trace || !Object.values(trace).some(Boolean)) continue;
+        const recordedAt = record.recorded_at ?? run.updated_at ?? run.created_at;
+        if (rangeStart && recordedAt && (Date.parse(recordedAt) || 0) < rangeStart) continue;
+        const personas = new Set<string>();
+        for (const step of run.step_results ?? []) {
+          if (step.loop_index !== record.iteration || step.phase !== "before_each") continue;
+          const cycle = step.result?.insighta_persona_simulator ?? step.result?.persona_cycle;
+          if (!cycle || typeof cycle !== "object") continue;
+          const active = (cycle as { active_personas?: unknown }).active_personas;
+          if (Array.isArray(active)) active.forEach((persona) => {
+            if (typeof persona === "string" && persona) personas.add(persona);
+          });
+        }
+        const persona = [...personas].join(" · ") || "—";
+        const event = {
+          id: `${run.id}:${record.iteration}`,
+          persona,
+          run,
+          iteration: record.iteration,
+          recordedAt,
+          goal: trace.persona_goal,
+          action: trace.current_action,
+          decision: trace.decision,
+          nextAction: trace.next_action,
+        };
+        groups.set(persona, [...(groups.get(persona) ?? []), event]);
+      }
+    }
+    return [...groups.entries()]
+      .map(([persona, events]) => ({
+        persona,
+        events: events.sort((left, right) => (Date.parse(left.recordedAt ?? "") || 0) - (Date.parse(right.recordedAt ?? "") || 0)),
+      }))
+      .sort((left, right) => left.persona.localeCompare(right.persona));
+  }, [buildId, rangeStart, runs]);
+  const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { pointerId: event.pointerId, startX: event.clientX, startScroll: event.currentTarget.scrollLeft, moved: false };
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const distance = event.clientX - active.startX;
+    if (Math.abs(distance) > 4) active.moved = true;
+    event.currentTarget.scrollLeft = active.startScroll - distance;
+  };
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (drag.current?.pointerId === event.pointerId) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  return <section className="panel persona-journeys">
+    <h3><SectionInfo title={t.personaJourneys} description={t.personaJourneysHint} /></h3>
+    <p className="hint">{t.personaJourneysHint}</p>
+    {lanes.length ? <div className="persona-journeys__lanes">
+      {lanes.map((lane) => <section className="persona-journeys__lane" key={lane.persona}>
+        <header><strong>{lane.persona}</strong><small>{lane.events.length}</small></header>
+        <div className="persona-journeys__events" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={(event) => {
+          if (!drag.current?.moved) return;
+          event.preventDefault();
+          event.stopPropagation();
+          drag.current = null;
+        }}>
+          {lane.events.map((event) => <button className="persona-journeys__event" key={event.id} onClick={() => onSelect(event.run)}>
+            <time>{compactTimestamp(locale, event.recordedAt)}</time>
+            <small>{t.run} {event.run.id} · {t.iteration} #{event.iteration}</small>
+            <dl>
+              {event.goal && <div><dt>{t.personaGoal}</dt><dd>{event.goal}</dd></div>}
+              {event.action && <div><dt>{t.currentAction}</dt><dd>{event.action}</dd></div>}
+              {event.decision && <div><dt>{t.currentDecision}</dt><dd>{event.decision}</dd></div>}
+              {event.nextAction && <div><dt>{t.nextAction}</dt><dd>{event.nextAction}</dd></div>}
+            </dl>
+          </button>)}
+        </div>
+      </section>)}
+    </div> : <p className="catalog-empty">{t.noPersonaJourneys}</p>}
+  </section>;
 }
 function Card({
   title,
@@ -982,6 +1097,7 @@ export function ImprovementsPage({
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
       />}
+      {build && <PersonaJourneyTimeline key={`${build}:${hours}`} buildId={build} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />}
       {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
       {selectedRun && <EvaluationsPage
