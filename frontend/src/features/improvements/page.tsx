@@ -1,4 +1,3 @@
-import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Area,
@@ -25,6 +24,7 @@ import type {
   SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
+import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -37,7 +37,6 @@ import {
   resolveLocale,
   type Locale,
 } from "../../locales";
-import "./saved-data-files.css";
 import { FeedbackTrends } from "../dashboard/feedback-trends";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
@@ -343,77 +342,6 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
   );
 }
 
-function SavedDataFiles({
-  files,
-  t,
-}: {
-  files: SavedDataFile[];
-  t: (typeof copy)["en"];
-}) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const displayedFiles = [...new Map(files.map((file) => [file.path, file])).values()];
-  if (!displayedFiles.length) return null;
-  const copyValue = async (value: string, key: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(key);
-      window.setTimeout(
-        () => setCopied((current) => (current === key ? null : current)),
-        1_500,
-      );
-    } catch {
-      setCopied(null);
-    }
-  };
-  return (
-    <section className="saved-data-files">
-      <strong>{t.savedDataFiles}</strong>
-      <div className="saved-data-files__list">
-        {displayedFiles.map((file, index) => (
-          <article key={`${file.path}-${index}`}>
-            <strong>{file.label || file.filename}</strong>
-            {file.label && (
-              <small>
-                {t.fileName}: {file.filename}
-              </small>
-            )}
-            <div>
-              <code>{file.path}</code>
-              <button
-                className="ghost icon-button"
-                type="button"
-                onClick={() => copyValue(file.path, `path-${index}`)}
-                aria-label={t.copyPath}
-                title={t.copyPath}
-              >
-                {copied === `path-${index}` ? <Check size={14} /> : <Copy size={14} />}
-              </button>
-            </div>
-            <button
-              className="ghost saved-data-files__copy-name"
-              type="button"
-              onClick={() => copyValue(file.filename, `name-${index}`)}
-            >
-              {copied === `name-${index}` ? <Check size={14} /> : <Copy size={14} />}
-              {t.copyFileName}
-            </button>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function iterationDataFiles(items: ProposalLifecycle[]): SavedDataFile[] {
-  return [
-    ...new Map(
-      items
-        .flatMap((item) => item.data_files ?? [])
-        .map((file) => [file.path, file]),
-    ).values(),
-  ];
-}
-
 function ProposalHistory({
   t,
   locale,
@@ -524,6 +452,7 @@ function ProposalHistory({
     typeof selected?.proposal[key] === "string"
       ? String(selected.proposal[key])
       : "";
+  const evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations");
   return (
     <section className="cycle-proposal-history">
       <h3>
@@ -565,6 +494,16 @@ function ProposalHistory({
                         </span>
                         <span className="proposal-tree__iteration-meta">
                           <small>{group.items.length}</small>
+                          <EvidenceViewer
+                            className="proposal-tree__evidence"
+                            runId={run.runId}
+                            iteration={group.iteration}
+                            artifacts={visualEvidenceArtifacts([...group.dataFiles, ...group.items.flatMap((item) => item.data_files ?? [])])}
+                            imageLabel={evidenceCopy.viewImageEvidence}
+                            htmlLabel={evidenceCopy.viewHtmlEvidence}
+                            imageTitle={evidenceCopy.imageEvidence}
+                            htmlTitle={evidenceCopy.htmlEvidence}
+                          />
                         </span>
                       </summary>
                       <div>
@@ -592,13 +531,6 @@ function ProposalHistory({
                             </span>
                           </button>
                         ))}
-                        <SavedDataFiles
-                          files={[
-                            ...group.dataFiles,
-                            ...iterationDataFiles(group.items),
-                          ]}
-                          t={t}
-                        />
                       </div>
                     </details>
                   ))}

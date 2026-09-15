@@ -3346,6 +3346,7 @@ if __name__ == "__main__":
                             "filename": filename,
                             "path": path,
                             "relative_path": str(data_file.get("relative_path") or ""),
+                            "content_type": str(data_file.get("content_type") or ""),
                         }
                     )
                     timestamps.setdefault(iteration, str(step.get("ended_at") or run.updated_at.isoformat()))
