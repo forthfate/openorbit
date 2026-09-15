@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Build, IssueManagementItem, Run } from "../../domain/models";
 import { api } from "../../services/api";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -33,6 +33,7 @@ type Copy = {
   managementStatus: string;
   proposalStatus: string;
   aiDecision: string;
+  decisionRationale: string;
   persona: string;
   score: string;
   taskId: string;
@@ -95,6 +96,7 @@ export function IssuesPage({
     [assigner, setAssigner] = useState(""),
     [managementStatus, setManagementStatus] = useState("unreviewed"),
     [run, setRun] = useState("");
+  const filterMenu = useRef<HTMLDivElement>(null);
   const load = () =>
     api<IssueManagementItem[]>("/api/v1/issue-management")
       .then(setItems)
@@ -115,6 +117,18 @@ export function IssuesPage({
       .catch(() => setBuilds([]));
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
   }, []);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const close = (event: PointerEvent) => {
+      if (
+        filterMenu.current &&
+        !filterMenu.current.contains(event.target as Node)
+      )
+        setFiltersOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [filtersOpen]);
   const label = (v: string) =>
       ({
         unreviewed: t.unreviewed,
@@ -272,7 +286,7 @@ export function IssuesPage({
             <p className="hint section-description">{t.description}</p>
           </div>
         </div>
-        <div className="run-filter-trigger">
+        <div className="run-filter-trigger" ref={filterMenu}>
           <button
             className="ghost run-filter-button"
             aria-expanded={filtersOpen}
@@ -393,6 +407,12 @@ export function IssuesPage({
             />
             {modalTab === "details" ? (
               <>
+                {selected.decision_rationale && (
+                  <section className="issue-management-rationale">
+                    <h3>{t.decisionRationale}</h3>
+                    <p>{selected.decision_rationale}</p>
+                  </section>
+                )}
                 <label className="modal-setting-row">
                   <span>
                     <SectionInfo
