@@ -148,7 +148,6 @@ function OperationalHealth({ locale }: { locale: Locale }) {
     <section className="panel dashboard-health">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">IMPROVEMENT RESULTS</p>
           <h2>
             <SectionInfo title={copy.title} description={copy.tooltip} />
           </h2>
