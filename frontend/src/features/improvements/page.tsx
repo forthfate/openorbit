@@ -543,6 +543,26 @@ function ProposalHistory({
     typeof selected?.proposal[key] === "string"
       ? String(selected.proposal[key])
       : "";
+  const proposalItem = (item: ProposalLifecycle) => (
+    <button
+      className="proposal-tree__item"
+      key={item.proposal_id}
+      onClick={() => setSelected(item)}
+    >
+      <span>
+        <strong>{item.title}</strong>
+        <small>{item.target}</small>
+      </span>
+      <span className="proposal-tree__item-meta">
+        {item.score !== undefined && item.score !== null && (
+          <b className="proposal-tree__score">
+            {t.score} {item.score}/10
+          </b>
+        )}
+        <StatusBadge value={item.status} label={statusLabel(item.status)} />
+      </span>
+    </button>
+  );
   const evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations");
   return (
     <section className="panel cycle-proposal-history">
@@ -568,8 +588,21 @@ function ProposalHistory({
                       <small>{run.runId}</small>
                     </span>
                   </summary>
-                  {run.iterations.map((group) => (
-                    <details
+                  {run.iterations.map((group) => {
+                    const personaGroups = new Map<string, { personas: string[]; items: ProposalLifecycle[] }>();
+                    const ungroupedItems: ProposalLifecycle[] = [];
+                    for (const item of group.items) {
+                      const personas = [...new Set((item.personas ?? []).filter((persona) => persona.trim()))];
+                      if (!personas.length) {
+                        ungroupedItems.push(item);
+                        continue;
+                      }
+                      const key = personas.join("\u0000");
+                      const personaGroup = personaGroups.get(key) || { personas, items: [] };
+                      personaGroup.items.push(item);
+                      personaGroups.set(key, personaGroup);
+                    }
+                    return <details
                       className="proposal-tree__iteration"
                       key={group.iteration}
                       open
@@ -597,33 +630,21 @@ function ProposalHistory({
                         </span>
                       </summary>
                       <div>
-                        {group.items.map((item) => (
-                          <button
-                            className="proposal-tree__item"
-                            key={item.proposal_id}
-                            onClick={() => setSelected(item)}
+                        {[...personaGroups.values()].map((personaGroup) => (
+                          <section
+                            className="proposal-tree__persona-group"
+                            key={personaGroup.personas.join("\u0000")}
                           >
-                            <span>
-                              <strong>{item.title}</strong>
-                              <small>{item.target}</small>
-                            </span>
-                            <span className="proposal-tree__item-meta">
-                              {item.score !== undefined &&
-                                item.score !== null && (
-                                  <b className="proposal-tree__score">
-                                    {t.score} {item.score}/10
-                                  </b>
-                                )}
-                              <StatusBadge
-                                value={item.status}
-                                label={statusLabel(item.status)}
-                              />
-                            </span>
-                          </button>
+                            <header>
+                              <strong>{personaGroup.personas.join(" · ")}</strong>
+                            </header>
+                            <div>{personaGroup.items.map(proposalItem)}</div>
+                          </section>
                         ))}
+                        {ungroupedItems.map(proposalItem)}
                       </div>
                     </details>
-                  ))}
+                  })}
                 </details>
               ))}
             </details>
