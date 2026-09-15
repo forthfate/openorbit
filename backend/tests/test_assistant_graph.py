@@ -29,9 +29,17 @@ class FakeMcpTools:
 
 
 def test_assistant_graph_routes_mcp_tools_through_the_langgraph_model_node():
-    graph = OrbitAssistantGraph(FakeProvider(), ModelSettings(), FakeLocalTools(), FakeMcpTools())
+    activity = []
+    graph = OrbitAssistantGraph(
+        FakeProvider(),
+        ModelSettings(),
+        FakeLocalTools(),
+        FakeMcpTools(),
+        on_activity=lambda phase, tool=None: activity.append((phase, tool)),
+    )
 
     assert graph.invoke("status") == 'tools:{"health":"ok"}'
+    assert activity == [("thinking", None), ("working", "get_status"), ("thinking", None)]
 
 
 def test_assistant_prompt_uses_local_mcp_as_the_control_room_source_of_truth():

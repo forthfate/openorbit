@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from contextlib import asynccontextmanager
@@ -8,7 +9,7 @@ from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import store as store_module
@@ -1187,6 +1188,59 @@ def chat(values: ChatMessage, request: Request):
         return {"response": response, "profile_name": profile_name}
     except RuntimeError as error:
         raise HTTPException(409, str(error))
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(values: ChatMessage, request: Request):
+    profile_name = store.application_settings()["chat_model_profile_name"]
+    if not profile_name:
+        raise HTTPException(409, "Select an AI model profile for the chat assistant in Settings.")
+    configured = profile(store.profiles(), profile_name)
+    settings = ModelSettings(
+        **{key: value for key, value in configured.items() if key in ModelSettings.__dataclass_fields__}
+    )
+    provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+    tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
+    prompt = build_assistant_prompt(
+        values.content,
+        [(turn.role, turn.content) for turn in values.history],
+        request_locale(request),
+    )
+
+    async def events():
+        queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def activity(phase: str, tool: str | None = None) -> None:
+            event = {"type": "activity", "phase": phase}
+            if tool:
+                event["tool"] = tool
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        async def run() -> None:
+            try:
+                response = await asyncio.to_thread(
+                    OrbitAssistantGraph(provider, settings, tool_executor, on_activity=activity).invoke,
+                    prompt,
+                )
+                await queue.put({"type": "response", "response": response})
+            except RuntimeError as error:
+                await queue.put({"type": "error", "message": str(error)})
+            except Exception:
+                await queue.put({"type": "error", "message": "Chat request failed."})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                event = await queue.get()
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+                if event["type"] in {"response", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
 @app.websocket("/api/terminal")

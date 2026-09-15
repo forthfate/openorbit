@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, TypedDict
+from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
-from .assistant_tools import AssistantToolExecutor
+from .assistant_tools import DEFAULT_MCP_URL, AssistantToolExecutor
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
-
-DEFAULT_MCP_URL = "http://127.0.0.1:3000/mcp/"
 
 
 class AssistantState(TypedDict, total=False):
@@ -82,11 +80,13 @@ class OrbitAssistantGraph:
         settings: ModelSettings,
         local_tools: AssistantToolExecutor,
         mcp_tools: LocalMcpTools | None = None,
+        on_activity: Callable[[str, str | None], None] | None = None,
     ):
         self.provider = provider
         self.settings = settings
         self.local_tools = local_tools
-        self.mcp_tools = mcp_tools or LocalMcpTools()
+        self.mcp_tools = mcp_tools or LocalMcpTools(local_tools.settings["mcp_server_url"])
+        self.on_activity = on_activity
         graph = StateGraph(AssistantState)
         graph.add_node("model", self._model)
         graph.add_edge(START, "model")
@@ -94,14 +94,19 @@ class OrbitAssistantGraph:
         self.graph = graph.compile()
 
     def _model(self, state: AssistantState) -> AssistantState:
+        self._activity("thinking")
         local_definitions = self.local_tools.definitions()
         mcp_definitions = self.mcp_tools.definitions()
         definitions = [*mcp_definitions, *local_definitions]
 
         def execute(name: str, arguments: dict[str, Any]) -> str:
+            self._activity("working", name)
             if any(tool["name"] == name for tool in mcp_definitions):
-                return self.mcp_tools.execute(name, arguments)
-            return self.local_tools.execute(name, arguments)
+                result = self.mcp_tools.execute(name, arguments)
+            else:
+                result = self.local_tools.execute(name, arguments)
+            self._activity("thinking")
+            return result
 
         response = (
             self.provider.complete_with_tools(self.settings, state["prompt"], definitions, execute)
@@ -109,6 +114,10 @@ class OrbitAssistantGraph:
             else self.provider.complete(self.settings, state["prompt"])
         )
         return {"response": response}
+
+    def _activity(self, phase: str, tool: str | None = None) -> None:
+        if self.on_activity:
+            self.on_activity(phase, tool)
 
     def invoke(self, prompt: str) -> str:
         result = self.graph.invoke({"prompt": prompt})

@@ -13,6 +13,7 @@ MAX_RESULT_BYTES = 16 * 1024
 MAX_FILE_LINES = 120
 MAX_SEARCH_RESULTS = 12
 BLOCKED_NAMES = {".env", ".git", ".ssh", "id_rsa", "id_ed25519"}
+DEFAULT_MCP_URL = "http://127.0.0.1:3000/mcp/"
 
 
 def defaults() -> dict[str, Any]:
@@ -23,6 +24,7 @@ def defaults() -> dict[str, Any]:
         "run_process_enabled": True,
         "terminal_enabled": True,
         "terminal_visible": True,
+        "mcp_server_url": DEFAULT_MCP_URL,
     }
 
 
@@ -40,6 +42,9 @@ def normalize_settings(value: object) -> dict[str, Any]:
         "terminal_visible",
     ):
         result[key] = bool(value.get(key, result[key]))
+    result["mcp_server_url"] = (
+        str(value.get("mcp_server_url", result["mcp_server_url"])).strip() or result["mcp_server_url"]
+    )
     return result
 
 

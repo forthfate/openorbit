@@ -1989,6 +1989,7 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
             "run_process_enabled": True,
             "terminal_enabled": True,
             "terminal_visible": True,
+            "mcp_server_url": "http://127.0.0.1:3000/mcp/",
         },
     }
     store.save_settings(
