@@ -3750,13 +3750,21 @@ if __name__ == "__main__":
 
     def improvement_analytics(self, hours: int = 24) -> dict[str, Any]:
         """Aggregate retained supervisor feedback into operator-facing trends."""
-        hours = max(1, min(hours, 24 * 30))
+        requested_hours = max(0, hours)
         end = now()
-        start = end - timedelta(hours=hours)
+        pipeline_runs = [run for run in self.runs() if run.execution_type == "pipeline" and run.build_id]
+        start = (
+            end - timedelta(hours=min(requested_hours, 24 * 30))
+            if requested_hours
+            else min((run.created_at for run in pipeline_runs), default=end - timedelta(hours=24))
+        )
         feedback_by_build: dict[str, dict[str, Any]] = {}
         trends_by_build: dict[str, dict[str, Any]] = {}
         feedback_status_by_build: dict[str, dict[str, Any]] = {}
-        bucket_count = min(24, max(6, hours))
+        bucket_count = min(
+            24,
+            max(6, int(max(1, (end - start).total_seconds() / 3600))),
+        )
         interval = timedelta(seconds=(end - start).total_seconds() / bucket_count)
         issue_severity = [
             {"time": (start + interval * index).isoformat(), "low": 0, "medium": 0, "high": 0, "critical": 0}
@@ -3780,7 +3788,6 @@ if __name__ == "__main__":
             except ValueError:
                 return None
 
-        pipeline_runs = [run for run in self.runs() if run.execution_type == "pipeline" and run.build_id]
         for run in pipeline_runs:
             build_id = str(run.build_id)
             name = run.build_name or build_id
@@ -3910,7 +3917,7 @@ if __name__ == "__main__":
             else None
         )
         return {
-            "window_hours": hours,
+            "window_hours": requested_hours,
             "operational_summary": {
                 "feedback": summary["feedback"],
                 "accepted": summary["accepted"],

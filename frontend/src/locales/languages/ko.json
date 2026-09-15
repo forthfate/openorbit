@@ -569,6 +569,7 @@
       "improvement": "개선",
       "trends": "피드백 추이",
       "range": "기간",
+      "unlimited": "제한 없음",
       "evaluation": "결과",
       "feedbackVolume": "빌드별 피드백",
       "iterationTrend": "반복별 수용 피드백 및 점수",

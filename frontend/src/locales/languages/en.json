@@ -570,6 +570,7 @@
       "improvement": "Improvement",
       "trends": "Feedback trends",
       "range": "Range",
+      "unlimited": "No limit",
       "evaluation": "Result",
       "feedbackVolume": "Feedback by build",
       "iterationTrend": "Accepted feedback & score by iteration",

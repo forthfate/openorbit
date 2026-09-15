@@ -48,6 +48,7 @@ type ImprovementCopy = {
   improvement: string;
   trends: string;
   range: string;
+  unlimited: string;
   evaluation: string;
   feedbackVolume: string;
   iterationTrend: string;
@@ -132,21 +133,25 @@ const terminalRun = (status: string) =>
   ["succeeded", "failed", "cancelled"].includes(status);
 
 function RelatedRuns({
-  buildId, runs, locale, t, onStop, onRetryRequest, onSelect,
+  buildId, runs, locale, t, hours, onStop, onRetryRequest, onSelect,
 }: {
   buildId: string;
   runs: Run[];
   locale: Locale;
   t: (typeof copy)["en"];
+  hours: number;
   onStop: (id: string) => void;
   onRetryRequest: (run: Run) => void;
   onSelect: (run: Run) => void;
 }) {
+  const [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
   const related = useMemo(
-    () => runs.filter((run) => run.build_id === buildId).sort(
+    () => runs.filter((run) =>
+      run.build_id === buildId && (rangeStart === 0 || !run.created_at || (Date.parse(run.created_at) || 0) >= rangeStart),
+    ).sort(
       (left, right) => (Date.parse(right.created_at ?? "") || 0) - (Date.parse(left.created_at ?? "") || 0),
     ),
-    [buildId, runs],
+    [buildId, rangeStart, runs],
   );
   const active = related.filter((run) => !terminalRun(run.status));
   const completed = related.filter((run) => terminalRun(run.status));
@@ -434,7 +439,7 @@ function ProposalHistory({
   const [items, setItems] = useState<ProposalLifecycle[]>([]),
     [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
     [selected, setSelected] = useState<ProposalLifecycle | null>(null),
-    [rangeStart] = useState(() => Date.now() - hours * 60 * 60 * 1000);
+    [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
   useEffect(() => {
     api<ProposalLifecycle[]>("/api/v1/improvements/proposals")
       .then(setItems)
@@ -485,7 +490,7 @@ function ProposalHistory({
       builds.set(resolvedBuildId, build);
       return group;
     };
-    const inRange = (value?: string) => !value || (Date.parse(value) || 0) >= rangeStart;
+    const inRange = (value?: string) => rangeStart === 0 || !value || (Date.parse(value) || 0) >= rangeStart;
     for (const item of items.filter((item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at))) {
       iteration(
         item.build_id,
@@ -874,7 +879,7 @@ export function ImprovementsPage({
     [initialLoading, setInitialLoading] = useState(true),
     [selectedRun, setSelectedRun] = useState<Run | null>(null),
     [retryingRun, setRetryingRun] = useState<Run | null>(null),
-    [hours, setHours] = useState(720);
+    [hours, setHours] = useState(24);
   useEffect(() => {
     api<Build[]>("/api/builds")
       .then((next) => {
@@ -904,7 +909,14 @@ export function ImprovementsPage({
       }),
     [builds],
   );
-  if (initialLoading) return <><SectionSkeleton rows={1} /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
+  if (initialLoading) return <>
+    <SectionSkeleton rows={1} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={3} />
+  </>;
   return (
     <>
       <section className="improvements-build-selector">
@@ -925,16 +937,19 @@ export function ImprovementsPage({
             <option value={72}>3d</option>
             <option value={168}>7d</option>
             <option value={720}>30d</option>
+            <option value={0}>{t.unlimited}</option>
           </select>
         </label>
       </section>
       <CycleImprovementAI locale={locale} build={build} hours={hours} />
       {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
       {build && <RelatedRuns
+        key={`${build}:${hours}`}
         buildId={build}
         runs={runs}
         locale={locale}
         t={t}
+        hours={hours}
         onStop={onStop}
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
