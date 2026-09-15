@@ -8,8 +8,9 @@ import { SectionInfo } from "../../components/ui/section-info";
 import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
-import { ListFilter } from "lucide-react";
+import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
+import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 
 type Copy = {
   title: string;
@@ -50,6 +51,11 @@ type Copy = {
   assignerHint: string;
   verificationHint: string;
   historyHint: string;
+  selected: string;
+  deleteSelected: string;
+  deleteSelectedTitle: string;
+  deleteSelectedDescription: string;
+  delete: string;
   proposed: string;
   acceptable: string;
   accepted: string;
@@ -95,7 +101,9 @@ export function IssuesPage({
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
     [managementStatus, setManagementStatus] = useState("unreviewed"),
-    [run, setRun] = useState("");
+    [run, setRun] = useState(""),
+    [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set()),
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
   const filterMenu = useRef<HTMLDivElement>(null);
   const load = () =>
     api<IssueManagementItem[]>("/api/v1/issue-management")
@@ -190,7 +198,53 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
+  const allSelected = rows.length > 0 && rows.every((item) => selectedIssueIds.has(item.proposal_id));
+  const toggleIssue = (proposalId: string) =>
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      if (next.has(proposalId)) next.delete(proposalId);
+      else next.add(proposalId);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      if (allSelected) rows.forEach((item) => next.delete(item.proposal_id));
+      else rows.forEach((item) => next.add(item.proposal_id));
+      return next;
+    });
+  const confirmDeleteSelected = () => {
+    const proposalIds = [...selectedIssueIds];
+    setDeleteSelectionOpen(false);
+    api<{ deleted: number }>("/api/v1/issue-management", "DELETE", { proposal_ids: proposalIds })
+      .then(({ deleted }) => {
+        setSelectedIssueIds(new Set());
+        load();
+        onNotice(t.selected.replace("{count}", String(deleted)), "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
+  };
   const columns: Column<IssueRow>[] = [
+    {
+      id: "select",
+      header: (
+        <input
+          aria-label="Select all issues"
+          type="checkbox"
+          checked={allSelected}
+          disabled={!rows.length}
+          onChange={toggleAll}
+        />
+      ),
+      render: (item) => (
+        <input
+          aria-label={`Select issue ${item.title}`}
+          type="checkbox"
+          checked={selectedIssueIds.has(item.proposal_id)}
+          onChange={() => toggleIssue(item.proposal_id)}
+        />
+      ),
+    },
     {
       id: "index",
       header: "#",
@@ -353,6 +407,18 @@ export function IssuesPage({
             </div>
           )}
         </div>
+        <div className="run-history-actions">
+          <span>{t.selected.replace("{count}", String(selectedIssueIds.size))}</span>
+          <button
+            className="icon-button danger"
+            aria-label={t.deleteSelected}
+            title={t.deleteSelected}
+            onClick={() => setDeleteSelectionOpen(true)}
+            disabled={!selectedIssueIds.size}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
         <DataTable
           columns={columns}
           rows={rows}
@@ -366,9 +432,18 @@ export function IssuesPage({
             setRun("");
           }}
           className="issue-management-table"
-          gridTemplateColumns="42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
+          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
         />
       </section>
+      <ConfirmDialog
+        open={deleteSelectionOpen}
+        title={t.deleteSelectedTitle}
+        description={t.deleteSelectedDescription.replace("{count}", String(selectedIssueIds.size))}
+        cancelLabel={locales[locale].common.cancel}
+        confirmLabel={t.delete}
+        onCancel={() => setDeleteSelectionOpen(false)}
+        onConfirm={confirmDeleteSelected}
+      />
       <Modal
         open={!!selected}
         title={selected?.title ?? t.title}

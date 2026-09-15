@@ -352,7 +352,12 @@
       "commentHint": "開発者が確認または修正した内容を記録します。",
       "assignerHint": "このコメントを作成した人を記録します。",
       "verificationHint": "変更を検証した実行履歴を選択して接続します。",
-      "historyHint": "状態変更とコメントを時系列で保存します。"
+      "historyHint": "状態変更とコメントを時系列で保存します。",
+      "selected": "{count} 件を選択",
+      "deleteSelected": "選択項目を削除",
+      "deleteSelectedTitle": "選択した問題を削除しますか？",
+      "deleteSelectedDescription": "{count} 件の問題が問題管理から非表示になります。元の実行と証拠は保持されます。",
+      "delete": "削除"
     },
     "settingsLogs": {
       "title": "Orbit 運用ログ",

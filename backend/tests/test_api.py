@@ -888,6 +888,27 @@ def test_legacy_external_runners_and_templates_migrate_target_log_forwarding(tmp
     ).read_text(encoding="utf-8")
 
 
+def test_deleting_issue_management_items_hides_them_without_deleting_run_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
+    store = store_module.ConsoleStore()
+    proposal = {
+        "proposal_id": "run-1:1:0",
+        "title": "Retain evidence",
+        "target": "prompt",
+        "events": [],
+    }
+    monkeypatch.setattr(store, "proposal_lifecycles", lambda: [proposal])
+
+    assert store.issue_management_items()[0]["proposal_id"] == proposal["proposal_id"]
+    assert store.delete_issue_management_items([proposal["proposal_id"]]) == {"deleted": 1}
+    assert store.issue_management_items() == []
+
+    records = yaml.safe_load(store_module.ISSUE_MANAGEMENT.read_text(encoding="utf-8"))["items"]
+    assert records[proposal["proposal_id"]]["status"] == "deleted"
+    assert records[proposal["proposal_id"]]["events"][-1]["type"] == "deleted"
+    assert store.delete_issue_management_items([proposal["proposal_id"]]) == {"deleted": 0}
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()

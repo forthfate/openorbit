@@ -352,7 +352,12 @@
       "commentHint": "개발자가 확인하거나 수정한 내용을 기록합니다.",
       "assignerHint": "이 코멘트를 작성한 사람을 기록합니다.",
       "verificationHint": "수정을 검증한 실행 이력을 선택해 연결합니다.",
-      "historyHint": "상태 변경과 코멘트가 시간순으로 기록됩니다."
+      "historyHint": "상태 변경과 코멘트가 시간순으로 기록됩니다.",
+      "selected": "{count}개 선택됨",
+      "deleteSelected": "선택 항목 삭제",
+      "deleteSelectedTitle": "선택한 문제를 삭제할까요?",
+      "deleteSelectedDescription": "문제 {count}개가 문제 관리에서 숨겨집니다. 원본 실행과 증거는 보존됩니다.",
+      "delete": "삭제"
     },
     "settingsLogs": {
       "title": "Orbit 운영 로그",

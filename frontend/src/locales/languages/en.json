@@ -353,7 +353,12 @@
       "commentHint": "Record what a developer checked or changed.",
       "assignerHint": "Record who wrote this comment.",
       "verificationHint": "Select the run history that verified the change.",
-      "historyHint": "Status changes and comments are retained chronologically."
+      "historyHint": "Status changes and comments are retained chronologically.",
+      "selected": "{count} selected",
+      "deleteSelected": "Delete selected",
+      "deleteSelectedTitle": "Delete selected issues?",
+      "deleteSelectedDescription": "{count} issues will be hidden from Issue management. The source run and evidence are retained.",
+      "delete": "Delete"
     },
     "settingsLogs": {
       "title": "Orbit operational logs",
