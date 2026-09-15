@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.user-journey-smoke-test",
+  "version": "1.0.2",
+  "name": "User journey smoke test",
+  "description": "Create a browser-based smoke test. Requires a running app and Playwright browser.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Browser quality check"
+    },
+    {
+      "key": "repository",
+      "label": "Target repository",
+      "type": "workspace",
+      "required": true,
+      "placeholder": "/absolute/path/to/your-repository"
+    },
+    {
+      "key": "base_url",
+      "label": "Browser base URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "http://localhost:3000"
+    },
+    {
+      "key": "journey_name",
+      "label": "User journey name",
+      "type": "string",
+      "required": true,
+      "default": "Home page smoke test",
+      "placeholder": "e.g. Sign in and view orders"
+    },
+    {
+      "key": "journey_path",
+      "label": "Journey start path",
+      "type": "string",
+      "required": true,
+      "default": "/",
+      "placeholder": "e.g. /login"
+    },
+    {
+      "key": "journey_prompt",
+      "label": "User actions",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. Sign in with the test account and open order history."
+    },
+    {
+      "key": "acceptance",
+      "label": "Success condition",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. The order history page loads without an error."
+    },
+    {
+      "key": "expected_text",
+      "label": "Expected visible text (optional)",
+      "type": "string",
+      "required": false,
+      "placeholder": "e.g. Recent orders"
+    },
+    {
+      "key": "profile_name",
+      "label": "AI model profile name",
+      "type": "string",
+      "required": true,
+      "default": "Browser quality AI",
+      "placeholder": "e.g. Evaluation GPT-4o"
+    },
+    {
+      "key": "provider",
+      "label": "AI provider",
+      "type": "select",
+      "required": true,
+      "default": "azure-openai",
+      "options": [
+        {
+          "value": "azure-openai",
+          "label": "Azure OpenAI"
+        },
+        {
+          "value": "aws-bedrock",
+          "label": "AWS Bedrock"
+        }
+      ]
+    },
+    {
+      "key": "model",
+      "label": "Model / deployment",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. gpt-4o"
+    },
+    {
+      "key": "endpoint",
+      "label": "Provider endpoint",
+      "type": "url",
+      "required": false,
+      "placeholder": "https://your-resource.openai.azure.com"
+    },
+    {
+      "key": "region",
+      "label": "Region",
+      "type": "string",
+      "required": true,
+      "default": "us-east-1",
+      "placeholder": "e.g. eastus"
+    },
+    {
+      "key": "secret_env",
+      "label": "API key environment variable",
+      "type": "string",
+      "required": true,
+      "default": "AZURE_OPENAI_API_KEY",
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY"
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Browser journey runner created by Quick Start.",
+      "template_id": "quickstart-browser",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Assess the fixed browser journey evidence and return the required evaluation JSON."
+    },
+    "test_case_set": {
+      "name": "${build_name} smoke tests",
+      "description": "A smoke journey created by Quick Start.",
+      "cases": [
+        {
+          "id": "primary-journey",
+          "name": "${journey_name}",
+          "path": "${journey_path}",
+          "prompt": "${journey_prompt}",
+          "acceptance": "${acceptance}",
+          "expected_text": "${expected_text}"
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local"
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "repository": "${repository}",
+      "browser_base_url": "${base_url}"
+    },
+    "model_profile": {
+      "profile_name": "${profile_name}",
+      "provider": "${provider}",
+      "model": "${model}",
+      "endpoint": "${endpoint}",
+      "region": "${region}",
+      "secret_env": "${secret_env}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Evaluate the browser journey created by Quick Start.",
+    "model_profile_name": "${profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 30,
+    "run_limit": 1,
+    "approval_score": 8,
+    "enabled": true
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "id": "native-improvement-cycle",
+  "name": "Prompt improvement validation",
+  "description": "Applies accepted prompt improvements with rollback history, validates fixed browser journeys, and records review decisions.",
+  "entrypoint": "runner.py"
+}

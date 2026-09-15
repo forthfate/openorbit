@@ -1,0 +1,6 @@
+{
+  "id": "external-command-adapter",
+  "name": "External automation integration",
+  "description": "Connects an existing automation tool while OpenOrbit retains scheduling, evidence collection, and supervision.",
+  "entrypoint": "runner.py"
+}

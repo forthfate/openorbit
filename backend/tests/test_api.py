@@ -497,7 +497,11 @@ def test_finalize_runs_after_a_terminal_iteration_for_repository_recovery(
 
 
 def test_native_improvement_template_uses_repository_snapshot_lifecycle():
-    source = store_module.NATIVE_IMPROVEMENT_CYCLE_TEMPLATE
+    source = next(
+        item["source"]
+        for item in store_module.ConsoleStore.runner_templates()
+        if item["id"] == "native-improvement-cycle"
+    )
 
     assert "ctx.save_before_each_snapshot()" in source
     assert "ctx.save_first_after_each_snapshot()" in source
@@ -1150,6 +1154,7 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
                 "region": "us-east-1",
                 "secret_env": "AZURE_OPENAI_API_KEY",
                 "aws_profile": "",
+                "created_at": "2026-01-01T00:00:00+00:00",
             }
         ],
     )
@@ -1426,7 +1431,30 @@ def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):
     templates = {item["id"]: item for item in store.available_runner_templates()}
     assert imported["origin"] == "user"
     assert templates["shared-browser-check"]["source"] == imported["source"]
-    assert (tmp_path / "runner-templates" / "shared-browser-check.json").exists()
+    package = tmp_path / "runner-templates" / "shared-browser-check"
+    assert (package / "template.json").exists()
+    assert (package / "runner.py").exists()
+
+
+def test_folder_template_packages_keep_documentation_and_external_runner_source(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    monkeypatch.setattr(store_module, "QUICK_STARTS", tmp_path / "quick-starts")
+    runner_package = store_module.RUNNER_TEMPLATES / "documented-runner"
+    runner_package.mkdir(parents=True)
+    (runner_package / "template.json").write_text(
+        json.dumps({"id": "documented-runner", "name": "Documented", "description": "Folder package."}),
+        encoding="utf-8",
+    )
+    (runner_package / "runner.py").write_text("from orbit_sdk import runner\n", encoding="utf-8")
+    (runner_package / "README.md").write_text("# Runner docs\n", encoding="utf-8")
+    (runner_package / "LICENSE").write_text("MIT\n", encoding="utf-8")
+    store = store_module.ConsoleStore()
+
+    template = next(item for item in store.available_runner_templates() if item["id"] == "documented-runner")
+
+    assert template["readme"] == "# Runner docs\n"
+    assert template["license"] == "MIT\n"
+    assert template["package_path"] == str(runner_package)
 
 
 def test_build_star_is_persisted_without_changing_other_build_fields(tmp_path, monkeypatch):
