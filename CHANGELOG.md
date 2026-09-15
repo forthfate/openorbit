@@ -5,6 +5,26 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-09-15
+
+### Added
+
+- Issue management now supports pagination, multi-select status and severity filters, bulk selection, and a recoverable deleted management state.
+- Improvements now show runs for the selected Build alongside a persona journey timeline. Journey events are grouped by persona, ordered over time, and open the corresponding run detail; the timeline supports horizontal drag scrolling.
+- Proposal decision history is grouped by persona so repeated decisions are easier to compare in context.
+- Runner templates and Quick Starts forward target process output to the Run detail target-log stream, including external browser and AI-agent activity.
+
+### Changed
+
+- Issue detail views show the supervisor decision rationale directly and use the same outside-click popover behavior as Run history.
+- Dashboard run status uses localized label-style metadata, and the task operations section no longer includes the redundant Improvement Results eyebrow.
+- Persisted runner state keeps persona-scoped journey handoff information for subsequent checks.
+
+### Fixed
+
+- Target logs from external executions are retained and visible in the Run detail Logs tab.
+- Issue filtering and selection interactions now use the correct collection state.
+
 ## [0.9.0] - 2026-09-14
 
 ### Added
@@ -219,3 +239,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1
 [0.8.0]: https://github.com/forthfate/openorbit/releases/tag/v0.8.0
 [0.9.0]: https://github.com/forthfate/openorbit/releases/tag/v0.9.0
+[0.10.0]: https://github.com/forthfate/openorbit/releases/tag/v0.10.0
