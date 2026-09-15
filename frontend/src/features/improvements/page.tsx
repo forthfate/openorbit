@@ -486,14 +486,13 @@ function ProposalHistory({
                       <summary>
                         <span>
                           <strong>
-                            {t.iteration} #{group.iteration}
+                            {t.iteration} #{group.iteration} <span className="proposal-tree__count">({group.items.length})</span>
                           </strong>
                           <small>
                             {timestamp(locale, group.recordedAt)}
                           </small>
                         </span>
                         <span className="proposal-tree__iteration-meta">
-                          <small>{group.items.length}</small>
                           <EvidenceViewer
                             className="proposal-tree__evidence"
                             runId={run.runId}
