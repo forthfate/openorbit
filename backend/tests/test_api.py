@@ -816,6 +816,78 @@ def test_bundle_runner_updates_in_place_and_keeps_immutable_versions(tmp_path, m
     assert [step.phase for step in store._runner_execution_plan("bundle-runner", 2).steps] == ["verify"]
 
 
+def test_legacy_external_runners_and_templates_migrate_target_log_forwarding(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    store_module.RUNNERS.mkdir()
+    store_module.RUNNER_TEMPLATES.mkdir()
+
+    legacy_adapter = (
+        "from orbit_sdk import runner\n"
+        "def invoke(ctx):\n"
+        "    return ctx.exec(['adapter'], timeout=3600)\n"
+        "@runner.phase('execute')\n"
+        "def run(ctx): invoke(ctx)\n"
+        "# ORBIT_ADAPTER_COMMAND\n"
+    )
+    legacy_probe = legacy_adapter.replace(
+        "return ctx.exec(['adapter'], timeout=3600)",
+        "return ctx.exec(\n        ['probe'],\n        timeout=3600,\n        env={},\n    )",
+    ).replace("ORBIT_ADAPTER_COMMAND", "ORBIT_PROBE_COMMAND")
+    internal_runner = (
+        "from orbit_sdk import runner\n"
+        "@runner.phase('execute')\n"
+        "def run(ctx):\n"
+        "    ctx.exec(['git', 'status'], timeout=3600)\n"
+    )
+    for runner_id, template_id, source in (
+        ("legacy-adapter", "external-command-adapter", legacy_adapter),
+        ("quick-start-probe", "evidence-gated-probe-cycle", legacy_probe),
+        ("native-runner", "native-improvement-cycle", internal_runner),
+    ):
+        (store_module.RUNNERS / f"{runner_id}.py").write_text(source, encoding="utf-8")
+        (store_module.RUNNERS / f"{runner_id}.json").write_text(
+            json.dumps(
+                {
+                    "id": runner_id,
+                    "name": runner_id,
+                    "description": "Legacy runner.",
+                    "template_id": template_id,
+                    "version": 1,
+                }
+            ),
+            encoding="utf-8",
+        )
+    template_source = legacy_adapter.replace("ORBIT_ADAPTER_COMMAND", "ORBIT_SELENIUM_COMMAND")
+    (store_module.RUNNER_TEMPLATES / "selenium-external-journey.py").write_text(
+        template_source, encoding="utf-8"
+    )
+    (store_module.RUNNER_TEMPLATES / "selenium-external-journey.json").write_text(
+        json.dumps(
+            {
+                "id": "selenium-external-journey",
+                "name": "Selenium",
+                "description": "Legacy Selenium template.",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store = store_module.ConsoleStore()
+
+    adapter = store._runner("legacy-adapter")
+    probe = store._runner("quick-start-probe")
+    assert adapter["version"] == 2
+    assert [item["version"] for item in adapter["versions"]] == [1, 2]
+    assert 'target_log_source="external-adapter"' in adapter["source"]
+    assert 'target_log_source="evidence-probe"' in probe["source"]
+    assert store._runner("native-runner")["version"] == 1
+    assert "target_log_source" not in store._runner("native-runner")["source"]
+    assert 'target_log_source="selenium-adapter"' in (
+        store_module.RUNNER_TEMPLATES / "selenium-external-journey.py"
+    ).read_text(encoding="utf-8")
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()

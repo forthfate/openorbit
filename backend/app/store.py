@@ -858,6 +858,7 @@ class ConsoleStore:
         RUNNER_TEMPLATES.mkdir(parents=True, exist_ok=True)
         QUICK_STARTS.mkdir(parents=True, exist_ok=True)
         self._migrate_build_environments()
+        self._migrate_target_log_forwarding()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         # Test runs are deliberately process-local: they support the build-page
         # test dialog without becoming an evaluation-run record or surviving a
@@ -2725,6 +2726,68 @@ if __name__ == "__main__":
             self._save_asset_list(EXECUTION_ENVIRONMENTS, executions)
             self._save_asset_list(TARGET_ENVIRONMENTS, targets)
             self._save_asset_list(path, builds)
+
+    @staticmethod
+    def _add_target_log_forwarding(source: str, *, command_marker: str, log_source: str) -> str:
+        """Add Target Log forwarding only to a known external-command contract."""
+        if command_marker not in source or "target_log_source=" in source:
+            return source
+        multiline = re.compile(r"^(?P<indent>[ \t]*)timeout=(?:3600|3_600),$", re.MULTILINE)
+        if multiline.search(source):
+            return multiline.sub(
+                lambda match: f'{match.group(0)}\n{match.group("indent")}target_log_source="{log_source}",',
+                source,
+                count=1,
+            )
+        for timeout in ("timeout=3600", "timeout=3_600"):
+            legacy = f"{timeout})"
+            if legacy in source:
+                return source.replace(legacy, f'{timeout}, target_log_source="{log_source}")')
+        return source
+
+    def _migrate_target_log_forwarding(self) -> None:
+        """Version legacy external runners so their child output reaches Target Logs.
+
+        Native runners also use ``ctx.exec`` for internal Git/configuration work.
+        This migration intentionally limits itself to the explicit external command
+        templates, leaving custom and native runner behavior unchanged.
+        """
+        migrations = {
+            "external-command-adapter": ("ORBIT_ADAPTER_COMMAND", "external-adapter"),
+            "json-agent-cycle": ("ORBIT_AGENT_COMMAND", "external-agent"),
+            "evidence-gated-probe-cycle": ("ORBIT_PROBE_COMMAND", "evidence-probe"),
+            "selenium-external-journey": ("ORBIT_SELENIUM_COMMAND", "selenium-adapter"),
+        }
+
+        for runner in self.runners():
+            migration = migrations.get(str(runner.get("template_id", "")))
+            if migration is None:
+                continue
+            source = self._add_target_log_forwarding(
+                runner["source"], command_marker=migration[0], log_source=migration[1]
+            )
+            if source != runner["source"]:
+                self._write_runner(
+                    runner["id"], {**runner, "source": source}, bundle=bool(runner.get("bundle"))
+                )
+
+        # Imported templates have no immutable version history. Restrict this
+        # content-aware update to the same known external contracts so a user's
+        # unrelated template is never rewritten.
+        for path in RUNNER_TEMPLATES.glob("*.py"):
+            metadata = path.with_suffix(".json")
+            if not metadata.exists():
+                continue
+            template_id = str(json.loads(metadata.read_text(encoding="utf-8")).get("id", ""))
+            migration = migrations.get(template_id)
+            if migration is None:
+                continue
+            source = path.read_text(encoding="utf-8")
+            updated = self._add_target_log_forwarding(
+                source, command_marker=migration[0], log_source=migration[1]
+            )
+            if updated != source:
+                path.write_text(updated, encoding="utf-8")
 
     def prompt_templates(self) -> list[dict[str, Any]]:
         path = CONFIG / "prompt-templates.yaml"
