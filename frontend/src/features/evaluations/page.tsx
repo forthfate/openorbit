@@ -618,6 +618,10 @@ export function EvaluationsPage({
   );
   const result = supervision?.response;
   const evaluation = result?.evaluation;
+  const selectedIteration = selected ? displayedIteration(selected) : 0;
+  const iterationSummary = selectedIteration
+    ? `${selectedIteration}/${selected?.loop_limit ?? selectedIteration}`
+    : "—";
   const workflowGraph = useMemo(() => {
     const definition = selected?.workflow_graph;
     if (!definition?.nodes.length) return null;
@@ -1001,6 +1005,10 @@ export function EvaluationsPage({
             <div>
               <small>{l.phase}</small>
               <StatusBadge value={selected.status} label={finalPhase(selected)} />
+            </div>
+            <div>
+              <small>{l.iteration}</small>
+              <strong>{iterationSummary}</strong>
             </div>
             <div>
               <small>{t.elapsed}</small>

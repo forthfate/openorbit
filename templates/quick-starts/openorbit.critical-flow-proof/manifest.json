@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "openorbit.critical-flow-proof",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "name": "Critical flow proof",
   "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
   "publisher": {
@@ -16,14 +16,6 @@
       "default": "Critical flow proof",
       "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
-    },
-    {
-      "key": "repository",
-      "label": "Target repository",
-      "type": "workspace",
-      "required": true,
-      "placeholder": "/absolute/path/to/your-repository",
-      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
@@ -77,65 +69,11 @@
       "tooltip": "The product behavior or experience that the repeated journey should prioritize."
     },
     {
-      "key": "profile_name",
-      "label": "AI model profile name",
-      "type": "string",
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
       "required": true,
-      "default": "Journey supervisor",
-      "placeholder": "e.g. Production evaluation supervisor",
-      "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
-    },
-    {
-      "key": "provider",
-      "label": "AI provider",
-      "type": "select",
-      "required": true,
-      "default": "azure-openai",
-      "options": [
-        {
-          "value": "azure-openai",
-          "label": "Azure OpenAI"
-        },
-        {
-          "value": "aws-bedrock",
-          "label": "AWS Bedrock"
-        }
-      ],
-      "tooltip": "Select the provider that serves the supervisor model."
-    },
-    {
-      "key": "model",
-      "label": "Model / deployment",
-      "type": "string",
-      "required": true,
-      "placeholder": "e.g. gpt-4o",
-      "tooltip": "Provider model ID or deployment name used for evaluation."
-    },
-    {
-      "key": "endpoint",
-      "label": "Provider endpoint",
-      "type": "url",
-      "required": false,
-      "placeholder": "https://your-resource.openai.azure.com",
-      "tooltip": "Provider base endpoint. Azure OpenAI requires this; Bedrock can leave it blank."
-    },
-    {
-      "key": "region",
-      "label": "Region",
-      "type": "string",
-      "required": true,
-      "default": "us-east-1",
-      "placeholder": "e.g. eastus",
-      "tooltip": "Cloud region used by the selected provider, such as eastus or us-east-1."
-    },
-    {
-      "key": "secret_env",
-      "label": "API key environment variable",
-      "type": "string",
-      "required": true,
-      "default": "AZURE_OPENAI_API_KEY",
-      "placeholder": "e.g. AZURE_OPENAI_API_KEY",
-      "tooltip": "Name of the environment variable that holds the provider API key or credentials."
+      "tooltip": "Select an existing AI model profile, or create one for this build."
     }
   ],
   "assets": {
@@ -170,23 +108,14 @@
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}",
       "browser_base_url": "${base_url}"
-    },
-    "model_profile": {
-      "profile_name": "${profile_name}",
-      "provider": "${provider}",
-      "model": "${model}",
-      "endpoint": "${endpoint}",
-      "region": "${region}",
-      "secret_env": "${secret_env}"
     }
   },
   "build": {
     "name": "${build_name}",
     "purpose": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
     "browser_base_url": "${base_url}",
-    "model_profile_name": "${profile_name}",
+    "model_profile_name": "${model_profile_name}",
     "timezone": "Asia/Tokyo",
     "repeat_interval_minutes": 60,
     "run_limit": 24,

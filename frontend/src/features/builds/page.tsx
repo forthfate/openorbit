@@ -3,8 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  FileUp,
-  Languages,
   Play,
   Plus,
   Sparkles,
@@ -13,7 +11,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { WorkflowGraph } from "../../components/workflow-graph";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
@@ -25,7 +23,6 @@ import type {
   Build,
   ExecutionEnvironment,
   PromptTemplate,
-  QuickStart,
   Run,
   RunnerAsset,
   Settings,
@@ -39,8 +36,7 @@ import {
   locales,
   type Locale,
 } from "../../locales";
-import { api, upload } from "../../services/api";
-import { useTemplateTranslations } from "../../services/use-template-translation";
+import { api } from "../../services/api";
 import { EvaluationsPage } from "../evaluations/page";
 
 type Draft = {
@@ -70,22 +66,16 @@ type Draft = {
   enabled: boolean;
 };
 
-type QuickStartTranslation = {
-  name: string;
-  description: string;
-  parameters?: {
-    label: string;
-    description?: string;
-    tooltip?: string;
-    placeholder?: string;
-    options?: { label: string }[];
-  }[];
-};
 type LabelCopy = { label: string; hint: string };
 export type ProfileFormCopy = {
   profileName: LabelCopy;
   provider: LabelCopy;
   modelDeployment: LabelCopy;
+  azureEndpoint: LabelCopy;
+  region: LabelCopy;
+  awsProfile: LabelCopy;
+  secretEnv: LabelCopy;
+  createNewAiProfile: LabelCopy;
 };
 type BuildWizardCopy = {
   basics: string;
@@ -122,27 +112,6 @@ type BuildWizardCopy = {
   next: string;
 };
 
-const withQuickStartTranslation = (
-  item: QuickStart,
-  translation: QuickStartTranslation | null,
-  labels?: { name: string; description: string },
-): QuickStart =>
-  translation || labels
-    ? {
-        ...item,
-        name: translation?.name ?? labels?.name ?? item.name,
-        description:
-          translation?.description ?? labels?.description ?? item.description,
-        parameters: item.parameters.map((parameter, index) => ({
-          ...parameter,
-          ...translation?.parameters?.[index],
-          options: parameter.options?.map((option, optionIndex) => ({
-            ...option,
-            ...translation?.parameters?.[index]?.options?.[optionIndex],
-          })),
-        })),
-      }
-    : item;
 const formatDate = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -210,12 +179,16 @@ const Field = ({
   label,
   description,
   children,
+  as = "label",
 }: {
   label: string;
   description?: string;
   children: ReactNode;
-}) => (
-  <label className="modal-setting-row">
+  as?: "div" | "label";
+}) => {
+  const Container = as;
+  return (
+  <Container className="modal-setting-row">
     <span>
       {description ? (
         <SectionInfo title={label} description={description} />
@@ -224,8 +197,9 @@ const Field = ({
       )}
     </span>
     {children}
-  </label>
-);
+  </Container>
+  );
+};
 export function ProfileForm({
   settings,
   setSettings,
@@ -272,7 +246,7 @@ export function ProfileForm({
       </Field>
       {settings.provider === "azure-openai" ? (
         <>
-          <Field label={t.azureEndpoint}>
+          <Field label={t.azureEndpoint} description={help.azureEndpoint.hint}>
             <input
               type="url"
               placeholder="https://your-resource.openai.azure.com"
@@ -282,7 +256,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.secretEnv}>
+          <Field label={t.secretEnv} description={help.secretEnv.hint}>
             <input
               placeholder="AZURE_OPENAI_API_KEY"
               value={settings.secret_env}
@@ -294,7 +268,7 @@ export function ProfileForm({
         </>
       ) : (
         <>
-          <Field label={t.region}>
+          <Field label={t.region} description={help.region.hint}>
             <input
               placeholder="us-east-1"
               value={settings.region}
@@ -303,7 +277,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.awsProfile}>
+          <Field label={t.awsProfile} description={help.awsProfile.hint}>
             <input
               placeholder="default"
               value={settings.aws_profile ?? ""}
@@ -639,182 +613,6 @@ function RunnerWorkflowPreview({ runnerId, version, locale }: { runnerId: string
   </section>;
 }
 
-function Quick({
-  item,
-  profiles,
-  create,
-  back,
-  close,
-  locale,
-}: {
-  item: QuickStart;
-  profiles: Settings[];
-  create: (id: string, v: Record<string, string>) => Promise<unknown>;
-  back: () => void;
-  close: () => void;
-  locale: Locale;
-}) {
-  const t = locales[locale].ui;
-  const display = item;
-  const [v, setV] = useState<Record<string, string>>(() =>
-      Object.fromEntries(
-        item.parameters.map((p) => [
-          p.key,
-          p.default ??
-            (p.type === "model_profile"
-              ? (profiles[0]?.profile_name ?? "")
-              : ""),
-        ]),
-      ),
-    ),
-    [review, setReview] = useState(false),
-    [busy, setBusy] = useState(false),
-    [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
-    [graphLoading, setGraphLoading] = useState(true),
-    [graphError, setGraphError] = useState("");
-  useEffect(() => {
-    let active = true;
-    api<WorkflowGraphDefinition | null>(`/api/quick-starts/${item.id}/preview-graph`, "POST")
-      .then((graph) => {
-        if (active) setWorkflowGraph(graph);
-      })
-      .catch((graphError: Error) => {
-        if (active) setGraphError(graphError.message);
-      })
-      .finally(() => {
-        if (active) setGraphLoading(false);
-      });
-    return () => { active = false; };
-  }, [item.id]);
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await create(item.id, v);
-      close();
-    } catch {
-      // The parent reports creation failures through the shared toast.
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="quick-start-form">
-      <button className="ghost" onClick={back}>
-        <ChevronLeft size={15} />
-        {t.quickStarts}
-      </button>
-      <div className="quick-start-form__heading">
-        <Sparkles size={19} />
-        <div>
-          <strong>{display.name}</strong>
-          <p>{display.description}</p>
-        </div>
-      </div>
-      {!review && <section className="quick-start-workflow" aria-label={t.workflowGraph}>
-        <strong>{t.workflowGraph}</strong>
-        <p>{t.quickStartWorkflowDescription}</p>
-        {graphLoading ? <p className="hint">{t.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || t.noWorkflowGraph}</p>}
-      </section>}
-      {review ? (
-        <div className="quick-start-review">
-          <p>{t.quickStartReview}</p>
-          <dl>
-            {display.parameters.map((p) => (
-              <>
-                <dt key={`${p.key}a`}>{p.label}</dt>
-                <dd key={`${p.key}b`}>{v[p.key] || "—"}</dd>
-              </>
-            ))}
-          </dl>
-        </div>
-      ) : (
-        <div className="modal-form">
-          {display.parameters.map((p) => (
-            <Field key={p.key} label={p.label} description={p.tooltip ?? p.description}>
-              {p.type === "select" ? (
-                <select
-                  value={v[p.key]}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                >
-                  {p.options?.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              ) : p.type === "model_profile" ? (
-                <select
-                  value={v[p.key]}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                >
-                  {profiles.map((x) => (
-                    <option key={x.profile_name} value={x.profile_name}>
-                      {x.profile_name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={p.type === "url" ? "url" : "text"}
-                  value={v[p.key]}
-                  placeholder={p.placeholder}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                />
-              )}
-            </Field>
-          ))}
-        </div>
-      )}
-      <div className="modal-actions">
-        {review ? (
-          <>
-            <button className="ghost" onClick={() => setReview(false)}>
-              {t.edit}
-            </button>
-            <button className="approve" disabled={busy} onClick={submit}>
-              {busy ? t.creating : t.createAssetsAndBuild}
-            </button>
-          </>
-        ) : (
-          <button className="approve" onClick={() => setReview(true)}>
-            {t.review}
-            <ChevronRight size={15} />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function QuickStartCard({
-  item,
-  translation,
-  labels,
-  pick,
-}: {
-  item: QuickStart;
-  translation: QuickStartTranslation | null;
-  labels?: { name: string; description: string };
-  pick: (item: QuickStart) => void;
-}) {
-  const display = withQuickStartTranslation(item, translation, labels);
-  return (
-    <article className="quick-start-card">
-      <button className="quick-start-card__select" onClick={() => pick(item)}>
-        <Sparkles size={18} />
-        <span>
-          <strong>{display.name}</strong>
-          <small>{display.description}</small>
-          <em>
-            {item.publisher?.name ?? "Community"} · v{item.version}
-          </em>
-        </span>
-        <ChevronRight size={16} />
-      </button>
-    </article>
-  );
-}
-
 export function BuildsPage(props: {
   locale: Locale;
   builds: Build[];
@@ -830,13 +628,7 @@ export function BuildsPage(props: {
   onUpdate: (id: string, v: Draft) => Promise<unknown>;
   onToggleStar: (id: string, starred: boolean) => Promise<unknown>;
   onDelete: (id: string) => void;
-  onQuickStartCreate: (
-    id: string,
-    v: Record<string, string>,
-  ) => Promise<unknown>;
-  quickStartRequest?: number;
-  quickStartSelection?: string;
-  onQuickStartRequestHandled?: () => void;
+  onOpenQuickStart: () => void;
 }) {
   const {
     locale,
@@ -853,34 +645,19 @@ export function BuildsPage(props: {
     onUpdate,
     onToggleStar,
     onDelete,
-    onQuickStartCreate,
-    quickStartRequest,
-    quickStartSelection,
-    onQuickStartRequestHandled,
+    onOpenQuickStart,
   } = props;
   const t = locales[locale],
     ui = t.ui;
   const [open, setOpen] = useState(false),
     [edit, setEdit] = useState<Build | null>(null),
     [d, setD] = useState(empty),
-    [mode, setMode] = useState<"chooser" | "quick" | "direct">("chooser"),
-    [items, setItems] = useState<QuickStart[]>([]),
-    [picked, setPicked] = useState<QuickStart | null>(null),
-    [error, setError] = useState(""),
+    [mode, setMode] = useState<"chooser" | "direct">("chooser"),
+    [, setError] = useState(""),
     [page, setPage] = useState(1),
     [size, setSize] = useState(15),
     [selected, setSelected] = useState(""),
-    [testRun, setTestRun] = useState<Run | null>(null),
-    file = useRef<HTMLInputElement>(null);
-  const translations = useTemplateTranslations<QuickStartTranslation>(
-    "quick-start",
-    items.map((item) => item.id),
-    locale,
-  );
-  const translationCopy = locales[locale].templateTranslation;
-  const quickStartLabels = localeMessages<
-    Record<string, { name: string; description: string }>
-  >(locale, "quickStartLabels");
+    [testRun, setTestRun] = useState<Run | null>(null);
   const taskCount = (build: Build) =>
     testCaseSets.find((set) => set.id === build.test_case_set_id)?.cases.length ??
     build.test_cases?.length ??
@@ -911,41 +688,11 @@ export function BuildsPage(props: {
       ).catch(() => undefined);
     setTestRun(null);
   };
-  const start = (
-    initialMode: "chooser" | "quick" = "chooser",
-    initialQuickStartId?: string,
-  ) => {
+  const start = () => {
     setEdit(null);
     setD(empty);
-    setMode(initialMode);
-    setPicked(null);
+    setMode("chooser");
     setOpen(true);
-    api<QuickStart[]>("/api/quick-starts")
-      .then((next) => {
-        setItems(next);
-        setPicked(
-          initialQuickStartId
-            ? (next.find((item) => item.id === initialQuickStartId) ?? null)
-            : null,
-        );
-      })
-      .catch((e) => setError(e.message));
-  };
-  useEffect(() => {
-    if (!quickStartRequest) return;
-    queueMicrotask(() => {
-      start("quick", quickStartSelection);
-      onQuickStartRequestHandled?.();
-    });
-  }, [quickStartRequest, quickStartSelection, onQuickStartRequestHandled]);
-  const importItem = async (f: File | undefined) => {
-    if (!f) return;
-    try {
-      await upload("/api/quick-starts/import-package", f);
-      setItems(await api("/api/quick-starts"));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : ui.importFailed);
-    }
   };
   const cols: Column<Build>[] = [
       {
@@ -1133,7 +880,10 @@ export function BuildsPage(props: {
           <div className="create-mode-picker">
             <button
               className="create-mode-card"
-              onClick={() => setMode("quick")}
+              onClick={() => {
+                setOpen(false);
+                onOpenQuickStart();
+              }}
             >
               <Sparkles size={22} />
               <span>
@@ -1155,75 +905,6 @@ export function BuildsPage(props: {
             </button>
           </div>
         )}
-        {mode === "quick" && !picked && (
-          <div className="quick-start-picker">
-            <div className="quick-start-picker__head">
-              <button className="ghost" onClick={() => setMode("chooser")}>
-                <ChevronLeft size={15} />
-                {ui.back}
-              </button>
-              <input
-                className="visually-hidden"
-                ref={file}
-                type="file"
-                accept="application/zip,.zip"
-                onChange={(e) => importItem(e.target.files?.[0])}
-              />
-              <div className="template-picker-actions">
-                <button
-                  className="ghost"
-                  type="button"
-                  disabled={translations.loading}
-                  onClick={
-                    translations.content(items[0]?.id ?? "")
-                      ? () => translations.showOriginal()
-                      : () => translations.translate()
-                  }
-                >
-                  <Languages size={15} />
-                  {translations.loading
-                    ? translationCopy.translating
-                    : translations.content(items[0]?.id ?? "")
-                      ? translationCopy.showOriginal
-                      : translationCopy.translate}
-                </button>
-                <button className="ghost" onClick={() => file.current?.click()}>
-                  <FileUp size={15} />
-                  {ui.importQuickStart}
-                </button>
-              </div>
-            </div>
-            <div className="quick-start-list">
-              {items.map((item) => (
-                <QuickStartCard
-                  key={item.id}
-                  item={item}
-                  translation={translations.content(item.id)}
-                  labels={quickStartLabels[item.id]}
-                  pick={setPicked}
-                />
-              ))}
-            </div>
-            {(error || translations.error) && (
-              <small className="hint">{error || translationCopy.failed}</small>
-            )}
-          </div>
-        )}
-        {mode === "quick" && picked && (
-          <Quick
-            key={picked.id}
-            item={withQuickStartTranslation(
-              picked,
-              translations.content(picked.id),
-              quickStartLabels[picked.id],
-            )}
-            profiles={profiles}
-            create={onQuickStartCreate}
-            back={() => setPicked(null)}
-            close={() => setOpen(false)}
-            locale={locale}
-          />
-        )}{" "}
         {mode === "direct" && (
           <Direct
             d={d}

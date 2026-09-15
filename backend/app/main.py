@@ -1071,6 +1071,18 @@ def translate_template(values: TemplateTranslationRequest):
         raise HTTPException(409, f"Template translation failed: {error}")
 
 
+def cached_template_translation(values: TemplateTranslationRequest):
+    source = store.template_translation_input(values.kind, values.template_id)
+    return {
+        "content": store.cached_template_translation(values.kind, values.template_id, values.locale, source)
+    }
+
+
+@app.post("/api/template-translations/cached")
+def cached_template_translation_endpoint(values: TemplateTranslationRequest):
+    return safely(lambda: cached_template_translation(values))
+
+
 @app.post("/api/template-translations")
 def template_translation(values: TemplateTranslationRequest):
     return safely(lambda: translate_template(values))

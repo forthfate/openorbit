@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import orbit_sdk as sdk
@@ -992,6 +993,27 @@ def test_template_translation_cache_only_accepts_display_text_shape(tmp_path, mo
         )
 
 
+def test_cached_template_translation_endpoint_returns_only_existing_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "TEMPLATE_TRANSLATIONS", tmp_path / "template-translations.json")
+    quick_start_id = "openorbit.user-journey-smoke-test"
+    source = main_module.store.template_translation_input("quick-start", quick_start_id)
+    main_module.store.save_template_translation("quick-start", quick_start_id, "ko", source, source)
+
+    cached = TestClient(app).post(
+        "/api/template-translations/cached",
+        json={"kind": "quick-start", "template_id": quick_start_id, "locale": "ko"},
+    )
+    missing = TestClient(app).post(
+        "/api/template-translations/cached",
+        json={"kind": "quick-start", "template_id": quick_start_id, "locale": "ja"},
+    )
+
+    assert cached.status_code == 200
+    assert cached.json() == {"content": source}
+    assert missing.status_code == 200
+    assert missing.json() == {"content": None}
+
+
 def test_quick_start_translation_includes_placeholders_and_tooltips(monkeypatch):
     store = store_module.ConsoleStore()
     manifest = {
@@ -1451,7 +1473,7 @@ def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monke
         {
             "repository": str(tmp_path),
             "probe_command": "uv run ai-eval",
-            "model": "gpt-4o",
+            "model_profile_name": "Default",
         },
     )
 
@@ -1459,6 +1481,110 @@ def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monke
     assert execution["environment_variables"] == {"ORBIT_PROBE_COMMAND": "uv run ai-eval"}
     assert created["build"]["repeat_interval_minutes"] == 1440
     assert store.profiles()[-1]["endpoint"] == ""
+
+
+def test_browser_quick_starts_create_an_internal_workspace_without_a_repository(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "APP_DATA", tmp_path / "app-data")
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path / "config")
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    monkeypatch.setattr(store_module, "QUICK_STARTS", tmp_path / "quick-starts")
+    monkeypatch.setattr(store_module, "QUICK_START_INSTANCES", tmp_path / "quick-start-instances.yaml")
+    monkeypatch.setattr(store_module, "EXECUTION_ENVIRONMENTS", tmp_path / "execution-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_ENVIRONMENTS", tmp_path / "target-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_TEST_CASE_SETS", tmp_path / "target-test-case-sets.yaml")
+    store = store_module.ConsoleStore()
+
+    created = store.instantiate_quick_start(
+        "openorbit.user-journey-smoke-test",
+        {
+            "base_url": "http://localhost:3000",
+            "journey_prompt": "Open the home page.",
+            "acceptance": "The page loads.",
+            "model_profile_name": "Default",
+        },
+    )
+
+    quick_starts = {item["id"]: item for item in store._built_in_quick_starts()}
+    target = store._target_environment(created["generated"]["target_environment_id"])
+    for quick_start_id in {
+        "openorbit.continuous-user-journey",
+        "openorbit.critical-flow-proof",
+        "openorbit.site-exploration-review",
+        "openorbit.user-journey-smoke-test",
+    }:
+        assert "repository" not in {
+            parameter["key"] for parameter in quick_starts[quick_start_id]["parameters"]
+        }
+    assert "base_url" not in {
+        parameter["key"] for parameter in quick_starts["openorbit.agent-self-improvement"]["parameters"]
+    }
+    assert target["repository"] == str(
+        tmp_path / "app-data" / "quick-start-workspaces" / created["build"]["id"]
+    )
+    assert Path(target["repository"]).is_dir()
+
+
+def test_quick_start_required_errors_include_the_display_label():
+    store = store_module.ConsoleStore()
+
+    with pytest.raises(ValueError, match=r"User actions \(journey_prompt\) is required"):
+        store.instantiate_quick_start(
+            "openorbit.user-journey-smoke-test", {"base_url": "http://localhost:3000"}
+        )
+
+
+def test_quick_start_can_create_and_assign_a_model_profile(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "CONFIG", tmp_path)
+    monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    monkeypatch.setattr(store_module, "QUICK_STARTS", tmp_path / "quick-starts")
+    monkeypatch.setattr(store_module, "QUICK_START_INSTANCES", tmp_path / "quick-start-instances.yaml")
+    monkeypatch.setattr(store_module, "EXECUTION_ENVIRONMENTS", tmp_path / "execution-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_ENVIRONMENTS", tmp_path / "target-environments.yaml")
+    monkeypatch.setattr(store_module, "TARGET_TEST_CASE_SETS", tmp_path / "target-test-case-sets.yaml")
+    store = store_module.ConsoleStore()
+
+    created = store.instantiate_quick_start(
+        "openorbit.user-journey-smoke-test",
+        {
+            "base_url": "http://localhost:3000",
+            "journey_prompt": "Open the home page.",
+            "acceptance": "The page loads.",
+            "model_profile_name": "Quick Start model",
+            "__model_profile_mode": "create",
+            "__model_profile_provider": "azure-openai",
+            "__model_profile_model": "gpt-4o",
+            "__model_profile_endpoint": "https://example.openai.azure.com",
+            "__model_profile_secret_env": "AZURE_OPENAI_API_KEY",
+        },
+    )
+
+    assert created["build"]["model_profile_name"] == "Quick Start model"
+    assert any(profile["profile_name"] == "Quick Start model" for profile in store.profiles())
+
+
+def test_builtin_quick_starts_only_declare_a_model_profile_selector():
+    store = store_module.ConsoleStore()
+    legacy_keys = {"profile_name", "provider", "model", "endpoint", "region", "secret_env"}
+
+    for quick_start in store._built_in_quick_starts():
+        parameters = quick_start["parameters"]
+        profile_parameters = [
+            parameter for parameter in parameters if parameter["key"] == "model_profile_name"
+        ]
+        assert profile_parameters == [
+            {
+                "key": "model_profile_name",
+                "label": "AI model profile",
+                "type": "model_profile",
+                "required": True,
+                "tooltip": "Select an existing AI model profile, or create one for this build.",
+            }
+        ]
+        assert not legacy_keys & {parameter["key"] for parameter in parameters}
+        assert "model_profile" not in quick_start["assets"]
 
 
 def test_runner_templates_can_be_imported_into_app_data(tmp_path, monkeypatch):

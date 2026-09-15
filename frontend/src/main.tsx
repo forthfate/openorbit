@@ -6,6 +6,7 @@ import { ToastProvider } from "./components/ui/toast";
 import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
+import { QuickStartModal } from "./components/quick-start-modal";
 
 const AssetsPage = lazy(() =>
   import("./features/assets/page").then((module) => ({
@@ -94,7 +95,7 @@ export default function App() {
     id: string;
   } | null>(null);
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
-  const [quickStartRequest, setQuickStartRequest] = useState(0);
+  const [quickStartOpen, setQuickStartOpen] = useState(false);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
   const room = useControlRoom();
   const ui = locales[locale].ui;
@@ -122,8 +123,7 @@ export default function App() {
   };
   const openQuickStart = (id?: string) => {
     setQuickStartSelection(id);
-    setQuickStartRequest((value) => value + 1);
-    setPage("builds");
+    setQuickStartOpen(true);
   };
   const test = () =>
     api<{ response: string }>("/api/settings/hello", "POST", room.settings)
@@ -331,13 +331,7 @@ export default function App() {
         onUpdate={updateBuild}
         onToggleStar={toggleBuildStar}
         onDelete={deleteBuild}
-        onQuickStartCreate={createQuickStart}
-        quickStartRequest={quickStartRequest}
-        quickStartSelection={quickStartSelection}
-        onQuickStartRequestHandled={() => {
-          setQuickStartRequest(0);
-          setQuickStartSelection(undefined);
-        }}
+        onOpenQuickStart={() => openQuickStart()}
       />
     ),
     runs: (
@@ -408,6 +402,19 @@ export default function App() {
      <Suspense fallback={<SectionSkeleton rows={6} />}>
   <div className="page-stack">{content}</div>
 </Suspense>
+      <QuickStartModal
+        key={`${quickStartOpen}:${quickStartSelection ?? ""}`}
+        open={quickStartOpen}
+        initialQuickStartId={quickStartSelection}
+        profiles={room.profiles}
+        locale={locale}
+        create={createQuickStart}
+        onClose={() => {
+          setQuickStartOpen(false);
+          setQuickStartSelection(undefined);
+        }}
+        onCreated={() => setPage("builds")}
+      />
       <ConfirmDialog
         open={deletingBuild !== null}
         title={confirmation.title}

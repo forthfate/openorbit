@@ -798,8 +798,35 @@ class ConsoleStore:
             if not values.get(key) and parameter.get("default") is not None:
                 values[key] = str(parameter["default"])
             if parameter.get("required") and not values.get(key):
-                raise ValueError(f"quick start parameter '{key}' is required")
+                label = str(parameter.get("label", "")).strip() or key
+                raise ValueError(f"{label} ({key}) is required")
             values.setdefault(key, "")
+        create_model_profile = values.get("__model_profile_mode") == "create"
+        created_model_profile: dict[str, str] | None = None
+        if create_model_profile:
+            profile_name = values.get("model_profile_name", "")
+            provider = values.get("__model_profile_provider", "")
+            model = values.get("__model_profile_model", "")
+            endpoint = values.get("__model_profile_endpoint", "")
+            region = values.get("__model_profile_region", "")
+            secret_env = values.get("__model_profile_secret_env", "")
+            if not profile_name or not provider or not model:
+                raise ValueError("New AI model profile requires a name, provider, and model.")
+            if provider == "azure-openai" and (not endpoint or not secret_env):
+                raise ValueError(
+                    "New Azure OpenAI model profile requires an endpoint and API key environment variable."
+                )
+            if provider == "aws-bedrock" and not region:
+                raise ValueError("New AWS Bedrock model profile requires a region.")
+            created_model_profile = {
+                "profile_name": profile_name,
+                "provider": provider,
+                "model": model,
+                "endpoint": endpoint,
+                "region": region,
+                "secret_env": secret_env,
+                "aws_profile": values.get("__model_profile_aws_profile", ""),
+            }
         token = uuid.uuid4().hex[:8]
         prefix = re.sub(r"[^a-z0-9]+", "-", quick_start_id.lower()).strip("-")[-36:]
         generated = {
@@ -825,6 +852,7 @@ class ConsoleStore:
             )
         }
         runner_paths = [RUNNERS / f"{generated['runner_id']}.py", RUNNERS / f"{generated['runner_id']}.json"]
+        generated_workspace: Path | None = None
         try:
             runner = self.create_runner({"id": generated["runner_id"], **assets["runner"]})
             prompt = self.create_prompt_template(
@@ -836,14 +864,19 @@ class ConsoleStore:
             execution = self.create_execution_environment(
                 {"id": generated["execution_environment_id"], **assets["execution_environment"]}
             )
-            target = self.create_target_environment(
-                {"id": generated["target_environment_id"], **assets["target_environment"]}
-            )
-            if isinstance(assets.get("model_profile"), dict):
-                profile_name = str(assets["model_profile"].get("profile_name", "")).strip()
+            target_values = {"id": generated["target_environment_id"], **assets["target_environment"]}
+            if not str(target_values.get("repository", "")).strip():
+                generated_workspace = APP_DATA / "quick-start-workspaces" / generated["build_id"]
+                generated_workspace.mkdir(parents=True, exist_ok=True)
+                target_values["repository"] = str(generated_workspace)
+            target = self.create_target_environment(target_values)
+            if created_model_profile is not None:
+                profile_name = created_model_profile["profile_name"]
                 if any(item["profile_name"] == profile_name for item in self.profiles()):
                     raise ValueError("AI model profile name already exists")
-                self.save_settings(assets["model_profile"])
+                self.save_settings(created_model_profile)
+            elif not any(item["profile_name"] == build.get("model_profile_name") for item in self.profiles()):
+                raise ValueError("AI model profile (model_profile_name) does not exist")
             created = self.create_build(
                 {
                     "id": generated["build_id"],
@@ -876,6 +909,8 @@ class ConsoleStore:
                     path.write_bytes(content)
             for path in runner_paths:
                 path.unlink(missing_ok=True)
+            if generated_workspace is not None:
+                shutil.rmtree(generated_workspace, ignore_errors=True)
             raise
 
     def create_runner_template(self, values: dict[str, str]) -> dict[str, str]:

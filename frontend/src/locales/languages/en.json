@@ -135,6 +135,26 @@
         "modelDeployment": {
           "label": "Model / deployment",
           "hint": "The provider-specific model or deployment name to invoke."
+        },
+        "azureEndpoint": {
+          "label": "Azure endpoint",
+          "hint": "The Azure OpenAI resource endpoint, such as https://your-resource.openai.azure.com."
+        },
+        "region": {
+          "label": "Region",
+          "hint": "The cloud region used for this provider, such as eastus or us-east-1."
+        },
+        "awsProfile": {
+          "label": "AWS CLI profile (optional)",
+          "hint": "Optional local AWS CLI credential profile to use for Bedrock requests."
+        },
+        "secretEnv": {
+          "label": "Secret env variable",
+          "hint": "The environment variable that holds this provider's API key or credentials."
+        },
+        "createNewAiProfile": {
+          "label": "Create new AI model profile…",
+          "hint": "Create and assign a new AI model profile for this build."
         }
       }
     },
@@ -578,6 +598,7 @@
     "templateTranslation": {
       "translate": "Translate",
       "translating": "Translating…",
+      "checkingCache": "Checking saved translations…",
       "showOriginal": "Show original",
       "failed": "Template translation failed. Please try again."
     },

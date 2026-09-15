@@ -134,6 +134,26 @@
         "modelDeployment": {
           "label": "モデル / デプロイ",
           "hint": "呼び出すプロバイダー固有のモデルまたはデプロイ名です。"
+        },
+        "azureEndpoint": {
+          "label": "Azureエンドポイント",
+          "hint": "https://your-resource.openai.azure.com などの Azure OpenAI リソースエンドポイントです。"
+        },
+        "region": {
+          "label": "リージョン",
+          "hint": "eastus や us-east-1 など、このプロバイダーで使用するクラウドリージョンです。"
+        },
+        "awsProfile": {
+          "label": "AWS CLIプロファイル（任意）",
+          "hint": "Bedrock リクエストに使用する任意のローカル AWS CLI 認証プロファイルです。"
+        },
+        "secretEnv": {
+          "label": "シークレット環境変数",
+          "hint": "このプロバイダーの API キーまたは認証情報を保持する環境変数名です。"
+        },
+        "createNewAiProfile": {
+          "label": "新しいAIモデルプロファイルを作成…",
+          "hint": "このビルド用に新しい AI モデルプロファイルを作成して割り当てます。"
         }
       }
     },
@@ -577,6 +597,7 @@
     "templateTranslation": {
       "translate": "翻訳",
       "translating": "翻訳中…",
+      "checkingCache": "保存済みの翻訳を確認中…",
       "showOriginal": "原文を表示",
       "failed": "テンプレートの翻訳に失敗しました。もう一度お試しください。"
     },
@@ -611,7 +632,7 @@
       "importFailed": "テンプレートをインポートできませんでした",
       "basedOn": "テンプレートに基づく",
       "changeTemplate": "テンプレートを変更",
-      "empty": "Empty",
+      "empty": "なし",
       "emptyDescription": "空の6フェーズランナーから始めます。",
       "id": "ID",
       "name": "名前",

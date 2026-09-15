@@ -25,6 +25,7 @@ import {
   type Locale,
 } from "../../locales";
 import { api } from "../../services/api";
+import { useTemplateTranslations } from "../../services/use-template-translation";
 import { FeedbackTrends, FeedbackTrendsSkeleton } from "./feedback-trends";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -65,6 +66,7 @@ type RunUiCopy = {
   afterEach: string;
   afterAll: string;
 };
+type QuickStartTranslation = { name: string; description: string };
 
 function DashboardSkeleton() {
   return <>
@@ -237,6 +239,11 @@ export function DashboardPage({
     recent = data?.recent_runs ?? [],
     errors = recent.filter((run) => run.status === "failed").length,
     [quickStarts, setQuickStarts] = useState<QuickStart[]>([]);
+  const quickStartTranslations = useTemplateTranslations<QuickStartTranslation>(
+    "quick-start",
+    quickStarts.map((quickStart) => quickStart.id),
+    locale,
+  );
   const runLabel = (value: string) =>
     ({
       queued: runUi.queued,
@@ -275,7 +282,7 @@ export function DashboardPage({
           </button>
         </div>
       </section>
-      {quickStarts.length > 0 && (
+      {quickStarts.length > 0 && !quickStartTranslations.cacheLoading && (
         <section className="dashboard-quick-starts">
           <div className="panel-head">
             <div>
@@ -284,23 +291,22 @@ export function DashboardPage({
             </div>
           </div>
           <div className="dashboard-quick-starts__grid">
-            {quickStarts.map((item) => (
-              <button
-                key={item.id}
-                className="dashboard-quick-start"
-                onClick={() => onOpenQuickStart(item.id)}
-              >
-                <Sparkles size={16} />
-                <span>
-                  <strong>
-                    {quickStartLabels[item.id]?.name ?? item.name}
-                  </strong>
-                  <small>
-                    {quickStartLabels[item.id]?.description ?? item.description}
-                  </small>
-                </span>
-              </button>
-            ))}
+            {quickStarts.map((item) => {
+              const translation = quickStartTranslations.content(item.id);
+              return (
+                <button
+                  key={item.id}
+                  className="dashboard-quick-start"
+                  onClick={() => onOpenQuickStart(item.id)}
+                >
+                  <Sparkles size={16} />
+                  <span>
+                    <strong>{translation?.name ?? quickStartLabels[item.id]?.name ?? item.name}</strong>
+                    <small>{translation?.description ?? quickStartLabels[item.id]?.description ?? item.description}</small>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
       )}

@@ -492,7 +492,9 @@ function RunnerModal({
       templates.map((template) => template.id),
       locale,
     ),
-    translationCopy = locales[locale].templateTranslation;
+    translationCopy = locales[locale].templateTranslation,
+    allRunnerTemplatesTranslated =
+      templates.length > 0 && templates.every((template) => Boolean(translations.content(template.id)));
   if (!draft)
     return (
       <Modal open title={copy.createTitle} onClose={onClose}>
@@ -507,20 +509,22 @@ function RunnerModal({
                 accept="application/zip,.zip"
                 onChange={(event) => importTemplate(event.target.files?.[0])}
               />
-              <button
-                className="ghost"
-                type="button"
-                disabled={translations.loading}
+                <button
+                  className="ghost"
+                  type="button"
+                  disabled={translations.loading || translations.cacheLoading}
                 onClick={
-                  translations.content(templates[0]?.id ?? "")
-                    ? () => translations.showOriginal()
-                    : () => translations.translate()
+                    allRunnerTemplatesTranslated
+                      ? () => translations.showOriginal()
+                      : () => translations.translate()
                 }
               >
                 <Languages size={15} />
-                {translations.loading
-                  ? translationCopy.translating
-                  : translations.content(templates[0]?.id ?? "")
+                  {translations.loading
+                    ? translationCopy.translating
+                    : translations.cacheLoading
+                      ? translationCopy.checkingCache
+                    : allRunnerTemplatesTranslated
                     ? translationCopy.showOriginal
                     : translationCopy.translate}
               </button>
@@ -535,14 +539,18 @@ function RunnerModal({
             </div>
           </div>
           <div className="runner-template-grid">
-            {templateOptions.map((template) => (
-              <RunnerTemplateCard
-                key={template.id}
-                template={template}
-                translation={translations.content(template.id)}
-                choose={choose}
-              />
-            ))}
+            {translations.cacheLoading ? (
+              <p className="hint">{translationCopy.checkingCache}</p>
+            ) : (
+              templateOptions.map((template) => (
+                <RunnerTemplateCard
+                  key={template.id}
+                  template={template}
+                  translation={translations.content(template.id)}
+                  choose={choose}
+                />
+              ))
+            )}
           </div>
           {translations.error && (
             <small className="hint">{translationCopy.failed}</small>
@@ -554,6 +562,9 @@ function RunnerModal({
   const selectedTemplate = templateOptions.find(
     (template) => template.id === draft.template_id,
   );
+  const selectedTemplateDisplay = selectedTemplate
+    ? { ...selectedTemplate, ...(translations.content(selectedTemplate.id) ?? {}) }
+    : null;
   const versions = editing?.versions ?? [];
   const selectVersion = (version: number) => {
     const selected = versions.find((item) => item.version === version);
@@ -572,8 +583,8 @@ function RunnerModal({
           <div className="runner-template-selection">
             <div>
               <small>{copy.basedOn}</small>
-              <strong>{selectedTemplate?.name ?? draft.template_id}</strong>
-              <span>{selectedTemplate?.description}</span>
+              <strong>{selectedTemplateDisplay?.name ?? draft.template_id}</strong>
+              <span>{selectedTemplateDisplay?.description}</span>
             </div>
             <button className="ghost" type="button" onClick={changeTemplate}>
               {copy.changeTemplate}
