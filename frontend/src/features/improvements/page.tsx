@@ -20,6 +20,7 @@ import type {
   ImprovementIterationData,
   Build,
   ProposalLifecycle,
+  Run,
   RunnerState,
   SavedDataFile,
 } from "../../domain/models";
@@ -39,6 +40,9 @@ import {
 } from "../../locales";
 import { FeedbackTrends } from "../dashboard/feedback-trends";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
+import { DataTable, type Column } from "../../components/ui/data-table";
+import { CircleStop, RotateCcw } from "lucide-react";
+import { EvaluationsPage } from "../evaluations/page";
 
 type ImprovementCopy = {
   improvement: string;
@@ -86,6 +90,16 @@ type ImprovementCopy = {
   noStoredState: string;
   updated: string;
   rawState: string;
+  relatedRuns: string;
+  relatedRunsHint: string;
+  noRelatedRuns: string;
+  started: string;
+  currentPhase: string;
+  stop: string;
+  retry: string;
+  retryWarning: string;
+  restart: string;
+  resume: string;
 };
 type ChartHints = {
   feedbackByBuild: string;
@@ -114,6 +128,70 @@ const compactTimestamp = (locale: Locale, value?: string) =>
     : "—";
 const lastRunTimestamp = (build: Build) =>
   build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
+const terminalRun = (status: string) =>
+  ["succeeded", "failed", "cancelled"].includes(status);
+
+function RelatedRuns({
+  buildId, runs, locale, t, onStop, onRetryRequest, onSelect,
+}: {
+  buildId: string;
+  runs: Run[];
+  locale: Locale;
+  t: (typeof copy)["en"];
+  onStop: (id: string) => void;
+  onRetryRequest: (run: Run) => void;
+  onSelect: (run: Run) => void;
+}) {
+  const related = useMemo(
+    () => runs.filter((run) => run.build_id === buildId).sort(
+      (left, right) => (Date.parse(right.created_at ?? "") || 0) - (Date.parse(left.created_at ?? "") || 0),
+    ),
+    [buildId, runs],
+  );
+  const active = related.filter((run) => !terminalRun(run.status));
+  const completed = related.filter((run) => terminalRun(run.status));
+  const visible = [...active, ...completed.slice(0, 5)];
+  const runUi = locales[locale].runUi;
+  const statusLabel = (status: string) => ({
+    succeeded: t.succeeded, failed: t.failed, cancelled: t.cancelled, running: t.running,
+    queued: runUi.queued,
+    awaiting_approval: runUi.awaitingApproval,
+  } as Record<string, string>)[status] ?? status;
+  const iteration = (run: Run) => {
+    const current = Math.max(0, ...(run.step_results ?? []).map((step) => step.loop_index ?? 0));
+    return run.loop_limit ? `${Math.min(current, run.loop_limit)}/${run.loop_limit}` : "—";
+  };
+  const columns: Column<Run>[] = [
+    { id: "run", header: t.run, render: (run) => <span className="related-run-id"><code>{run.id}</code><StatusBadge value={run.status} label={statusLabel(run.status)} /></span>, sortValue: (run) => run.id },
+    { id: "started", header: t.started, render: (run) => compactTimestamp(locale, run.created_at), sortValue: (run) => run.created_at },
+    { id: "iteration", header: t.iteration, render: iteration, sortValue: iteration },
+    { id: "phase", header: t.currentPhase, render: (run) => run.current_phase ?? "—", sortValue: (run) => run.current_phase },
+    { id: "actions", header: locales[locale].evaluation.action, render: (run) => {
+      const canRetry = terminalRun(run.status) && run.execution_type === "pipeline";
+      return <span className="build-actions">
+        {!terminalRun(run.status) && <button className="icon-button danger" title={t.stop} aria-label={t.stop} onClick={() => onStop(run.id)}><CircleStop size={16} /></button>}
+        {canRetry && <button className="icon-button" title={t.retry} aria-label={t.retry} onClick={() => onRetryRequest(run)}><RotateCcw size={16} /></button>}
+      </span>;
+    } },
+  ];
+  return (
+    <section className="panel related-runs" aria-labelledby="related-runs-title">
+      <div className="related-runs__heading">
+        <div>
+          <h2 id="related-runs-title">{t.relatedRuns}</h2>
+          <p>{t.relatedRunsHint}</p>
+        </div>
+        <div className="related-runs__counts">
+          <span>{t.running} <b>{active.length}</b></span>
+          <span>{t.succeeded} <b>{completed.filter((run) => run.status === "succeeded").length}</b></span>
+          <span>{t.failed} <b>{completed.filter((run) => run.status === "failed").length}</b></span>
+          <span>{t.cancelled} <b>{completed.filter((run) => run.status === "cancelled").length}</b></span>
+        </div>
+      </div>
+      <DataTable columns={columns} rows={visible} onRowClick={onSelect} className="related-runs-table" gridTemplateColumns="minmax(190px,1.4fr) minmax(118px,.85fr) 90px minmax(105px,1fr) minmax(145px,.9fr)" empty={t.noRelatedRuns} />
+    </section>
+  );
+}
 function Card({
   title,
   description,
@@ -781,12 +859,26 @@ function StoredState({
     </section>
   );
 }
-export function ImprovementsPage() {
+export function ImprovementsPage({
+  runs,
+  onStop,
+  onRetry,
+  onApprove,
+  onReject,
+}: {
+  runs: Run[];
+  onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
     [build, setBuild] = useState(""),
     [builds, setBuilds] = useState<Build[]>([]),
-    [initialLoading, setInitialLoading] = useState(true);
+    [initialLoading, setInitialLoading] = useState(true),
+    [selectedRun, setSelectedRun] = useState<Run | null>(null),
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
   useEffect(() => {
     api<Build[]>("/api/builds")
       .then((next) => {
@@ -831,9 +923,40 @@ export function ImprovementsPage() {
           </select>
         </label>
       </section>
+      {build && <RelatedRuns
+        buildId={build}
+        runs={runs}
+        locale={locale}
+        t={t}
+        onStop={onStop}
+        onRetryRequest={setRetryingRun}
+        onSelect={setSelectedRun}
+      />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
       {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
       <CycleImprovementAI locale={locale} build={build} />
+      {selectedRun && <EvaluationsPage
+        detailOnly
+        locale={locale}
+        runs={runs}
+        initialSelectedRun={selectedRun}
+        onSelectedRunClose={() => setSelectedRun(null)}
+        onStop={onStop}
+        onRetry={onRetry}
+        onApprove={onApprove}
+        onReject={onReject}
+        onEmergencyStop={() => undefined}
+        onDeleteRuns={() => Promise.resolve()}
+      />}
+      <Modal open={Boolean(retryingRun)} title={t.retry} onClose={() => setRetryingRun(null)} className="modal--confirm">
+        <div className="modal-form retry-confirmation">
+          <p className="confirm-description">{t.retryWarning}</p>
+          <div className="modal-actions">
+            <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{t.resume}</button>
+            <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{t.restart}</button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
