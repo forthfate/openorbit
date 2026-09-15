@@ -19,6 +19,7 @@ dependencies = [
   "langgraph>=0.2",
   "requests>=2.31",
   "pywinpty>=2.0; sys_platform == 'win32'",
+  "python-multipart>=0.0.20",
 ]
 
 [project.optional-dependencies]

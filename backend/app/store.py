@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -117,685 +120,6 @@ Use `acceptable` for a prompt-only change when it is low-risk, additive, reversi
 Use `proposed` when the change needs code, infrastructure, product, security, or human-policy approval, or when the evidence is insufficient. Use `rejected` for unsafe, duplicate, or unsupported changes."""
 MANAGER_PROMPT_SLOT = "__ORBIT_MANAGER_AI_PROMPT__"
 MANAGER_OUTPUT_LANGUAGE_SLOT = "__ORBIT_MANAGER_OUTPUT_LANGUAGE__"
-NATIVE_IMPROVEMENT_CYCLE_TEMPLATE = r"""# Requirements
-# - PROJECT_ROOT is a Git repository.
-# - The build selects fixed target-AI prompts and a configured model
-#   profile, plus a readable managed_prompt_path on its Target Environment.
-# - Only human-accepted feedback is applied to the prompt.
-# This runner never commits target changes; ctx.update_file keeps rollback versions.
-
-import hashlib
-import json
-import re
-
-from orbit_sdk import graph, runner
-
-REQUIRED_SUFFICIENT_EVALUATIONS = 3
-
-graph.connect("validate-target", "prepare-prompt")
-graph.connect("prepare-prompt", "exercise-target", label="managed prompt")
-graph.connect("exercise-target", "assess-candidate", kind="data", label="responses")
-graph.connect("assess-candidate", "retain-iteration")
-graph.connect("retain-iteration", "prepare-prompt", kind="loop", label="next evaluation")
-graph.connect("retain-iteration", "restore-baseline", kind="condition", label="completed")
-# Marker comments make replacement idempotent and preserve the surrounding
-# target prompt content that OpenOrbit does not own.
-PROMPT_BLOCK_START = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_START -->"
-PROMPT_BLOCK_END = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_END -->"
-
-
-def state_path(ctx):
-    '''Return the per-build state file outside the target repository.'''
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
-    directory = ctx.app_data / "improvement-cycles"
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / f"{build_id}.json"
-
-
-def load_state(ctx):
-    '''Load the previous verdict state, or start a fresh candidate baseline.'''
-    path = state_path(ctx)
-    if not path.exists():
-        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def save_state(ctx, state):
-    '''Persist only bounded history so recurring evaluations do not grow unbounded.'''
-    state["history"] = state.get("history", [])[-24:]
-    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def git(ctx, *args):
-    '''Run Git in the configured project root without invoking a shell.'''
-    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)
-
-
-def candidate(ctx):
-    '''Fingerprint the current working-tree diff and retain its changed paths.'''
-    patch = git(ctx, "diff", "--binary", "--")
-    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]
-    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed
-
-
-def update_prompt_from_accepted_proposals(ctx, proposals):
-    '''Replace only OpenOrbit's managed prompt block and retain a rollback version.'''
-    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
-    if not prompt_path:
-        raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
-    target = ctx.project_path(prompt_path)
-    current = target.read_text(encoding="utf-8")
-    if not proposals:
-        # Do not manufacture a changing candidate when the supervisor has not
-        # accepted a change. A stable candidate must retain the same fingerprint
-        # across repeated validations before it can be promoted.
-        return {"path": prompt_path, "changed": False, "reason": "no_accepted_proposals"}
-    lines = ["## Accepted improvement proposals", "", f"Iteration: {ctx.loop_index}", ""]
-    for proposal in proposals:
-        lines.extend(
-            (
-                f"### {proposal.get('title') or 'Accepted proposal'}",
-                str(proposal.get("rationale") or ""),
-                f"Acceptance evidence: {proposal.get('acceptanceEvidence') or ''}",
-                "",
-            )
-        )
-    block = "\n".join((PROMPT_BLOCK_START, "\n".join(lines).rstrip(), PROMPT_BLOCK_END))
-    start, end = current.find(PROMPT_BLOCK_START), current.find(PROMPT_BLOCK_END)
-    if start >= 0 and end > start:
-        updated = current[:start] + block + current[end + len(PROMPT_BLOCK_END) :]
-    elif start >= 0 or end >= 0:
-        raise ValueError("prompt has an incomplete OpenOrbit accepted-proposals block")
-    else:
-        updated = current.rstrip() + "\n\n" + block + "\n"
-    return ctx.update_file(prompt_path, updated)
-
-
-def managed_prompt_evidence(ctx):
-    '''Expose the current managed prompt beside the target-AI response evidence.'''
-    prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
-    if not prompt_path:
-        raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
-    content = ctx.project_path(prompt_path).read_text(encoding="utf-8")
-    return {
-        "path": prompt_path,
-        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        "content": content,
-    }
-
-
-@graph.step("validate-target", title="Validate target", phase="before_all", outputs=["evaluation_contract"])
-@runner.phase("before_all")
-def before_all(ctx):
-    # Process-level validation runs once before the iteration loop begins.
-    git(ctx, "rev-parse", "--show-toplevel")
-    if not ctx.test_cases:
-        raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
-    if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get("model"):
-        raise ValueError("Select a configured model profile for a native improvement cycle")
-    ctx.log("Validated an OpenOrbit-native target-AI prompt improvement cycle")
-
-
-@graph.step("prepare-prompt", title="Prepare prompt candidate", phase="before_each", inputs=["evaluation_contract"], outputs=["managed_prompt"])
-@runner.phase("before_each")
-def before_each(ctx):
-    # Keep the target's complete pre-evaluation state outside commit history.
-    # The call is idempotent because before_each runs for every iteration.
-    ctx.save_before_each_snapshot()
-    # Apply only feedback accepted by a human before the next validation.
-    feedback = ctx.previous_supervisor_feedback
-    accepted = [
-        proposal for proposal in feedback.get("improvements", [])
-        if isinstance(proposal, dict) and str(proposal.get("status") or "").lower() == "accepted"
-    ]
-    requires_human_approval = bool(
-        ctx.build.get("require_human_approval_before_apply", False)
-    )
-    if requires_human_approval and accepted:
-        # A supervisor's adoption is a recommendation, not an operator
-        # authorization. Keep it as evidence until an operator approves it.
-        prompt_update = {
-            "changed": False,
-            "reason": "awaiting_human_approval",
-            "proposal_count": len(accepted),
-        }
-        accepted = []
-    else:
-        prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
-    accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
-    proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
-    fingerprint, changed = candidate(ctx)
-    ctx.emit_result(
-        {
-            "improvement_cycle": {
-                "iteration": ctx.loop_index,
-                "candidate_fingerprint": fingerprint,
-                "changed_paths": changed,
-                "prompt_update": prompt_update,
-                "requires_human_approval": requires_human_approval,
-                "managed_prompt": managed_prompt_evidence(ctx),
-                "proposal_applications": proposal_applications,
-            }
-        }
-    )
-    ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
-
-
-@graph.step("exercise-target", title="Exercise target AI", phase="execute", inputs=["managed_prompt"], outputs=["target_responses"])
-@runner.phase("execute")
-def execute(ctx):
-    # Exercise the evaluated AI with the current managed prompt. The raw reply
-    # is retained as supervisor evidence instead of treating a browser page as
-    # proof that a prompt instruction was followed.
-    managed_prompt = managed_prompt_evidence(ctx)
-    responses = []
-    for case in ctx.test_cases:
-        request = str(case.get("prompt") or "").strip()
-        if not request:
-            raise ValueError("each target-AI test case requires a prompt")
-        turn = ctx.complete_model(
-            "# Managed agent instructions\\n"
-            + managed_prompt["content"]
-            + "\\n\\n# User request\\n"
-            + request
-            + "\\n\\nRespond as the managed agent."
-        )
-        responses.append(
-            {
-                "id": case.get("id"),
-                "name": case.get("name"),
-                "request": request,
-                "acceptance": str(case.get("acceptance") or ""),
-                "response": turn["response"],
-                "model": turn["model"],
-            }
-        )
-    artifact = ctx.save_data_file(
-        "target-ai-responses.json",
-        json.dumps(responses, ensure_ascii=False, indent=2),
-        label="Target AI responses",
-        content_type="application/json",
-    )
-    fingerprint, changed = candidate(ctx)
-    ctx.emit_result(
-        {
-            "improvement_cycle": {
-                "iteration": ctx.loop_index,
-                "candidate_fingerprint": fingerprint,
-                "changed_paths": changed,
-                "evidence": {"target_ai_responses": responses, "artifact": artifact},
-            }
-        }
-    )
-
-
-@graph.step("assess-candidate", title="Assess candidate evidence", phase="verify", inputs=["target_responses"], outputs=["candidate_verdict"])
-@runner.phase("verify")
-def verify(ctx):
-    # Promote a candidate only after the required number of stable evaluations.
-    state = load_state(ctx)
-    fingerprint, changed = candidate(ctx)
-    if not fingerprint:
-        state["candidate_fingerprint"] = None
-        state["sufficient_evaluations"] = 0
-        verdict = "no_candidate"
-    elif state.get("candidate_fingerprint") == fingerprint:
-        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1
-        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"
-    else:
-        state["candidate_fingerprint"] = fingerprint
-        state["sufficient_evaluations"] = 1
-        verdict = "continue_validation"
-    state.setdefault("history", []).append(
-        {"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict}
-    )
-    save_state(ctx, state)
-    ctx.emit_result(
-        {
-            "improvement_cycle": {
-                "candidate_fingerprint": fingerprint,
-                "changed_paths": changed,
-                "sufficient_evaluations": state["sufficient_evaluations"],
-                "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS,
-                "verdict": verdict,
-            }
-        }
-    )
-    ctx.log(f"Candidate verdict: {verdict}")
-
-
-@graph.step("retain-iteration", title="Retain iteration evidence", phase="after_each", inputs=["candidate_verdict"], outputs=["iteration_snapshot"])
-@runner.phase("after_each")
-def after_each(ctx):
-    # Preserve the first evaluated state as a named recovery checkpoint.
-    ctx.save_first_after_each_snapshot()
-    # Per-iteration evidence remains available for supervisor review.
-    ctx.log("Retained prompt versions, decisions, and validation evidence")
-
-
-@graph.step("restore-baseline", title="Restore baseline", phase="after_all", inputs=["iteration_snapshot"], outputs=["restored_target"])
-@runner.phase("after_all")
-def after_all(ctx):
-    # Return the target to its exact baseline without creating a Git commit.
-    ctx.restore_before_each_snapshot()
-    ctx.log("Restored the native improvement target without committing changes")
-
-
-if __name__ == "__main__":
-    runner.main()
-"""
-
-SITE_EXPLORATION_TEMPLATE = r"""# Requirements
-# - The target application is running at the build's browser base URL.
-# - Playwright Chromium and LangGraph are available.
-# This runner follows only same-site links and excludes destructive-looking routes.
-
-import json
-import subprocess
-from pathlib import Path
-from typing import TypedDict
-
-from langgraph.graph import END, START, StateGraph
-
-import orbit_sdk
-from orbit_sdk import graph as orbit_graph, runner
-
-orbit_graph.connect("validate-site", "explore-site")
-orbit_graph.connect("explore-site", "review-evidence", kind="data", label="rendered pages")
-orbit_graph.connect("review-evidence", "finalize-review")
-
-
-class ExplorerState(TypedDict, total=False):
-    base_url: str
-    max_clicks: int
-    evidence: dict
-    opinion: str
-
-
-def explore_browser(ctx, state):
-    module = str(Path(orbit_sdk.__file__).resolve().parents[1] / "frontend" / "node_modules" / "playwright")
-    artifacts = ctx.app_data / "artifacts" / ctx.environment.get("ORBIT_RUN_ID", "manual") / f"loop-{ctx.loop_index}"
-    artifacts.mkdir(parents=True, exist_ok=True)
-    payload = {"baseUrl": state["base_url"], "maxClicks": state["max_clicks"], "screenshot": str(artifacts / "site-exploration.png")}
-    script = r'''const { chromium } = require(process.argv[1]); const input = JSON.parse(process.argv[2]);
-const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase|upgrade|unsubscribe)/i;
-(async () => { const browser = await chromium.launch({headless:true}); const page = await browser.newPage(); const visited = []; const origin = new URL(input.baseUrl).origin;
-  try { await page.goto(input.baseUrl, {waitUntil:"domcontentloaded", timeout:30000});
-    for (let step = 0; step <= input.maxClicks; step++) { const text = (await page.locator("body").innerText().catch(() => "")).replace(/\s+/g, " ").slice(0, 1200); visited.push({url:page.url(), title:await page.title(), text});
-      if (step === input.maxClicks) break;
-      const links = await page.locator("a[href]").evaluateAll(items => items.map((item, index) => ({index, href:item.href, text:(item.textContent || "").trim()})).filter(item => item.href));
-      const candidates = links.filter(item => { try { const url = new URL(item.href); return url.origin === origin && !blocked.test(url.pathname + " " + item.text); } catch { return false; } });
-      if (!candidates.length) break; const target = candidates[step % candidates.length]; await page.locator("a[href]").nth(target.index).click({timeout:5000}); await page.waitForLoadState("domcontentloaded", {timeout:10000}).catch(() => {}); await page.waitForTimeout(300);
-    }
-    await page.screenshot({path:input.screenshot, fullPage:true}); console.log(JSON.stringify({visited, screenshot:input.screenshot}));
-  } finally { await browser.close(); } })().catch(error => { console.error(error); process.exit(1); });'''
-    result = subprocess.run(["node", "-e", script, module, json.dumps(payload)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
-    if result.returncode:
-        raise RuntimeError(result.stdout[-4000:] or "Site exploration failed")
-    return json.loads(result.stdout.strip().splitlines()[-1])
-
-
-def form_opinion(state):
-    pages = state["evidence"].get("visited", [])
-    titles = [str(page.get("title") or page.get("url")) for page in pages]
-    return {"opinion": f"Explored {len(pages)} rendered page(s): " + "; ".join(titles[:3]) + ". Review the captured pages for clarity, usefulness, and friction."}
-
-
-def graph(ctx):
-    workflow = StateGraph(ExplorerState)
-    workflow.add_node("explore", lambda state: {"evidence": explore_browser(ctx, state)})
-    workflow.add_node("form_opinion", form_opinion)
-    workflow.add_edge(START, "explore")
-    workflow.add_edge("explore", "form_opinion")
-    workflow.add_edge("form_opinion", END)
-    return workflow.compile()
-
-
-@orbit_graph.step("validate-site", title="Validate site", phase="before_all", outputs=["site_target"])
-@runner.phase("before_all")
-def before_all(ctx):
-    if not ctx.build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL before exploring a site")
-
-
-@orbit_graph.step("explore-site", title="Explore rendered site", phase="execute", inputs=["site_target"], outputs=["rendered_pages"])
-@runner.phase("execute")
-def execute(ctx):
-    result = graph(ctx).invoke({"base_url": ctx.build["browser_base_url"], "max_clicks": 3})
-    ctx.emit_result({"site_exploration": {"opinion": result["opinion"], "evidence": result["evidence"]}})
-
-
-@orbit_graph.step("review-evidence", title="Review exploration evidence", phase="verify", inputs=["rendered_pages"], outputs=["product_review"])
-@runner.phase("verify")
-def verify(ctx):
-    ctx.log("Retained rendered exploration evidence for review")
-
-
-@orbit_graph.step("finalize-review", title="Finalize site review", phase="after_all", inputs=["product_review"], outputs=["completed_review"])
-@runner.phase("after_all")
-def after_all(ctx):
-    ctx.log("Finalized the bounded site exploration review")
-
-
-if __name__ == "__main__":
-    runner.main()
-"""
-
-EXTERNAL_COMMAND_ADAPTER_TEMPLATE = r'''"""Run a bounded external automation through its explicit action contract."""
-
-import json
-import os
-import shlex
-
-from orbit_sdk import ORBIT_PROJECT_PATH, graph, runner
-
-graph.connect("check-adapter", "prepare-adapter")
-graph.connect("prepare-adapter", "run-adapter", label="prepared target")
-graph.connect("run-adapter", "collect-adapter-evidence", kind="data", label="adapter output")
-graph.connect("collect-adapter-evidence", "close-adapter-cycle")
-graph.connect("close-adapter-cycle", "prepare-adapter", kind="loop", label="next cycle")
-graph.connect("close-adapter-cycle", "finalize-adapter", kind="condition", label="completed")
-
-
-def adapter_command():
-    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
-
-
-def invoke(ctx, action):
-    return ctx.exec(
-        [*adapter_command(), action],
-        cwd=ORBIT_PROJECT_PATH(),
-        timeout=3600,
-        target_log_source="external-adapter",
-    )
-
-
-@graph.step("check-adapter", title="Check adapter readiness", phase="before_all", outputs=["adapter_status"])
-@runner.phase("before_all")
-def before_all(ctx):
-    ctx.emit_result({"external_adapter": {"status": invoke(ctx, "status")}})
-
-
-@graph.step("prepare-adapter", title="Prepare adapter cycle", phase="before_each", inputs=["adapter_status"], outputs=["prepared_target"])
-@runner.phase("before_each")
-def before_each(ctx):
-    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "prepared": invoke(ctx, "prepare")}})
-
-
-@graph.step("run-adapter", title="Run bounded adapter task", phase="execute", inputs=["prepared_target"], outputs=["adapter_result"])
-@runner.phase("execute")
-def execute(ctx):
-    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "result": invoke(ctx, "run-once")}})
-
-
-@graph.step("collect-adapter-evidence", title="Collect adapter evidence", phase="verify", inputs=["adapter_result"], outputs=["adapter_evidence"])
-@runner.phase("verify")
-def verify(ctx):
-    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "evidence": invoke(ctx, "collect-evidence")}})
-
-
-@graph.step("close-adapter-cycle", title="Close adapter cycle", phase="after_each", inputs=["adapter_evidence"], outputs=["cycle_complete"])
-@runner.phase("after_each")
-def after_each(ctx):
-    ctx.log("Completed one bounded external adapter cycle")
-
-
-@graph.step("finalize-adapter", title="Finalize external automation", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
-@runner.phase("after_all")
-def after_all(ctx):
-    ctx.log("Finalized the external automation evaluation")
-
-
-if __name__ == "__main__":
-    runner.main()
-'''
-
-
-JSON_AGENT_CYCLE_TEMPLATE = r'''"""Run a portable, bounded external agent cycle.
-
-Set ORBIT_AGENT_COMMAND to a JSON argument array or a shell-like command
-prefix. The external tool receives one action at a time: ``status`` or
-``run-once``. It must write one JSON object to stdout and must never start a
-daemon or scheduler; OpenOrbit owns repetition, timing, and supervision.
-"""
-
-import json
-import os
-import shlex
-
-from orbit_sdk import graph, runner
-
-graph.connect("check-agent", "record-inputs")
-graph.connect("record-inputs", "run-agent", label="bounded input")
-graph.connect("run-agent", "confirm-agent-state", kind="data", label="agent result")
-graph.connect("confirm-agent-state", "close-cycle")
-graph.connect("close-cycle", "record-inputs", kind="loop", label="next cycle")
-graph.connect("close-cycle", "finalize-agent", kind="condition", label="completed")
-
-
-def agent_command():
-    """Read an explicit command prefix without depending on target source files."""
-    configured = os.environ.get("ORBIT_AGENT_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_AGENT_COMMAND to the external agent command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_AGENT_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
-
-
-def cycle_input(ctx, action):
-    """Expose non-secret evaluation context through one documented JSON contract."""
-    return json.dumps(
-        {
-            "action": action,
-            "iteration": ctx.loop_index,
-            "build": ctx.build,
-            "test_cases": ctx.test_cases,
-        },
-        ensure_ascii=False,
-    )
-
-
-def invoke(ctx, action):
-    """Run one bounded action and require structured evidence from the agent."""
-    output = ctx.exec(
-        [*agent_command(), action],
-        cwd=ctx.project_root,
-        timeout=3600,
-        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
-        target_log_source="external-agent",
-    )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"External agent action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"External agent action {action!r} must return a JSON object")
-    return result
-
-
-@graph.step("check-agent", title="Check agent readiness", phase="before_all", outputs=["agent_status"])
-@runner.phase("before_all")
-def before_all(ctx):
-    # Check availability once; later phases must not start an independent loop.
-    status = invoke(ctx, "status")
-    ctx.emit_result({"agent_cycle": {"status": status}})
-
-
-@graph.step("record-inputs", title="Record cycle inputs", phase="before_each", inputs=["agent_status"], outputs=["cycle_input"])
-@runner.phase("before_each")
-def before_each(ctx):
-    # Record the fixed inputs so every external action is auditable.
-    ctx.emit_result(
-        {
-            "agent_cycle": {
-                "iteration": ctx.loop_index,
-                "test_case_ids": [str(case.get("id", "")) for case in ctx.test_cases],
-            }
-        }
-    )
-
-
-@graph.step("run-agent", title="Run bounded agent cycle", phase="execute", inputs=["cycle_input"], outputs=["agent_result"])
-@runner.phase("execute")
-def execute(ctx):
-    # Exactly one unit of agent work; OpenOrbit schedules a future iteration.
-    result = invoke(ctx, "run-once")
-    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": result}})
-
-
-@graph.step("confirm-agent-state", title="Confirm agent state", phase="verify", inputs=["agent_result"], outputs=["verified_status"])
-@runner.phase("verify")
-def verify(ctx):
-    # Re-read status rather than assuming the prior action completed correctly.
-    status = invoke(ctx, "status")
-    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "status": status}})
-
-
-@graph.step("close-cycle", title="Close cycle", phase="after_each", inputs=["verified_status"], outputs=["cycle_complete"])
-@runner.phase("after_each")
-def after_each(ctx):
-    # The external process has already returned; no daemon cleanup is required.
-    ctx.log("Completed one bounded external agent cycle")
-
-
-@graph.step("finalize-agent", title="Finalize agent evaluation", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
-@runner.phase("after_all")
-def after_all(ctx):
-    ctx.log("Finalized the external agent evaluation")
-
-
-if __name__ == "__main__":
-    runner.main()
-'''
-
-EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE = r'''"""Run a portable evidence-gated probe matrix through an external tool.
-
-Set ORBIT_PROBE_COMMAND to a JSON argument array or a shell-like command
-prefix. The tool must support ``preflight``, ``prepare``, ``run-probes``, and
-``collect-evidence`` actions. Every action receives ORBIT_CYCLE_INPUT and
-returns one JSON object. The tool may create disposable workspaces, but it
-must not schedule itself or commit changes to the target repository.
-"""
-
-import json
-import os
-import shlex
-
-from orbit_sdk import graph, runner
-
-graph.connect("preflight-probes", "prepare-probes")
-graph.connect("prepare-probes", "run-probe-matrix", label="prepared inputs")
-graph.connect("run-probe-matrix", "collect-probe-evidence", kind="data", label="probe report")
-graph.connect("collect-probe-evidence", "close-probe-cycle")
-graph.connect("close-probe-cycle", "prepare-probes", kind="loop", label="next cycle")
-graph.connect("close-probe-cycle", "finalize-probe-monitor", kind="condition", label="completed")
-
-
-def probe_command():
-    """Read the explicit probe command prefix configured by the operator."""
-    configured = os.environ.get("ORBIT_PROBE_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_PROBE_COMMAND to the evidence-gate command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_PROBE_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
-
-
-def cycle_input(ctx, action):
-    """Pass selected probes and non-secret evaluation context to the tool."""
-    return json.dumps(
-        {
-            "action": action,
-            "iteration": ctx.loop_index,
-            "build": ctx.build,
-            "probes": ctx.test_cases,
-        },
-        ensure_ascii=False,
-    )
-
-
-def invoke(ctx, action):
-    """Run one gate action and reject unstructured evidence early."""
-    output = ctx.exec(
-        [*probe_command(), action],
-        cwd=ctx.project_root,
-        timeout=3600,
-        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
-        target_log_source="evidence-probe",
-    )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"Probe action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"Probe action {action!r} must return a JSON object")
-    return result
-
-
-@graph.step("preflight-probes", title="Preflight probe matrix", phase="before_all", outputs=["probe_contract"])
-@runner.phase("before_all")
-def before_all(ctx):
-    # A fixed probe set keeps the gate repeatable and its evidence comparable.
-    if not ctx.test_cases:
-        raise ValueError("Select a fixed test case set before running an evidence gate")
-    preflight = invoke(ctx, "preflight")
-    ctx.emit_result({"probe_gate": {"preflight": preflight}})
-
-
-@graph.step("prepare-probes", title="Prepare probes", phase="before_each", inputs=["probe_contract"], outputs=["prepared_probes"])
-@runner.phase("before_each")
-def before_each(ctx):
-    # Prepare disposable inputs without mutating the target repository.
-    prepared = invoke(ctx, "prepare")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "prepared": prepared}})
-
-
-@graph.step("run-probe-matrix", title="Run probe matrix", phase="execute", inputs=["prepared_probes"], outputs=["probe_report"])
-@runner.phase("execute")
-def execute(ctx):
-    # Run the complete fixed matrix once and retain the tool's structured report.
-    report = invoke(ctx, "run-probes")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "report": report}})
-
-
-@graph.step("collect-probe-evidence", title="Collect probe evidence", phase="verify", inputs=["probe_report"], outputs=["evidence_gate"])
-@runner.phase("verify")
-def verify(ctx):
-    # Collect final evidence separately so a supervisor can make an independent decision.
-    evidence = invoke(ctx, "collect-evidence")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "evidence": evidence}})
-
-
-@graph.step("close-probe-cycle", title="Close probe cycle", phase="after_each", inputs=["evidence_gate"], outputs=["cycle_complete"])
-@runner.phase("after_each")
-def after_each(ctx):
-    ctx.log("Completed one evidence-gated probe matrix")
-
-
-@graph.step("finalize-probe-monitor", title="Finalize drift monitor", phase="after_all", inputs=["cycle_complete"], outputs=["final_status"])
-@runner.phase("after_all")
-def after_all(ctx):
-    ctx.log("Finalized the evidence-gated probe evaluation")
-
-
-if __name__ == "__main__":
-    runner.main()
-'''
 DATA = APP_DATA / "data"
 RUNS = DATA / "runs"
 TELEMETRY = DATA / "telemetry.jsonl"
@@ -864,6 +188,7 @@ class ConsoleStore:
         # test dialog without becoming an evaluation-run record or surviving a
         # server restart.
         self._test_sessions: dict[str, Run] = {}
+        self._runner_graph_drafts: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
         self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
@@ -947,187 +272,134 @@ class ConsoleStore:
             }
             SETTINGS.write_text(json.dumps(document, indent=2), encoding="utf-8")
 
-    @staticmethod
-    def runner_templates() -> list[dict[str, str]]:
-        templates = [
-            {
-                "id": "user-journey-cycle",
-                "name": "Browser journey validation",
-                "description": "Validates fixed browser journeys and retains page evidence. Requires a running app and Playwright browser.",
-                "source": """# Requirements
-# - The target application is running at the build's browser base URL.
-# - The build selects at least one fixed test case.
-# - Playwright Chromium and its operating-system libraries are available.
-# No external runner script, adapter repository, or background program is required.
-
-import json
-import re
-
-from orbit_sdk import graph, runner
-
-graph.connect("validate-journey", "plan-journey")
-graph.connect("plan-journey", "run-journey", label="focused cases")
-graph.connect("run-journey", "review-journey", kind="data", label="browser evidence")
-graph.connect("review-journey", "retain-journey")
-graph.connect("retain-journey", "plan-journey", kind="loop", label="next iteration")
-graph.connect("retain-journey", "finalize-journey", kind="condition", label="completed")
-
-# Validate only configuration that the runner cannot safely infer. This runs
-# once when an evaluation process starts, before its iteration loop.
-def validate(ctx):
-    build = ctx.build
-    if not build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL on the build")
-    if not ctx.test_cases:
-        raise ValueError("Select a fixed test case set before running a user journey")
-
-def state_path(ctx):
-    # Keep state in OpenOrbit AppData, keyed by build, so a later iteration can
-    # resume its focused journey without writing into the target repository.
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
-    directory = ctx.app_data / "user-journey-state"
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / f"{build_id}.json"
-
-def load_state(ctx):
-    # A build's first iteration begins with an empty rotation and no failures.
-    path = state_path(ctx)
-    if not path.exists():
-        return {"next_case_index": 0, "failed_case_ids": [], "history": []}
-    return json.loads(path.read_text(encoding="utf-8"))
-
-def save_state(ctx, state):
-    # Retain a bounded history so a long-running evaluation does not grow
-    # indefinitely while still preserving useful handoffs.
-    state["history"] = state.get("history", [])[-24:]
-    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-
-def plan(ctx, state):
-    # Supervisor feedback from the completed prior iteration is an input to
-    # planning, not a replacement for browser-observable evidence.
-    feedback = ctx.previous_supervisor_feedback
-    failed = set(state.get("failed_case_ids", []))
-    cases = ctx.test_cases
-    # Failed cases take precedence; otherwise rotate through fixed cases one at
-    # a time to keep each scheduled iteration bounded and explainable.
-    focused = [case for case in cases if case.get("id") in failed]
-    if not focused:
-        index = int(state.get("next_case_index", 0)) % len(cases)
-        focused = [cases[index]]
-    rules = ["Preserve observable evidence for every browser action.", "Do not infer a result that the page did not expose."]
-    if failed:
-        rules.insert(0, "Revisit previously failed journeys before exploring a new route.")
-    if feedback.get("reported_issues"):
-        rules.insert(0, "Prioritize the supervisor's previously reported issues.")
-    reason = "Previously failed journeys require confirmation." if failed else "Rotate one fixed journey to retain broad, bounded coverage."
-    return {"case_ids": [str(case.get("id")) for case in focused], "rules": rules, "reason": reason, "supervisor_feedback": feedback}
-
-@graph.step("validate-journey", title="Validate journey contract", phase="before_all", outputs=["journey_contract"])
-@runner.phase("before_all")
-def before_all(ctx):
-    # Process-level preparation: run once before OpenOrbit starts repeating.
-    validate(ctx)
-    ctx.log("Validated the bounded user-journey contract")
-
-@graph.step("plan-journey", title="Plan focused journey", phase="before_each", inputs=["journey_contract"], outputs=["journey_plan"])
-@runner.phase("before_each")
-def before_each(ctx):
-    # Iteration-level preparation: persist a plan that the execute phase consumes.
-    state = load_state(ctx)
-    journey_plan = plan(ctx, state)
-    state["plan"] = journey_plan
-    save_state(ctx, state)
-    ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "case_count": len(ctx.test_cases), "plan": journey_plan}})
-    ctx.log(f"Planned {len(journey_plan['case_ids'])} focused journey case(s): {journey_plan['reason']}")
-
-@graph.step("run-journey", title="Run browser journey", phase="execute", inputs=["journey_plan"], outputs=["journey_evidence"])
-@runner.phase("execute")
-def execute(ctx):
-    # Execute only the focused fixed cases; Playwright returns screenshots and
-    # page evidence that can be inspected by both users and the supervisor.
-    state = load_state(ctx)
-    journey_plan = state.get("plan") or plan(ctx, state)
-    case_ids = set(journey_plan["case_ids"])
-    focused_cases = [case for case in ctx.test_cases if str(case.get("id")) in case_ids]
-    evidence = ctx.playwright_journey(focused_cases)
-    results = evidence["results"]
-    passed = len([item for item in results if item["passed"]])
-    failed = [str(item.get("id")) for item in results if not item["passed"]]
-    state["failed_case_ids"] = failed
-    state["next_case_index"] = (int(state.get("next_case_index", 0)) + 1) % len(ctx.test_cases)
-    # This compact handoff is the explicit input to the next scheduled cycle.
-    state["handoff"] = {"iteration": ctx.loop_index, "reason": journey_plan["reason"], "rules": journey_plan["rules"], "passed": passed, "failed": len(results) - passed, "failed_case_ids": failed}
-    state.setdefault("history", []).append(state["handoff"])
-    save_state(ctx, state)
-    ctx.emit_result({"user_journey": {"iteration": ctx.loop_index, "plan": journey_plan, "passed": passed, "failed": len(results) - passed, "results": results, "evidence": evidence, "handoff": state["handoff"]}})
-
-@graph.step("review-journey", title="Review journey evidence", phase="verify", inputs=["journey_evidence"], outputs=["journey_handoff"])
-@runner.phase("verify")
-def verify(ctx):
-    # Expose the persisted handoff as structured run output for supervision.
-    state = load_state(ctx)
-    ctx.emit_result({"user_journey": {"next_iteration": state.get("handoff", {}), "state_path": str(state_path(ctx))}})
-    ctx.log("Stored the journey summary, reasons, and behavior rules for the next iteration")
-@graph.step("retain-journey", title="Retain journey result", phase="after_each", inputs=["journey_handoff"], outputs=["iteration_complete"])
-@runner.phase("after_each")
-def after_each(ctx): ctx.log("Closed this bounded browser journey")
-@graph.step("finalize-journey", title="Finalize journey evaluation", phase="after_all", inputs=["iteration_complete"], outputs=["final_status"])
-@runner.phase("after_all")
-def after_all(ctx): ctx.log("Finalized the user-journey evaluation")
-
-if __name__ == "__main__": runner.main()
-""",
-            },
-            {
-                "id": "external-command-adapter",
-                "name": "External automation integration",
-                "description": "Connects an existing automation tool while OpenOrbit retains scheduling, evidence collection, and supervision.",
-                "source": """import json\nimport os\nimport shlex\n\nfrom orbit_sdk import ORBIT_PROJECT_PATH, runner\n\n# Set ORBIT_ADAPTER_COMMAND to the command prefix for an external tool. It may\n# be a JSON array or a shell-like string. The tool must support the bounded\n# actions appended below and must never start its own scheduler.\ndef adapter_command():\n    # Parse once per invocation so the configuration remains explicit and does\n    # not depend on a target repository's source files.\n    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()\n    if not configured:\n        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")\n    if configured.startswith("["):\n        value = json.loads(configured)\n        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):\n            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")\n        return value\n    return shlex.split(configured)\n\ndef invoke(ctx, action):\n    # OpenOrbit owns the lifecycle: the adapter receives one bounded action and\n    # must return instead of starting a daemon or an independent scheduler.\n    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    # Process-level readiness check, performed once before the repeat loop.\n    invoke(ctx, "status")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    # Per-iteration preparation, such as refreshing target-side test data.\n    invoke(ctx, "prepare")\n\n@runner.phase("execute")\ndef execute(ctx):\n    # Exactly one unit of adapter work; OpenOrbit schedules further iterations.\n    invoke(ctx, "run-once")\n\n@runner.phase("verify")\ndef verify(ctx):\n    # Return machine-readable or textual evidence for the supervisor to assess.\n    invoke(ctx, "collect-evidence")\n\n@runner.phase("after_each")\ndef after_each(ctx):\n    # Per-iteration cleanup after evidence collection.\n    ctx.log("Completed the bounded external command")\n\n@runner.phase("after_all")\ndef after_all(ctx):\n    # Process-level finalization, performed once after the loop exits.\n    ctx.log("Finalized the external command evaluation")\n\nif __name__ == "__main__": runner.main()\n""",
-            },
-            {
-                "id": "native-improvement-cycle",
-                "name": "Native improvement cycle",
-                "description": "Tracks a Git change candidate, validates fixed browser journeys, and promotes only repeatedly sufficient evidence. OpenOrbit owns all cycle state and never runs an external improvement script.",
-                "source": """# Requirements\n# - PROJECT_ROOT is a Git repository.\n# - The build selects fixed browser test cases and a browser base URL.\n# - Candidate source changes are supplied through the normal reviewed change flow.\n# This runner never launches an external improvement script or commits a change.\n\nimport hashlib\nimport json\nimport re\nfrom pathlib import Path\n\nfrom orbit_sdk import runner\n\nREQUIRED_SUFFICIENT_EVALUATIONS = 3\n\ndef state_path(ctx):\n    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))\n    directory = ctx.app_data / "improvement-cycles"\n    directory.mkdir(parents=True, exist_ok=True)\n    return directory / f"{build_id}.json"\n\ndef load_state(ctx):\n    path = state_path(ctx)\n    if not path.exists():\n        return {"candidate_fingerprint": None, "sufficient_evaluations": 0, "history": []}\n    return json.loads(path.read_text(encoding="utf-8"))\n\ndef save_state(ctx, state):\n    state["history"] = state.get("history", [])[-24:]\n    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")\n\ndef git(ctx, *args):\n    return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)\n\ndef candidate(ctx):\n    patch = git(ctx, "diff", "--binary", "--")\n    changed = [line for line in git(ctx, "diff", "--name-only").splitlines() if line]\n    return (hashlib.sha256(patch.encode("utf-8")).hexdigest() if patch else None), changed\n\n@runner.phase("before_all")\ndef before_all(ctx):\n    git(ctx, "rev-parse", "--show-toplevel")\n    if not ctx.build.get("browser_base_url") or not ctx.test_cases:\n        raise ValueError("Select a browser base URL and fixed test cases for a native improvement cycle")\n    ctx.log("Validated a Git-backed, OpenOrbit-native improvement cycle")\n\n@runner.phase("before_each")\ndef before_each(ctx):\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed}})\n    ctx.log("Captured the candidate baseline before validation")\n\n@runner.phase("execute")\ndef execute(ctx):\n    evidence = ctx.playwright_journey()\n    results = evidence["results"]\n    passed = all(item["passed"] for item in results)\n    fingerprint, changed = candidate(ctx)\n    ctx.emit_result({"improvement_cycle": {"iteration": ctx.loop_index, "candidate_fingerprint": fingerprint, "changed_paths": changed, "passed": passed, "evidence": evidence}})\n    if not passed:\n        raise SystemExit("A fixed validation journey failed")\n\n@runner.phase("verify")\ndef verify(ctx):\n    state = load_state(ctx)\n    fingerprint, changed = candidate(ctx)\n    if not fingerprint:\n        state["candidate_fingerprint"] = None\n        state["sufficient_evaluations"] = 0\n        verdict = "no_candidate"\n    elif state.get("candidate_fingerprint") == fingerprint:\n        state["sufficient_evaluations"] = int(state.get("sufficient_evaluations", 0)) + 1\n        verdict = "ready_for_approval" if state["sufficient_evaluations"] >= REQUIRED_SUFFICIENT_EVALUATIONS else "continue_validation"\n    else:\n        state["candidate_fingerprint"] = fingerprint\n        state["sufficient_evaluations"] = 1\n        verdict = "continue_validation"\n    state.setdefault("history", []).append({"iteration": ctx.loop_index, "fingerprint": fingerprint, "paths": changed, "verdict": verdict})\n    save_state(ctx, state)\n    ctx.emit_result({"improvement_cycle": {"candidate_fingerprint": fingerprint, "changed_paths": changed, "sufficient_evaluations": state["sufficient_evaluations"], "required_evaluations": REQUIRED_SUFFICIENT_EVALUATIONS, "verdict": verdict}})\n    ctx.log(f"Candidate verdict: {verdict}")\n\n@runner.phase("after_each")\ndef after_each(ctx): ctx.log("Retained native improvement evidence for supervision")\n@runner.phase("after_all")\ndef after_all(ctx): ctx.log("Finalized the native improvement cycle without committing changes")\n\nif __name__ == "__main__": runner.main()\n""",
-            },
-        ]
-        templates[1]["source"] = EXTERNAL_COMMAND_ADAPTER_TEMPLATE
-        templates[-1] = {
-            "id": "native-improvement-cycle",
-            "name": "Prompt improvement validation",
-            "description": "Applies accepted prompt improvements with rollback history, validates fixed browser journeys, and records review decisions.",
-            "source": NATIVE_IMPROVEMENT_CYCLE_TEMPLATE,
-        }
-        templates.extend(
-            (
-                {
-                    "id": "site-exploration",
-                    "name": "Site exploration review",
-                    "description": "Explores safe same-site links through LangGraph and retains rendered evidence for product feedback.",
-                    "source": SITE_EXPLORATION_TEMPLATE,
-                },
-                {
-                    "id": "json-agent-cycle",
-                    "name": "User journey simulation",
-                    "description": "Runs one bounded agent simulation per iteration while OpenOrbit retains fixed inputs, evidence, and supervision.",
-                    "source": JSON_AGENT_CYCLE_TEMPLATE,
-                },
-                {
-                    "id": "evidence-gated-probe-cycle",
-                    "name": "Evidence-driven improvement gate",
-                    "description": "Validates a fixed probe matrix and returns structured preflight, result, and evidence records for improvement decisions.",
-                    "source": EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE,
-                },
-            )
-        )
+    @classmethod
+    def runner_templates(cls) -> list[dict[str, str]]:
+        """Load the versioned runner catalog shipped as ordinary template packages."""
+        root = ROOT / "templates" / "runner-templates"
+        templates: list[dict[str, str]] = []
+        if not root.is_dir():
+            return templates
+        for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+            metadata = directory / "template.json"
+            if not metadata.is_file():
+                continue
+            values = json.loads(metadata.read_text(encoding="utf-8"))
+            source = cls._package_source(directory, str(values.get("entrypoint", "runner.py")))
+            templates.append({**values, "source": source})
         return templates
 
+    @staticmethod
+    def _package_source(directory: Path, filename: str = "runner.py") -> str:
+        """Read a package entrypoint without allowing paths to escape its directory."""
+        path = (directory / filename).resolve()
+        if directory.resolve() not in path.parents or not path.is_file():
+            raise ValueError(f"template package entrypoint does not exist: {filename}")
+        return path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _package_documents(directory: Path) -> dict[str, str]:
+        """Expose optional package documentation without making it executable input."""
+        documents: dict[str, str] = {}
+        for filename, key in (("README.md", "readme"), ("LICENSE", "license"), ("LICENSE.md", "license")):
+            path = directory / filename
+            if path.is_file() and key not in documents:
+                documents[key] = path.read_text(encoding="utf-8")
+        return documents
+
+    @staticmethod
+    def _unpack_template_zip(
+        archive: bytes, filename: str, metadata_filename: str
+    ) -> tuple[tempfile.TemporaryDirectory, Path]:
+        """Safely unpack a single template package into a temporary directory."""
+        if not filename.lower().endswith(".zip"):
+            raise ValueError("template package must be a .zip file")
+        if not archive or len(archive) > 10 * 1024 * 1024:
+            raise ValueError("template package must be smaller than 10 MB")
+        try:
+            bundle = zipfile.ZipFile(io.BytesIO(archive))
+        except zipfile.BadZipFile as error:
+            raise ValueError("template package is not a valid ZIP archive") from error
+        with bundle:
+            members = [member for member in bundle.infolist() if not member.is_dir()]
+            if not members:
+                raise ValueError("template package is empty")
+            if sum(member.file_size for member in members) > 25 * 1024 * 1024:
+                raise ValueError("template package expands to more than 25 MB")
+            normalized: dict[zipfile.ZipInfo, PurePosixPath] = {}
+            paths: set[PurePosixPath] = set()
+            for member in members:
+                name = member.filename.replace("\\", "/")
+                path = PurePosixPath(name)
+                if (
+                    path.is_absolute()
+                    or not path.parts
+                    or any(part in ("", ".", "..") for part in path.parts)
+                    or stat.S_ISLNK(member.external_attr >> 16)
+                    or path in paths
+                ):
+                    raise ValueError("template package contains an unsafe file path")
+                normalized[member] = path
+                paths.add(path)
+
+            roots = [path.parent for path in paths if path.name == metadata_filename]
+            root = PurePosixPath(".") if PurePosixPath(metadata_filename) in paths else None
+            if root is None:
+                candidates = [candidate for candidate in roots if len(candidate.parts) == 1]
+                if len(candidates) != 1:
+                    raise ValueError(
+                        f"template package requires {metadata_filename} at its root or in one folder"
+                    )
+                root = candidates[0]
+            if root != PurePosixPath(".") and any(root not in path.parents for path in paths):
+                raise ValueError("template package must contain exactly one package folder")
+
+            temporary = tempfile.TemporaryDirectory(prefix="orbit-template-")
+            destination = Path(temporary.name)
+            try:
+                for member, path in normalized.items():
+                    relative = path if root == PurePosixPath(".") else path.relative_to(root)
+                    target = destination / relative.as_posix()
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with bundle.open(member) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+            except Exception:
+                temporary.cleanup()
+                raise
+        return temporary, destination
+
     def _custom_runner_templates(self) -> list[dict[str, str]]:
-        templates = []
+        """Load both the legacy flat files and portable folder packages.
+
+        A package is ``runner-templates/<id>/template.json`` plus ``runner.py``.
+        README.md and LICENSE are optional and deliberately travel with the package.
+        """
+        templates: list[dict[str, str]] = []
+        package_ids: set[str] = set()
+        for directory in sorted(path for path in RUNNER_TEMPLATES.iterdir() if path.is_dir()):
+            metadata = directory / "template.json"
+            if not metadata.is_file():
+                continue
+            try:
+                values = json.loads(metadata.read_text(encoding="utf-8"))
+                source = self._package_source(directory, str(values.get("entrypoint", "runner.py")))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            package_ids.add(str(values.get("id", directory.name)))
+            templates.append(
+                {
+                    **values,
+                    "source": source,
+                    "origin": "user",
+                    "package_path": str(directory),
+                    **self._package_documents(directory),
+                }
+            )
         for path in sorted(RUNNER_TEMPLATES.glob("*.py")):
             metadata = path.with_suffix(".json")
             if metadata.exists():
                 values = json.loads(metadata.read_text(encoding="utf-8"))
+                if str(values.get("id")) in package_ids:
+                    continue
                 templates.append({**values, "source": path.read_text(encoding="utf-8"), "origin": "user"})
         return templates
 
@@ -1155,6 +427,7 @@ if __name__ == "__main__": runner.main()
                     {
                         **{"label": parameter["label"]},
                         **({"description": parameter["description"]} if "description" in parameter else {}),
+                        **({"tooltip": parameter["tooltip"]} if "tooltip" in parameter else {}),
                         **({"placeholder": parameter["placeholder"]} if "placeholder" in parameter else {}),
                         **(
                             {
@@ -1312,643 +585,22 @@ if __name__ == "__main__": runner.main()
         temporary.replace(TEMPLATE_TRANSLATIONS)
         return content
 
-    @staticmethod
-    def _quick_start_browser_runner() -> str:
-        return """from orbit_sdk import graph, runner
-
-graph.connect("validate-browser", "run-browser-journey")
-graph.connect("run-browser-journey", "verify-browser-evidence", kind="data", label="journey evidence")
-graph.connect("verify-browser-evidence", "finalize-browser-evaluation")
-
-@graph.step("validate-browser", title="Validate browser target", phase="before_all", outputs=["browser_target"])
-@runner.phase("before_all")
-def before_all(ctx):
-    if not ctx.build.get("browser_base_url"):
-        raise ValueError("Quick start browser evaluation requires a browser base URL")
-
-@graph.step("run-browser-journey", title="Run browser journey", phase="execute", inputs=["browser_target"], outputs=["journey_evidence"])
-@runner.phase("execute")
-def execute(ctx):
-    evidence = ctx.playwright_journey()
-    if not all(item["passed"] for item in evidence["results"]):
-        raise SystemExit("A browser journey failed")
-
-@graph.step("verify-browser-evidence", title="Verify journey evidence", phase="verify", inputs=["journey_evidence"], outputs=["journey_verdict"])
-@runner.phase("verify")
-def verify(ctx):
-    ctx.log("Quick start browser evaluation completed")
-
-@graph.step("finalize-browser-evaluation", title="Finalize browser evaluation", phase="after_all", inputs=["journey_verdict"], outputs=["completed_evaluation"])
-@runner.phase("after_all")
-def after_all(ctx):
-    ctx.log("Finalized the one-shot browser evaluation")
-
-if __name__ == "__main__":
-    runner.main()
-"""
-
     def _built_in_quick_starts(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "schema_version": 1,
-                "id": "openorbit.user-journey-smoke-test",
-                "version": "1.0.2",
-                "name": "User journey smoke test",
-                "description": "Create a browser-based smoke test. Requires a running app and Playwright browser.",
-                "publisher": {"name": "OpenOrbit"},
-                "parameters": [
-                    {
-                        "key": "build_name",
-                        "label": "Evaluation name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Browser quality check",
-                    },
-                    {
-                        "key": "repository",
-                        "label": "Target repository",
-                        "type": "workspace",
-                        "required": True,
-                        "placeholder": "/absolute/path/to/your-repository",
-                    },
-                    {
-                        "key": "base_url",
-                        "label": "Browser base URL",
-                        "type": "url",
-                        "required": True,
-                        "placeholder": "http://localhost:3000",
-                    },
-                    {
-                        "key": "journey_name",
-                        "label": "User journey name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Home page smoke test",
-                        "placeholder": "e.g. Sign in and view orders",
-                    },
-                    {
-                        "key": "journey_path",
-                        "label": "Journey start path",
-                        "type": "string",
-                        "required": True,
-                        "default": "/",
-                        "placeholder": "e.g. /login",
-                    },
-                    {
-                        "key": "journey_prompt",
-                        "label": "User actions",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. Sign in with the test account and open order history.",
-                    },
-                    {
-                        "key": "acceptance",
-                        "label": "Success condition",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. The order history page loads without an error.",
-                    },
-                    {
-                        "key": "expected_text",
-                        "label": "Expected visible text (optional)",
-                        "type": "string",
-                        "required": False,
-                        "placeholder": "e.g. Recent orders",
-                    },
-                    {
-                        "key": "profile_name",
-                        "label": "AI model profile name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Browser quality AI",
-                        "placeholder": "e.g. Evaluation GPT-4o",
-                    },
-                    {
-                        "key": "provider",
-                        "label": "AI provider",
-                        "type": "select",
-                        "required": True,
-                        "default": "azure-openai",
-                        "options": [
-                            {"value": "azure-openai", "label": "Azure OpenAI"},
-                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
-                        ],
-                    },
-                    {
-                        "key": "model",
-                        "label": "Model / deployment",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. gpt-4o",
-                    },
-                    {
-                        "key": "endpoint",
-                        "label": "Provider endpoint",
-                        "type": "url",
-                        "required": False,
-                        "placeholder": "https://your-resource.openai.azure.com",
-                    },
-                    {
-                        "key": "region",
-                        "label": "Region",
-                        "type": "string",
-                        "required": True,
-                        "default": "us-east-1",
-                        "placeholder": "e.g. eastus",
-                    },
-                    {
-                        "key": "secret_env",
-                        "label": "API key environment variable",
-                        "type": "string",
-                        "required": True,
-                        "default": "AZURE_OPENAI_API_KEY",
-                        "placeholder": "e.g. AZURE_OPENAI_API_KEY",
-                    },
-                ],
-                "assets": {
-                    "runner": {
-                        "name": "${build_name} runner",
-                        "description": "Browser journey runner created by Quick Start.",
-                        "template_id": "quickstart-browser",
-                        "source": self._quick_start_browser_runner(),
-                    },
-                    "prompt_template": {
-                        "name": "${build_name} policy",
-                        "version": 1,
-                        "content": "Assess the fixed browser journey evidence and return the required evaluation JSON.",
-                    },
-                    "test_case_set": {
-                        "name": "${build_name} smoke tests",
-                        "description": "A smoke journey created by Quick Start.",
-                        "cases": [
-                            {
-                                "id": "primary-journey",
-                                "name": "${journey_name}",
-                                "path": "${journey_path}",
-                                "prompt": "${journey_prompt}",
-                                "acceptance": "${acceptance}",
-                                "expected_text": "${expected_text}",
-                            }
-                        ],
-                    },
-                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
-                    "target_environment": {
-                        "name": "${build_name} target",
-                        "repository": "${repository}",
-                        "browser_base_url": "${base_url}",
-                    },
-                    "model_profile": {
-                        "profile_name": "${profile_name}",
-                        "provider": "${provider}",
-                        "model": "${model}",
-                        "endpoint": "${endpoint}",
-                        "region": "${region}",
-                        "secret_env": "${secret_env}",
-                    },
-                },
-                "build": {
-                    "name": "${build_name}",
-                    "purpose": "Evaluate the browser journey created by Quick Start.",
-                    "model_profile_name": "${profile_name}",
-                    "timezone": "Asia/Tokyo",
-                    "repeat_interval_minutes": 30,
-                    "run_limit": 1,
-                    "approval_score": 8,
-                    "enabled": True,
-                },
-            },
-            {
-                "schema_version": 1,
-                "id": "openorbit.site-exploration-review",
-                "version": "1.0.1",
-                "name": "Site exploration review",
-                "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph.",
-                "publisher": {"name": "OpenOrbit"},
-                "parameters": [
-                    {
-                        "key": "build_name",
-                        "label": "Evaluation name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Site exploration review",
-                    },
-                    {
-                        "key": "repository",
-                        "label": "Target repository",
-                        "type": "workspace",
-                        "required": True,
-                        "placeholder": "/absolute/path/to/your-repository",
-                    },
-                    {
-                        "key": "base_url",
-                        "label": "Browser base URL",
-                        "type": "url",
-                        "required": True,
-                        "placeholder": "http://localhost:3000",
-                    },
-                    {
-                        "key": "review_focus",
-                        "label": "Review focus",
-                        "type": "string",
-                        "required": True,
-                        "default": "clarity, usefulness, and friction",
-                        "placeholder": "e.g. first-time visitor experience",
-                    },
-                    {
-                        "key": "profile_name",
-                        "label": "AI model profile name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Site exploration AI",
-                    },
-                    {
-                        "key": "provider",
-                        "label": "AI provider",
-                        "type": "select",
-                        "required": True,
-                        "default": "azure-openai",
-                        "options": [
-                            {"value": "azure-openai", "label": "Azure OpenAI"},
-                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
-                        ],
-                    },
-                    {
-                        "key": "model",
-                        "label": "Model / deployment",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. gpt-4o",
-                    },
-                    {
-                        "key": "endpoint",
-                        "label": "Provider endpoint",
-                        "type": "url",
-                        "required": False,
-                        "placeholder": "https://your-resource.openai.azure.com",
-                    },
-                    {
-                        "key": "region",
-                        "label": "Region",
-                        "type": "string",
-                        "required": True,
-                        "default": "us-east-1",
-                    },
-                    {
-                        "key": "secret_env",
-                        "label": "API key environment variable",
-                        "type": "string",
-                        "required": True,
-                        "default": "AZURE_OPENAI_API_KEY",
-                    },
-                ],
-                "assets": {
-                    "runner": {
-                        "name": "${build_name} runner",
-                        "description": "LangGraph site exploration runner created by Quick Start.",
-                        "template_id": "site-exploration",
-                        "source": SITE_EXPLORATION_TEMPLATE,
-                    },
-                    "prompt_template": {
-                        "name": "${build_name} policy",
-                        "version": 1,
-                        "content": "Review the site-exploration evidence for ${review_focus}. Give an evidence-backed product opinion and report reproducible friction or defects only.",
-                    },
-                    "test_case_set": {
-                        "name": "${build_name} exploration",
-                        "description": "Bounded site exploration created by Quick Start.",
-                        "cases": [
-                            {
-                                "id": "site-exploration",
-                                "name": "Explore site",
-                                "path": "/",
-                                "prompt": "Follow safe same-site links.",
-                                "acceptance": "Capture rendered page evidence.",
-                            }
-                        ],
-                    },
-                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
-                    "target_environment": {
-                        "name": "${build_name} target",
-                        "repository": "${repository}",
-                        "browser_base_url": "${base_url}",
-                    },
-                    "model_profile": {
-                        "profile_name": "${profile_name}",
-                        "provider": "${provider}",
-                        "model": "${model}",
-                        "endpoint": "${endpoint}",
-                        "region": "${region}",
-                        "secret_env": "${secret_env}",
-                    },
-                },
-                "build": {
-                    "name": "${build_name}",
-                    "purpose": "Explore a site and assess the rendered experience.",
-                    "model_profile_name": "${profile_name}",
-                    "timezone": "Asia/Tokyo",
-                    "repeat_interval_minutes": 30,
-                    "run_limit": 1,
-                    "approval_score": 8,
-                    "enabled": True,
-                },
-            },
-            {
-                "schema_version": 1,
-                "id": "openorbit.agent-self-improvement",
-                "version": "1.1.1",
-                "name": "Agent self-improvement",
-                "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
-                "publisher": {"name": "OpenOrbit"},
-                "parameters": [
-                    {
-                        "key": "build_name",
-                        "label": "Evaluation name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Agent self-improvement",
-                    },
-                    {
-                        "key": "repository",
-                        "label": "Git repository",
-                        "type": "workspace",
-                        "required": True,
-                        "placeholder": "/absolute/path/to/your-git-repository",
-                    },
-                    {
-                        "key": "base_url",
-                        "label": "Browser base URL (optional)",
-                        "type": "url",
-                        "required": False,
-                        "placeholder": "Not used for target-AI response evaluation",
-                    },
-                    {
-                        "key": "managed_prompt_path",
-                        "label": "Agent prompt file path",
-                        "type": "string",
-                        "required": True,
-                        "default": "examples/agent-improvement-sample-prompt.md",
-                        "placeholder": "e.g. prompts/system.md",
-                    },
-                    {
-                        "key": "journey_name",
-                        "label": "Test case name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Missing refund context",
-                        "placeholder": "e.g. Missing order details",
-                    },
-                    {
-                        "key": "journey_prompt",
-                        "label": "User request",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. I need a refund, but I do not have my order number.",
-                    },
-                    {
-                        "key": "acceptance",
-                        "label": "Success condition",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. The response is complete, grounded, and has no error.",
-                    },
-                    {
-                        "key": "profile_name",
-                        "label": "AI model profile name",
-                        "type": "string",
-                        "required": True,
-                        "default": "Agent improvement AI",
-                        "placeholder": "e.g. Agent evaluation GPT-4o",
-                    },
-                    {
-                        "key": "provider",
-                        "label": "AI provider",
-                        "type": "select",
-                        "required": True,
-                        "default": "azure-openai",
-                        "options": [
-                            {"value": "azure-openai", "label": "Azure OpenAI"},
-                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
-                        ],
-                    },
-                    {
-                        "key": "model",
-                        "label": "Model / deployment",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. gpt-4o",
-                    },
-                    {
-                        "key": "endpoint",
-                        "label": "Provider endpoint",
-                        "type": "url",
-                        "required": False,
-                        "placeholder": "https://your-resource.openai.azure.com",
-                    },
-                    {
-                        "key": "region",
-                        "label": "Region",
-                        "type": "string",
-                        "required": True,
-                        "default": "us-east-1",
-                        "placeholder": "e.g. eastus",
-                    },
-                    {
-                        "key": "secret_env",
-                        "label": "API key environment variable",
-                        "type": "string",
-                        "required": True,
-                        "default": "AZURE_OPENAI_API_KEY",
-                        "placeholder": "e.g. AZURE_OPENAI_API_KEY",
-                    },
-                ],
-                "assets": {
-                    "runner": {
-                        "name": "${build_name} runner",
-                        "description": "Agent self-improvement runner created by Quick Start.",
-                        "template_id": "native-improvement-cycle",
-                        "source": NATIVE_IMPROVEMENT_CYCLE_TEMPLATE,
-                    },
-                    "prompt_template": {
-                        "name": "${build_name} policy",
-                        "version": 1,
-                        "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met.",
-                    },
-                    "test_case_set": {
-                        "name": "${build_name} validation",
-                        "description": "A fixed agent validation journey created by Quick Start.",
-                        "cases": [
-                            {
-                                "id": "agent-journey",
-                                "name": "${journey_name}",
-                                "prompt": "${journey_prompt}",
-                                "acceptance": "${acceptance}",
-                            }
-                        ],
-                    },
-                    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
-                    "target_environment": {
-                        "name": "${build_name} target",
-                        "repository": "${repository}",
-                        "browser_base_url": "${base_url}",
-                        "managed_prompt_path": "${managed_prompt_path}",
-                    },
-                    "model_profile": {
-                        "profile_name": "${profile_name}",
-                        "provider": "${provider}",
-                        "model": "${model}",
-                        "endpoint": "${endpoint}",
-                        "region": "${region}",
-                        "secret_env": "${secret_env}",
-                    },
-                },
-                "build": {
-                    "name": "${build_name}",
-                    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
-                    "model_profile_name": "${profile_name}",
-                    "timezone": "Asia/Tokyo",
-                    "repeat_interval_minutes": 30,
-                    "run_limit": 3,
-                    "approval_score": 8,
-                    "enabled": True,
-                },
-            },
-            {
-                "schema_version": 1,
-                "id": "openorbit.ai-slo-drift-monitor",
-                "version": "1.0.1",
-                "name": "AI SLO and behavior drift monitor",
-                "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
-                "publisher": {"name": "OpenOrbit"},
-                "parameters": [
-                    {
-                        "key": "build_name",
-                        "label": "Evaluation name",
-                        "type": "string",
-                        "required": True,
-                        "default": "AI operational SLO monitor",
-                    },
-                    {
-                        "key": "repository",
-                        "label": "Evaluator workspace",
-                        "type": "workspace",
-                        "required": True,
-                        "placeholder": "/absolute/path/to/your-ai-evaluator",
-                    },
-                    {
-                        "key": "probe_command",
-                        "label": "Structured evaluator command",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. uv run ai-eval",
-                        "description": "A command that supports preflight, prepare, run-probes, and collect-evidence and returns JSON for each action.",
-                    },
-                    {
-                        "key": "slo_focus",
-                        "label": "SLO focus",
-                        "type": "string",
-                        "required": True,
-                        "default": "response quality, policy compliance, latency, and cost",
-                        "placeholder": "e.g. grounded answers and p95 latency under 3 seconds",
-                    },
-                    {
-                        "key": "profile_name",
-                        "label": "AI model profile name",
-                        "type": "string",
-                        "required": True,
-                        "default": "AI operations supervisor",
-                    },
-                    {
-                        "key": "provider",
-                        "label": "AI provider",
-                        "type": "select",
-                        "required": True,
-                        "default": "azure-openai",
-                        "options": [
-                            {"value": "azure-openai", "label": "Azure OpenAI"},
-                            {"value": "aws-bedrock", "label": "AWS Bedrock"},
-                        ],
-                    },
-                    {
-                        "key": "model",
-                        "label": "Model / deployment",
-                        "type": "string",
-                        "required": True,
-                        "placeholder": "e.g. gpt-4o",
-                    },
-                    {
-                        "key": "endpoint",
-                        "label": "Provider endpoint",
-                        "type": "url",
-                        "required": False,
-                        "placeholder": "https://your-resource.openai.azure.com",
-                    },
-                    {
-                        "key": "region",
-                        "label": "Region",
-                        "type": "string",
-                        "required": True,
-                        "default": "us-east-1",
-                    },
-                    {
-                        "key": "secret_env",
-                        "label": "API key environment variable",
-                        "type": "string",
-                        "required": True,
-                        "default": "AZURE_OPENAI_API_KEY",
-                    },
-                ],
-                "assets": {
-                    "runner": {
-                        "name": "${build_name} runner",
-                        "description": "Evidence-gated AI SLO and drift monitor created by Quick Start.",
-                        "template_id": "evidence-gated-probe-cycle",
-                        "source": EVIDENCE_GATED_PROBE_CYCLE_TEMPLATE,
-                    },
-                    "prompt_template": {
-                        "name": "${build_name} policy",
-                        "version": 1,
-                        "content": "Review the fixed AI SLO evidence for ${slo_focus}. Compare each reported metric with its retained baseline and threshold. Report only evidence-backed drift, regressions, or risks; propose reversible improvements with explicit validation and rollback steps.",
-                    },
-                    "test_case_set": {
-                        "name": "${build_name} probe matrix",
-                        "description": "A fixed, repeatable AI operational SLO probe matrix.",
-                        "cases": [
-                            {
-                                "id": "ai-slo-drift",
-                                "name": "AI SLO and behavior drift",
-                                "path": "/",
-                                "prompt": "Evaluate ${slo_focus} against the evaluator's fixed representative input matrix.",
-                                "acceptance": "Return structured current metrics, baseline comparisons, configured thresholds, outliers, and reproducible evidence for every detected drift.",
-                            }
-                        ],
-                    },
-                    "execution_environment": {
-                        "name": "${build_name} execution",
-                        "executor_type": "local",
-                        "environment_variables": {"ORBIT_PROBE_COMMAND": "${probe_command}"},
-                    },
-                    "target_environment": {"name": "${build_name} target", "repository": "${repository}"},
-                    "model_profile": {
-                        "profile_name": "${profile_name}",
-                        "provider": "${provider}",
-                        "model": "${model}",
-                        "endpoint": "${endpoint}",
-                        "region": "${region}",
-                        "secret_env": "${secret_env}",
-                    },
-                },
-                "build": {
-                    "name": "${build_name}",
-                    "purpose": "Continuously monitor AI operational SLOs and behavior drift with retained evidence.",
-                    "model_profile_name": "${profile_name}",
-                    "timezone": "Asia/Tokyo",
-                    "repeat_interval_minutes": 1440,
-                    "run_limit": 30,
-                    "approval_score": 8,
-                    "enabled": True,
-                },
-            },
-        ]
+        """Load the Quick Starts shipped in the repository package catalog."""
+        root = ROOT / "templates" / "quick-starts"
+        manifests: list[dict[str, Any]] = []
+        if not root.is_dir():
+            return manifests
+        for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+            manifest_path = directory / "manifest.json"
+            if not manifest_path.is_file():
+                continue
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            runner = manifest.get("assets", {}).get("runner", {})
+            if isinstance(runner, dict) and runner.get("source_file"):
+                runner["source"] = self._package_source(directory, str(runner["source_file"]))
+            manifests.append(manifest)
+        return manifests
 
     @staticmethod
     def _public_quick_start(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -1958,23 +610,56 @@ if __name__ == "__main__":
         }
 
     def quick_starts(self) -> list[dict[str, Any]]:
+        builtins = self._built_in_quick_starts()
+        builtin_ids = {str(item.get("id", "")) for item in builtins}
         custom = []
+        package_ids: set[str] = set()
+        for directory in sorted(path for path in QUICK_STARTS.iterdir() if path.is_dir()):
+            manifest_path = directory / "manifest.json"
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                runner = manifest.get("assets", {}).get("runner", {})
+                if isinstance(runner, dict) and runner.get("source_file"):
+                    runner["source"] = self._package_source(directory, str(runner["source_file"]))
+                manifest.update(self._package_documents(directory))
+            except (OSError, ValueError, json.JSONDecodeError):
+                continue
+            package_ids.add(str(manifest.get("id", directory.name)))
+            if str(manifest.get("id", directory.name)) not in builtin_ids:
+                custom.append(manifest)
         for path in sorted(QUICK_STARTS.glob("*.json")):
             try:
-                custom.append(json.loads(path.read_text(encoding="utf-8")))
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+                if str(manifest.get("id")) not in package_ids | builtin_ids:
+                    custom.append(manifest)
             except (OSError, ValueError):
                 continue
-        manifests = [*self._built_in_quick_starts(), *custom]
+        manifests = [*builtins, *custom]
         return [self._public_quick_start(item) for item in manifests]
+
+    def preview_quick_start_graph(self, quick_start_id: str) -> dict[str, Any] | None:
+        """Return a Quick Start runner's visual workflow before it is created."""
+        manifest = self._validate_quick_start(self._quick_start(quick_start_id))
+        return self.preview_runner_graph(manifest["assets"]["runner"]["source"])
 
     def _quick_start(self, quick_start_id: str) -> dict[str, Any]:
         for manifest in self._built_in_quick_starts():
             if manifest["id"] == quick_start_id:
                 return manifest
         path = QUICK_STARTS / f"{quick_start_id}.json"
-        if not path.exists():
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        package = QUICK_STARTS / quick_start_id
+        manifest_path = package / "manifest.json"
+        if not manifest_path.exists():
             raise KeyError(quick_start_id)
-        return json.loads(path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        runner = manifest.get("assets", {}).get("runner", {})
+        if isinstance(runner, dict) and runner.get("source_file"):
+            runner["source"] = self._package_source(package, str(runner["source_file"]))
+        return manifest
 
     @staticmethod
     def _canonicalize_runner_source(source: str) -> str:
@@ -2049,6 +734,49 @@ if __name__ == "__main__":
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         return self._public_quick_start(manifest)
+
+    def import_quick_start_package(self, directory: str | Path) -> dict[str, Any]:
+        """Import a self-contained Quick Start directory into application data.
+
+        The source directory must contain ``manifest.json``; its runner may use
+        ``assets.runner.source_file`` to point at a sibling Python file. README
+        and LICENSE are copied unchanged with the manifest.
+        """
+        source = Path(directory).expanduser().resolve()
+        manifest_path = source / "manifest.json"
+        if not manifest_path.is_file():
+            raise ValueError("quick start package requires manifest.json")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        runner = manifest.get("assets", {}).get("runner", {})
+        if isinstance(runner, dict) and runner.get("source_file"):
+            runner["source"] = self._package_source(source, str(runner["source_file"]))
+        manifest = self._validate_quick_start(manifest)
+        destination = QUICK_STARTS / str(manifest["id"])
+        if any(item["id"] == manifest["id"] for item in self.quick_starts()) or destination.exists():
+            raise ValueError("quick start ID already exists")
+        shutil.copytree(source, destination)
+        return self._public_quick_start(manifest)
+
+    def import_quick_start_package_zip(self, archive: bytes, filename: str) -> dict[str, Any]:
+        """Validate and install a portable Quick Start ZIP package."""
+        temporary, source = self._unpack_template_zip(archive, filename, "manifest.json")
+        try:
+            manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+            runner = manifest.get("assets", {}).get("runner", {})
+            if not isinstance(runner, dict) or not str(runner.get("source_file", "")).strip():
+                raise ValueError("quick start package runner requires source_file")
+            validated = deepcopy(manifest)
+            validated["assets"]["runner"]["source"] = self._package_source(source, str(runner["source_file"]))
+            validated = self._validate_quick_start(validated)
+            quick_start_id = str(validated["id"])
+            destination = QUICK_STARTS / quick_start_id
+            if any(item["id"] == quick_start_id for item in self.quick_starts()) or destination.exists():
+                raise ValueError("quick start ID already exists")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, destination)
+            return self._public_quick_start(validated)
+        finally:
+            temporary.cleanup()
 
     @staticmethod
     def _substitute(value: Any, inputs: dict[str, str]) -> Any:
@@ -2156,6 +884,41 @@ if __name__ == "__main__":
             raise ValueError("runner template ID already exists")
         return self._write_runner_template(template_id, values)
 
+    def import_runner_template_package_zip(self, archive: bytes, filename: str) -> dict[str, str]:
+        """Validate and install a portable Runner Template ZIP package."""
+        temporary, source_directory = self._unpack_template_zip(archive, filename, "template.json")
+        try:
+            values = json.loads((source_directory / "template.json").read_text(encoding="utf-8"))
+            template_id = str(values.get("id", ""))
+            if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", template_id):
+                raise ValueError("runner template must use a lowercase ID")
+            template = {
+                "id": template_id,
+                "name": str(values.get("name", "")).strip(),
+                "description": str(values.get("description", "")).strip(),
+            }
+            if not template["name"] or not template["description"]:
+                raise ValueError("runner template requires a name and description")
+            entrypoint = str(values.get("entrypoint", "runner.py"))
+            source = self._package_source(source_directory, entrypoint)
+            compile(source, f"{template_id}.py", "exec")
+            if any(item["id"] == template_id for item in self.available_runner_templates()):
+                raise ValueError("runner template ID already exists")
+            destination = RUNNER_TEMPLATES / template_id
+            if destination.exists():
+                raise ValueError("runner template ID already exists")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_directory, destination)
+            return {
+                **template,
+                "source": source,
+                "origin": "user",
+                "package_path": str(destination),
+                **self._package_documents(destination),
+            }
+        finally:
+            temporary.cleanup()
+
     def _write_runner_template(self, template_id: str, values: dict[str, str]) -> dict[str, str]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{template_id}.py", "exec")
@@ -2166,11 +929,11 @@ if __name__ == "__main__":
         }
         if not template["name"] or not template["description"]:
             raise ValueError("runner template requires a name and description")
-        (RUNNER_TEMPLATES / f"{template_id}.py").write_text(source, encoding="utf-8")
-        (RUNNER_TEMPLATES / f"{template_id}.json").write_text(
-            json.dumps(template, indent=2), encoding="utf-8"
-        )
-        return {**template, "source": source, "origin": "user"}
+        package = RUNNER_TEMPLATES / template_id
+        package.mkdir(parents=True, exist_ok=True)
+        (package / "runner.py").write_text(source, encoding="utf-8")
+        (package / "template.json").write_text(json.dumps(template, indent=2), encoding="utf-8")
+        return {**template, "source": source, "origin": "user", "package_path": str(package)}
 
     def update_runner_template(self, template_id: str, values: dict[str, str]) -> dict[str, str]:
         if not any(item["id"] == template_id for item in self._custom_runner_templates()):
@@ -2182,6 +945,7 @@ if __name__ == "__main__":
             raise KeyError(template_id)
         (RUNNER_TEMPLATES / f"{template_id}.py").unlink(missing_ok=True)
         (RUNNER_TEMPLATES / f"{template_id}.json").unlink(missing_ok=True)
+        shutil.rmtree(RUNNER_TEMPLATES / template_id, ignore_errors=True)
 
     def runners(self) -> list[dict[str, str]]:
         assets = []
@@ -2397,6 +1161,35 @@ if __name__ == "__main__":
     ) -> dict[str, Any] | None:
         """Read the runner's optional visual-workflow declaration safely."""
         return self._runner_graph_from_entry(self._runner_entry_path(runner_id, runner_version), repository)
+
+    def runner_graph_preview(
+        self, runner_id: str, runner_version: int | None = None
+    ) -> dict[str, Any] | None:
+        """Read a saved runner version's workflow without sending its source to the client."""
+        return self._runner_graph_definition(runner_id, None, runner_version)
+
+    def create_runner_graph_draft(self, source: str) -> dict[str, str]:
+        """Store an unsaved runner revision briefly so its graph can be requested by ID."""
+        source = self._canonicalize_runner_source(source)
+        compile(source, "runner-graph-draft.py", "exec")
+        now_monotonic = time.monotonic()
+        with self._lock:
+            self._runner_graph_drafts = {
+                draft_id: value
+                for draft_id, value in self._runner_graph_drafts.items()
+                if now_monotonic - value[1] < 1800
+            }
+            draft_id = uuid.uuid4().hex
+            self._runner_graph_drafts[draft_id] = (source, now_monotonic)
+        return {"id": draft_id}
+
+    def preview_runner_graph_draft(self, draft_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            value = self._runner_graph_drafts.get(draft_id)
+            if value is None or time.monotonic() - value[1] >= 1800:
+                self._runner_graph_drafts.pop(draft_id, None)
+                raise KeyError(draft_id)
+        return self.preview_runner_graph(value[0])
 
     def preview_runner_graph(self, source: str) -> dict[str, Any] | None:
         """Build a visual workflow from unsaved runner source without retaining it."""
@@ -4906,7 +3699,9 @@ if __name__ == "__main__":
             )
             self._save(run)
             return
-        settings = ModelSettings(**{key: value for key, value in configured.items() if key != "profile_name"})
+        settings = ModelSettings(
+            **{key: value for key, value in configured.items() if key in ModelSettings.__dataclass_fields__}
+        )
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
 
         def supervisor_result(result: object) -> object:

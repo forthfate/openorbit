@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.agent-self-improvement",
+  "version": "1.1.1",
+  "name": "Agent self-improvement",
+  "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Agent self-improvement",
+      "placeholder": "e.g. Support agent prompt improvement",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "repository",
+      "label": "Git repository",
+      "type": "workspace",
+      "required": true,
+      "placeholder": "/absolute/path/to/your-git-repository",
+      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
+    },
+    {
+      "key": "base_url",
+      "label": "Browser base URL (optional)",
+      "type": "url",
+      "required": false,
+      "placeholder": "Not used for target-AI response evaluation",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
+    },
+    {
+      "key": "managed_prompt_path",
+      "label": "Agent prompt file path",
+      "type": "string",
+      "required": true,
+      "default": "examples/agent-improvement-sample-prompt.md",
+      "placeholder": "e.g. prompts/system.md",
+      "tooltip": "Path relative to the repository for the prompt file managed by the improvement cycle."
+    },
+    {
+      "key": "journey_name",
+      "label": "Test case name",
+      "type": "string",
+      "required": true,
+      "default": "Missing refund context",
+      "placeholder": "e.g. Missing order details",
+      "tooltip": "Short, stable name shown for this fixed evaluation case."
+    },
+    {
+      "key": "journey_prompt",
+      "label": "User request",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. I need a refund, but I do not have my order number.",
+      "tooltip": "The exact user request or task supplied to the evaluated target."
+    },
+    {
+      "key": "acceptance",
+      "label": "Success condition",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. The response is complete, grounded, and has no error.",
+      "tooltip": "Observable evidence required for this case to be considered successful."
+    },
+    {
+      "key": "profile_name",
+      "label": "AI model profile name",
+      "type": "string",
+      "required": true,
+      "default": "Agent improvement AI",
+      "placeholder": "e.g. Agent evaluation GPT-4o",
+      "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
+    },
+    {
+      "key": "provider",
+      "label": "AI provider",
+      "type": "select",
+      "required": true,
+      "default": "azure-openai",
+      "options": [
+        {
+          "value": "azure-openai",
+          "label": "Azure OpenAI"
+        },
+        {
+          "value": "aws-bedrock",
+          "label": "AWS Bedrock"
+        }
+      ],
+      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
+    },
+    {
+      "key": "model",
+      "label": "Model / deployment",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. gpt-4o",
+      "tooltip": "Provider model ID or deployment name used for evaluation."
+    },
+    {
+      "key": "endpoint",
+      "label": "Provider endpoint",
+      "type": "url",
+      "required": false,
+      "placeholder": "https://your-resource.openai.azure.com",
+      "tooltip": "Provider base endpoint. Azure OpenAI requires this; Bedrock can leave it blank."
+    },
+    {
+      "key": "region",
+      "label": "Region",
+      "type": "string",
+      "required": true,
+      "default": "us-east-1",
+      "placeholder": "e.g. eastus",
+      "tooltip": "Cloud region used by the selected provider, such as eastus or us-east-1."
+    },
+    {
+      "key": "secret_env",
+      "label": "API key environment variable",
+      "type": "string",
+      "required": true,
+      "default": "AZURE_OPENAI_API_KEY",
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY",
+      "tooltip": "Name of the environment variable that holds the provider API key or credentials."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Agent self-improvement runner created by Quick Start.",
+      "template_id": "native-improvement-cycle",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met."
+    },
+    "test_case_set": {
+      "name": "${build_name} validation",
+      "description": "A fixed agent validation journey created by Quick Start.",
+      "cases": [
+        {
+          "id": "agent-journey",
+          "name": "${journey_name}",
+          "prompt": "${journey_prompt}",
+          "acceptance": "${acceptance}"
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local"
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "repository": "${repository}",
+      "browser_base_url": "${base_url}",
+      "managed_prompt_path": "${managed_prompt_path}"
+    },
+    "model_profile": {
+      "profile_name": "${profile_name}",
+      "provider": "${provider}",
+      "model": "${model}",
+      "endpoint": "${endpoint}",
+      "region": "${region}",
+      "secret_env": "${secret_env}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
+    "model_profile_name": "${profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 30,
+    "run_limit": 3,
+    "approval_score": 8,
+    "enabled": true
+  }
+}

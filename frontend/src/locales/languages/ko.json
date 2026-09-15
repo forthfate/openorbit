@@ -496,6 +496,8 @@
       "createAssetsAndBuild": "자산 및 빌드 생성",
       "creating": "생성 중…",
       "quickStartReview": "러너, 정책, 테스트 세트, 실행 환경, 대상 환경 및 빌드를 생성합니다.",
+      "quickStartWorkflowDescription": "실행 시 러너가 워크플로우를 따라 어떻게 동작하는지 미리 확인하세요.",
+      "runnerWorkflowDescription": "선택한 러너가 실행 시 워크플로우를 따라 어떻게 동작하는지 미리 확인하세요.",
       "chatOpen": "챗봇 열기",
       "chatCollapse": "챗봇 접기",
       "chatTitle": "Orbit 도우미",

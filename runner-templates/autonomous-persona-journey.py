@@ -2,7 +2,6 @@
 
 import json
 import re
-import subprocess
 from pathlib import Path
 
 import orbit_sdk
@@ -83,18 +82,25 @@ const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase
  const safe=actions.filter(item=>{try{const u=new URL(item.href), origin=new URL(before).origin;return u.origin===origin&&!blocked.test(u.pathname+' '+item.label)}catch{return false}}).slice(0,30);
  let acted=false;if(input.allowedHref){const candidate=safe.find(item=>item.href===input.allowedHref);if(!candidate)throw new Error('planned action is no longer an allowed visible link');await page.goto(candidate.href,{waitUntil:'domcontentloaded',timeout:30000});acted=true;}
  const text=(await page.locator('body').innerText().catch(()=>'' )).replace(/\s+/g,' ').slice(0,1800);await page.screenshot({path:input.screenshot,fullPage:true});
- console.log(JSON.stringify({before_url:before,url:page.url(),title:await page.title(),visible_text:text,available_actions:safe,acted,screenshot:input.screenshot}));
+ console.log(`browser navigation completed: ${before} -> ${page.url()}`);console.log('__ORBIT_PERSONA_RESULT__'+JSON.stringify({before_url:before,url:page.url(),title:await page.title(),visible_text:text,available_actions:safe,acted,screenshot:input.screenshot}));
  }finally{await browser.close()}})().catch(error=>{console.error(error);process.exit(1)});"""
-    result = subprocess.run(
+    output = ctx.exec(
         ["node", "-e", script, module, json.dumps(payload)],
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
         timeout=120,
+        target_log_source="browser-persona",
+        target_log_exclude_prefixes=("__ORBIT_PERSONA_RESULT__",),
     )
-    if result.returncode:
-        raise RuntimeError(result.stdout[-4000:] or "browser persona action failed")
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    result = next(
+        (
+            line.removeprefix("__ORBIT_PERSONA_RESULT__")
+            for line in reversed(output.splitlines())
+            if line.startswith("__ORBIT_PERSONA_RESULT__")
+        ),
+        "",
+    )
+    if not result:
+        raise RuntimeError("browser persona did not return structured evidence")
+    return json.loads(result)
 
 
 @graph.step("validate", title="Validate autonomous persona", phase="before_all", outputs=["persona_contract"])
@@ -215,6 +221,13 @@ def verify(ctx):
     ctx.log("Completed one bounded persona action with rendered evidence")
 
 
+@graph.step(
+    "reflect",
+    title="Reflect on persona evidence",
+    phase="after_each",
+    inputs=["action_evidence"],
+    outputs=["next_iteration"],
+)
 @runner.phase("after_each")
 def after_each(ctx):
     state = load_state(ctx)
@@ -275,6 +288,13 @@ Current state:\n""" + json.dumps(state, ensure_ascii=False)
     ctx.log("Retained persona feeling, learning, deduplicated issues, and next intent")
 
 
+@graph.step(
+    "finalize-persona-journey",
+    title="Finalize persona journey",
+    phase="after_all",
+    inputs=["next_iteration"],
+    outputs=["journey_complete"],
+)
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the autonomous persona journey")

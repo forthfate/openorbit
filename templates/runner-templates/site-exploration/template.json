@@ -1,0 +1,6 @@
+{
+  "id": "site-exploration",
+  "name": "Site exploration review",
+  "description": "Explores safe same-site links through LangGraph and retains rendered evidence for product feedback.",
+  "entrypoint": "runner.py"
+}

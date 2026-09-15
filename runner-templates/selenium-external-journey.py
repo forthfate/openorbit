@@ -94,11 +94,25 @@ def verify(ctx):
     )
 
 
+@graph.step(
+    "close-selenium-cycle",
+    title="Close Selenium adapter cycle",
+    phase="after_each",
+    inputs=["browser_evidence"],
+    outputs=["cycle_complete"],
+)
 @runner.phase("after_each")
 def after_each(ctx):
     ctx.log("Completed one bounded Selenium adapter cycle")
 
 
+@graph.step(
+    "finalize-selenium-journey",
+    title="Finalize Selenium adapter evaluation",
+    phase="after_all",
+    inputs=["cycle_complete"],
+    outputs=["journey_complete"],
+)
 @runner.phase("after_all")
 def after_all(ctx):
     ctx.log("Finalized the Selenium adapter evaluation")

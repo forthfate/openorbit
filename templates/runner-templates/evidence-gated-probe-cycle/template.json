@@ -1,0 +1,6 @@
+{
+  "id": "evidence-gated-probe-cycle",
+  "name": "Evidence-driven improvement gate",
+  "description": "Validates a fixed probe matrix and returns structured preflight, result, and evidence records for improvement decisions.",
+  "entrypoint": "runner.py"
+}

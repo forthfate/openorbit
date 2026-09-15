@@ -14,6 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
@@ -30,6 +31,7 @@ import type {
   Settings,
   TargetEnvironment,
   TargetTestCaseSet,
+  WorkflowGraphDefinition,
 } from "../../domain/models";
 import {
   intlLocales,
@@ -37,7 +39,7 @@ import {
   locales,
   type Locale,
 } from "../../locales";
-import { api } from "../../services/api";
+import { api, upload } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
 
@@ -74,6 +76,7 @@ type QuickStartTranslation = {
   parameters?: {
     label: string;
     description?: string;
+    tooltip?: string;
     placeholder?: string;
     options?: { label: string }[];
   }[];
@@ -349,6 +352,7 @@ function Direct({
 }) {
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const selectedRunner = runners.find((runner) => runner.id === d.runner_id);
   const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
   return (
@@ -403,6 +407,7 @@ function Direct({
               {(runners.find((item) => item.id === d.runner_id)?.versions ?? []).slice().sort((a, b) => b.version - a.version).map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
             </select>
           </Field>
+          {selectedRunner && <RunnerWorkflowPreview key={`${selectedRunner.id}-${d.runner_version ?? "latest"}`} runnerId={selectedRunner.id} version={d.runner_version} locale={locale} />}
           <Field
             label={copy.targetEnvironment.label}
             description={copy.targetEnvironment.hint}
@@ -607,6 +612,33 @@ function Direct({
   );
 }
 
+function RunnerWorkflowPreview({ runnerId, version, locale }: { runnerId: string; version: number | null; locale: Locale }) {
+  const t = locales[locale].ui;
+  const [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [graphError, setGraphError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const query = version === null ? "" : `?version=${encodeURIComponent(version)}`;
+    api<WorkflowGraphDefinition | null>(`/api/runners/${encodeURIComponent(runnerId)}/preview-graph${query}`)
+      .then((graph) => {
+        if (active) setWorkflowGraph(graph);
+      })
+      .catch((graphError: Error) => {
+        if (active) setGraphError(graphError.message);
+      })
+      .finally(() => {
+        if (active) setGraphLoading(false);
+      });
+    return () => { active = false; };
+  }, [runnerId, version]);
+  return <section className="build-runner-workflow" aria-label={t.workflowGraph}>
+    <strong>{t.workflowGraph}</strong>
+    <p>{t.runnerWorkflowDescription}</p>
+    {graphLoading ? <p className="hint">{t.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || t.noWorkflowGraph}</p>}
+  </section>;
+}
+
 function Quick({
   item,
   profiles,
@@ -637,7 +669,24 @@ function Quick({
     ),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
+    [graphLoading, setGraphLoading] = useState(true),
+    [graphError, setGraphError] = useState("");
+  useEffect(() => {
+    let active = true;
+    api<WorkflowGraphDefinition | null>(`/api/quick-starts/${item.id}/preview-graph`, "POST")
+      .then((graph) => {
+        if (active) setWorkflowGraph(graph);
+      })
+      .catch((graphError: Error) => {
+        if (active) setGraphError(graphError.message);
+      })
+      .finally(() => {
+        if (active) setGraphLoading(false);
+      });
+    return () => { active = false; };
+  }, [item.id]);
   const submit = async () => {
     setBusy(true);
     try {
@@ -662,6 +711,11 @@ function Quick({
           <p>{display.description}</p>
         </div>
       </div>
+      {!review && <section className="quick-start-workflow" aria-label={t.workflowGraph}>
+        <strong>{t.workflowGraph}</strong>
+        <p>{t.quickStartWorkflowDescription}</p>
+        {graphLoading ? <p className="hint">{t.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || t.noWorkflowGraph}</p>}
+      </section>}
       {review ? (
         <div className="quick-start-review">
           <p>{t.quickStartReview}</p>
@@ -677,7 +731,7 @@ function Quick({
       ) : (
         <div className="modal-form">
           {display.parameters.map((p) => (
-            <Field key={p.key} label={p.label}>
+            <Field key={p.key} label={p.label} description={p.tooltip ?? p.description}>
               {p.type === "select" ? (
                 <select
                   value={v[p.key]}
@@ -729,9 +783,6 @@ function Quick({
             <ChevronRight size={15} />
           </button>
         )}
-        <button className="ghost" onClick={close}>
-          {t.cancel}
-        </button>
       </div>
     </div>
   );
@@ -888,9 +939,7 @@ export function BuildsPage(props: {
   const importItem = async (f: File | undefined) => {
     if (!f) return;
     try {
-      await api("/api/quick-starts/import", "POST", {
-        manifest: JSON.parse(await f.text()),
-      });
+      await upload("/api/quick-starts/import-package", f);
       setItems(await api("/api/quick-starts"));
     } catch (e) {
       setError(e instanceof Error ? e.message : ui.importFailed);
@@ -1109,7 +1158,7 @@ export function BuildsPage(props: {
                 className="visually-hidden"
                 ref={file}
                 type="file"
-                accept="application/json,.json"
+                accept="application/zip,.zip"
                 onChange={(e) => importItem(e.target.files?.[0])}
               />
               <div className="template-picker-actions">
@@ -1154,6 +1203,7 @@ export function BuildsPage(props: {
         )}
         {mode === "quick" && picked && (
           <Quick
+            key={picked.id}
             item={withQuickStartTranslation(
               picked,
               translations.content(picked.id),

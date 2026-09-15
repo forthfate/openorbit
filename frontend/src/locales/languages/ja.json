@@ -496,6 +496,8 @@
       "createAssetsAndBuild": "アセットとビルドを作成",
       "creating": "作成中…",
       "quickStartReview": "ランナー、ポリシー、テストセット、実行環境、対象環境、ビルドを作成します。",
+      "quickStartWorkflowDescription": "実行時にランナーがワークフローをどのように進むかを事前に確認できます。",
+      "runnerWorkflowDescription": "選択したランナーが実行時にワークフローをどのように進むかを事前に確認できます。",
       "chatOpen": "チャットアシスタントを開く",
       "chatCollapse": "チャットを閉じる",
       "chatTitle": "Orbit アシスタント",

@@ -1,0 +1,6 @@
+{
+  "id": "user-journey-cycle",
+  "name": "Browser journey validation",
+  "description": "Validates fixed browser journeys and retains page evidence. Requires a running app and Playwright browser.",
+  "entrypoint": "runner.py"
+}
