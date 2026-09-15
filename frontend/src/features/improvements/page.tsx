@@ -928,9 +928,8 @@ export function ImprovementsPage({
           </select>
         </label>
       </section>
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
       <CycleImprovementAI locale={locale} build={build} hours={hours} />
-      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
       {build && <RelatedRuns
         buildId={build}
         runs={runs}
@@ -940,6 +939,7 @@ export function ImprovementsPage({
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
       />}
+      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
       {selectedRun && <EvaluationsPage
         detailOnly
