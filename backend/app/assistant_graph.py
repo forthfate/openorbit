@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import platform
+from datetime import datetime
 from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -12,6 +15,21 @@ from mcp.client.streamable_http import streamablehttp_client
 
 from .assistant_tools import DEFAULT_MCP_URL, AssistantToolExecutor
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
+
+
+def execution_environment_context() -> str:
+    """Describe the host context the local assistant can act within."""
+    shell_path = os.environ.get("COMSPEC") if os.name == "nt" else os.environ.get("SHELL")
+    shell_path = shell_path or ("cmd.exe" if os.name == "nt" else "/bin/sh")
+    shell_name = os.path.basename(shell_path) or shell_path
+    current_time = datetime.now().astimezone().isoformat(timespec="seconds")
+    return (
+        "Execution environment:\n"
+        f"- OS: {platform.system()} {platform.release()}\n"
+        f"- Default shell: {shell_name} ({shell_path})\n"
+        f"- Current working directory: {os.getcwd()}\n"
+        f"- Current local time: {current_time}\n"
+    )
 
 
 class AssistantState(TypedDict, total=False):
@@ -129,6 +147,7 @@ def build_assistant_prompt(content: str, history: list[tuple[str, str]], locale:
         "You are Orbit, a concise assistant for the local OpenOrbit control room.\n"
         "Use the OpenOrbit MCP tools as the source of truth for local control-room state. "
         "Read state before suggesting or taking any state-changing action.\n"
+        + execution_environment_context()
     )
     if locale:
         prompt += f"Respond in BCP 47 locale '{locale}'.\n"
