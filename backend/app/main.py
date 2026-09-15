@@ -472,6 +472,10 @@ class IssueManagementUpdate(BaseModel):
     verification_run_id: str = Field(default="", max_length=128)
 
 
+class IssueManagementDelete(BaseModel):
+    proposal_ids: list[str] = Field(min_length=1, max_length=200)
+
+
 class RunnerAssetUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
@@ -1299,6 +1303,11 @@ def list_issue_management_items_v1():
 )
 def update_issue_management_item_v1(proposal_id: str, values: IssueManagementUpdate):
     return safely(lambda: store.update_issue_management_item(proposal_id, **values.model_dump()))
+
+
+@app.delete("/api/v1/issue-management", tags=["Improvements"], operation_id="deleteIssueManagementItems")
+def delete_issue_management_items_v1(values: IssueManagementDelete):
+    return safely(lambda: store.delete_issue_management_items(values.proposal_ids))
 
 
 @app.get("/api/v1/improvements/analytics", tags=["Improvements"], operation_id="getImprovementAnalytics")

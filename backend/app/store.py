@@ -3439,6 +3439,10 @@ if __name__ == "__main__":
         values = []
         for proposal in self.proposal_lifecycles():
             record = records.get(proposal["proposal_id"], {})
+            # Issues are derived from immutable run evidence. A deletion is a
+            # management-level tombstone, not deletion of the underlying run.
+            if record.get("status") == "deleted":
+                continue
             values.append(
                 {
                     **proposal,
@@ -3485,6 +3489,28 @@ if __name__ == "__main__":
             record["events"].append({"type": "comment", **entry})
         self._save_issue_management_records(records)
         return next(value for value in self.issue_management_items() if value["proposal_id"] == proposal_id)
+
+    def delete_issue_management_items(self, proposal_ids: list[str]) -> dict[str, int]:
+        """Soft-delete issue-management rows while retaining run evidence and audit history."""
+        identifiers = list(dict.fromkeys(str(value).strip() for value in proposal_ids if str(value).strip()))
+        if not identifiers:
+            raise ValueError("at least one issue-management item is required")
+        available = {item["proposal_id"] for item in self.proposal_lifecycles()}
+        missing = [proposal_id for proposal_id in identifiers if proposal_id not in available]
+        if missing:
+            raise KeyError(missing[0])
+        records = self._issue_management_records()
+        timestamp = now().isoformat()
+        deleted = 0
+        for proposal_id in identifiers:
+            record = records.setdefault(proposal_id, {"status": "unreviewed", "comments": [], "events": []})
+            if record.get("status") == "deleted":
+                continue
+            record["status"] = "deleted"
+            record.setdefault("events", []).append({"type": "deleted", "recorded_at": timestamp})
+            deleted += 1
+        self._save_issue_management_records(records)
+        return {"deleted": deleted}
 
     def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
         """List SDK-saved data files by persisted evaluation run and iteration.

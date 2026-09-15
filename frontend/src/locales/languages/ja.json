@@ -352,7 +352,12 @@
       "commentHint": "開発者が確認または修正した内容を記録します。",
       "assignerHint": "このコメントを作成した人を記録します。",
       "verificationHint": "変更を検証した実行履歴を選択して接続します。",
-      "historyHint": "状態変更とコメントを時系列で保存します。"
+      "historyHint": "状態変更とコメントを時系列で保存します。",
+      "selected": "{count} 件を選択",
+      "deleteSelected": "選択項目を削除",
+      "deleteSelectedTitle": "選択した問題を削除しますか？",
+      "deleteSelectedDescription": "{count} 件の問題が問題管理から非表示になります。元の実行と証拠は保持されます。",
+      "delete": "削除"
     },
     "settingsLogs": {
       "title": "Orbit 運用ログ",
@@ -685,6 +690,13 @@
       "relatedRuns": "このビルドの実行",
       "relatedRunsHint": "選択したビルドの実行中の作業と最近完了した実行を確認します。",
       "noRelatedRuns": "このビルドの実行履歴はまだありません。",
+      "personaJourneys": "ペルソナジャーニーのタイムライン",
+      "personaJourneysHint": "時間の流れに沿って、観測されたペルソナの行動、判断、次の行動を比較します。",
+      "noPersonaJourneys": "この期間のペルソナジャーニーはありません。",
+      "personaGoal": "ペルソナの目標",
+      "currentAction": "今回したこと",
+      "currentDecision": "今回の判断",
+      "nextAction": "次の行動",
       "started": "開始",
       "currentPhase": "現在のフェーズ",
       "stop": "停止",

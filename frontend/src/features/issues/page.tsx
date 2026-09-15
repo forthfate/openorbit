@@ -8,8 +8,11 @@ import { SectionInfo } from "../../components/ui/section-info";
 import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
-import { ListFilter } from "lucide-react";
+import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
+import { ConfirmDialog } from "../../components/ui/confirm-dialog";
+import { PageSizeSelect } from "../../components/ui/page-size-select";
+import { Pagination } from "../../components/ui/pagination";
 
 type Copy = {
   title: string;
@@ -50,6 +53,11 @@ type Copy = {
   assignerHint: string;
   verificationHint: string;
   historyHint: string;
+  selected: string;
+  deleteSelected: string;
+  deleteSelectedTitle: string;
+  deleteSelectedDescription: string;
+  delete: string;
   proposed: string;
   acceptable: string;
   accepted: string;
@@ -87,15 +95,19 @@ export function IssuesPage({
     [builds, setBuilds] = useState<Build[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
     [build, setBuild] = useState(""),
-    [managed, setManaged] = useState(""),
-    [decision, setDecision] = useState(""),
+    [managedStatuses, setManagedStatuses] = useState<Set<string>>(new Set()),
+    [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
     [modalTab, setModalTab] = useState<"details" | "history">("details"),
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
     [managementStatus, setManagementStatus] = useState("unreviewed"),
-    [run, setRun] = useState("");
+    [run, setRun] = useState(""),
+    [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set()),
+    [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [page, setPage] = useState(1),
+    [pageSize, setPageSize] = useState(15);
   const filterMenu = useRef<HTMLDivElement>(null);
   const load = () =>
     api<IssueManagementItem[]>("/api/v1/issue-management")
@@ -169,10 +181,13 @@ export function IssuesPage({
       .filter(
         (x) =>
           (!build || x.build_id === build) &&
-          (!managed || x.management_status === managed) &&
-          (!decision || x.status === decision),
+          (!managedStatuses.size || managedStatuses.has(x.management_status)) &&
+          (!decisions.size || decisions.has(x.status)),
       )
       .map((x, index) => ({ ...x, id: x.proposal_id, index: index + 1 }));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pagedRows = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const save = () =>
     selected &&
     api<IssueManagementItem>(
@@ -190,7 +205,73 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
+  const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
+  const toggleIssue = (proposalId: string) =>
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      if (next.has(proposalId)) next.delete(proposalId);
+      else next.add(proposalId);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIssueIds((current) => {
+      const next = new Set(current);
+      if (allSelected) pagedRows.forEach((item) => next.delete(item.proposal_id));
+      else pagedRows.forEach((item) => next.add(item.proposal_id));
+      return next;
+    });
+  const confirmDeleteSelected = () => {
+    const proposalIds = [...selectedIssueIds];
+    setDeleteSelectionOpen(false);
+    api<{ deleted: number }>("/api/v1/issue-management", "DELETE", { proposal_ids: proposalIds })
+      .then(({ deleted }) => {
+        setSelectedIssueIds(new Set());
+        load();
+        onNotice(t.selected.replace("{count}", String(deleted)), "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
+  };
+  const toggleManagedStatus = (status: string) =>
+    {
+      setPage(1);
+      setManagedStatuses((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+      });
+    };
+  const toggleDecision = (status: string) =>
+    {
+      setPage(1);
+      setDecisions((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+      });
+    };
   const columns: Column<IssueRow>[] = [
+    {
+      id: "select",
+      header: (
+        <input
+          aria-label="Select all issues"
+          type="checkbox"
+          checked={allSelected}
+          disabled={!pagedRows.length}
+          onChange={toggleAll}
+        />
+      ),
+      render: (item) => (
+        <input
+          aria-label={`Select issue ${item.title}`}
+          type="checkbox"
+          checked={selectedIssueIds.has(item.proposal_id)}
+          onChange={() => toggleIssue(item.proposal_id)}
+        />
+      ),
+    },
     {
       id: "index",
       header: "#",
@@ -256,7 +337,7 @@ export function IssuesPage({
       sortValue: (x) => x.management_status,
     },
   ];
-  const filterCount = Number(!!managed) + Number(!!decision);
+  const filterCount = managedStatuses.size + decisions.size;
   return (
     <>
       <section className="improvements-build-selector">
@@ -264,7 +345,10 @@ export function IssuesPage({
           {t.build}
           <select
             value={build}
-            onChange={(event) => setBuild(event.target.value)}
+            onChange={(event) => {
+              setBuild(event.target.value);
+              setPage(1);
+            }}
           >
             {sortedBuilds.map((item) => (
               <option key={item.id} value={item.id}>
@@ -298,6 +382,14 @@ export function IssuesPage({
               <span className="nav-run-count">{filterCount}</span>
             )}
           </button>
+          <PageSizeSelect
+            locale={locale}
+            value={pageSize}
+            onChange={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+          />
           {filtersOpen && (
             <div className="run-filters run-filter-popover">
               <div className="run-filter-popover__header">
@@ -305,8 +397,9 @@ export function IssuesPage({
                 <button
                   className="ghost"
                   onClick={() => {
-                    setManaged("");
-                    setDecision("");
+                    setManagedStatuses(new Set());
+                    setDecisions(new Set());
+                    setPage(1);
                   }}
                 >
                   {locales[locale].runUi.reset}
@@ -318,12 +411,9 @@ export function IssuesPage({
                   {statuses.map((value) => (
                     <label key={value}>
                       <input
-                        type="radio"
-                        name="issue-status"
-                        checked={managed === value}
-                        onChange={() =>
-                          setManaged(managed === value ? "" : value)
-                        }
+                        type="checkbox"
+                        checked={managedStatuses.has(value)}
+                        onChange={() => toggleManagedStatus(value)}
                       />
                       {label(value)}
                     </label>
@@ -337,12 +427,9 @@ export function IssuesPage({
                     (value) => (
                       <label key={value}>
                         <input
-                          type="radio"
-                          name="issue-decision"
-                          checked={decision === value}
-                          onChange={() =>
-                            setDecision(decision === value ? "" : value)
-                          }
+                          type="checkbox"
+                          checked={decisions.has(value)}
+                          onChange={() => toggleDecision(value)}
                         />
                         {decisionLabel(value)}
                       </label>
@@ -353,9 +440,21 @@ export function IssuesPage({
             </div>
           )}
         </div>
+        <div className="run-history-actions">
+          <span>{t.selected.replace("{count}", String(selectedIssueIds.size))}</span>
+          <button
+            className="icon-button danger"
+            aria-label={t.deleteSelected}
+            title={t.deleteSelected}
+            onClick={() => setDeleteSelectionOpen(true)}
+            disabled={!selectedIssueIds.size}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
         <DataTable
           columns={columns}
-          rows={rows}
+          rows={pagedRows}
           empty={t.empty}
           onRowClick={(item) => {
             setSelected(item);
@@ -366,9 +465,26 @@ export function IssuesPage({
             setRun("");
           }}
           className="issue-management-table"
-          gridTemplateColumns="42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
+          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
+        />
+        <Pagination
+          locale={locale}
+          page={currentPage}
+          totalPages={totalPages}
+          totalItems={rows.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
         />
       </section>
+      <ConfirmDialog
+        open={deleteSelectionOpen}
+        title={t.deleteSelectedTitle}
+        description={t.deleteSelectedDescription.replace("{count}", String(selectedIssueIds.size))}
+        cancelLabel={locales[locale].common.cancel}
+        confirmLabel={t.delete}
+        onCancel={() => setDeleteSelectionOpen(false)}
+        onConfirm={confirmDeleteSelected}
+      />
       <Modal
         open={!!selected}
         title={selected?.title ?? t.title}
