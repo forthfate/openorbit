@@ -15,8 +15,14 @@ export function visualEvidenceArtifacts(files: SavedDataFile[]): EvidenceArtifac
     const path = file.relative_path ?? file.path;
     if (!path) return artifacts;
     const name = file.label || file.filename || `#${index + 1}`;
-    if (file.content_type?.startsWith("image/")) artifacts.push({ id: path, name, screenshot: path });
-    if (file.content_type === "text/html") artifacts.push({ id: path, name, html: path });
+    const contentType = file.content_type?.toLowerCase();
+    const extension = path.toLowerCase().split(".").at(-1);
+    if (contentType?.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension ?? "")) {
+      artifacts.push({ id: path, name, screenshot: path });
+    }
+    if (contentType === "text/html" || ["html", "htm"].includes(extension ?? "")) {
+      artifacts.push({ id: path, name, html: path });
+    }
     return artifacts;
   }, []);
 }

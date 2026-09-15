@@ -80,6 +80,7 @@ TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
 EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
 TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
+ISSUE_MANAGEMENT = CONFIG / "issue-management.yaml"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -3269,6 +3270,19 @@ if __name__ == "__main__":
                 response = record.get("response")
                 if not isinstance(response, dict):
                     continue
+                personas: list[str] = []
+                for step in run.step_results:
+                    if not isinstance(step, dict) or step.get("loop_index") != iteration:
+                        continue
+                    result = step.get("result")
+                    if not isinstance(result, dict):
+                        continue
+                    cycle = result.get("insighta_persona_simulator") or result.get("persona_cycle")
+                    if not isinstance(cycle, dict):
+                        continue
+                    for persona in cycle.get("active_personas", []) or cycle.get("processed_personas", []):
+                        if isinstance(persona, str) and persona not in personas:
+                            personas.append(persona)
                 improvements = response.get("improvements", [])
                 evaluation = response.get("evaluation")
                 score = evaluation.get("score") if isinstance(evaluation, dict) else None
@@ -3305,6 +3319,7 @@ if __name__ == "__main__":
                             "build_name": run.build_name,
                             "run_id": run.id,
                             "iteration": iteration,
+                            "personas": personas,
                             "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
                             "data_files": data_files,
                             "prompt_version": None,
@@ -3326,6 +3341,80 @@ if __name__ == "__main__":
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
+
+    def _issue_management_records(self) -> dict[str, dict[str, Any]]:
+        try:
+            values = yaml.safe_load(ISSUE_MANAGEMENT.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        if not isinstance(values, dict) or not isinstance(values.get("items"), dict):
+            return {}
+        return {
+            key: value
+            for key, value in values["items"].items()
+            if isinstance(key, str) and isinstance(value, dict)
+        }
+
+    def _save_issue_management_records(self, values: dict[str, dict[str, Any]]) -> None:
+        CONFIG.mkdir(parents=True, exist_ok=True)
+        temporary = ISSUE_MANAGEMENT.with_suffix(".tmp")
+        temporary.write_text(
+            yaml.safe_dump({"schema_version": 1, "items": values}, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        temporary.replace(ISSUE_MANAGEMENT)
+
+    def issue_management_items(self) -> list[dict[str, Any]]:
+        records = self._issue_management_records()
+        values = []
+        for proposal in self.proposal_lifecycles():
+            record = records.get(proposal["proposal_id"], {})
+            values.append(
+                {
+                    **proposal,
+                    "management_status": record.get("status", "unreviewed"),
+                    "assigner": record.get("assigner", ""),
+                    "comments": record.get("comments", []),
+                    "management_events": record.get("events", []),
+                }
+            )
+        return values
+
+    def update_issue_management_item(
+        self,
+        proposal_id: str,
+        *,
+        status: str | None = None,
+        comment: str = "",
+        assigner: str = "",
+        verification_run_id: str = "",
+    ) -> dict[str, Any]:
+        item = next(
+            (value for value in self.issue_management_items() if value["proposal_id"] == proposal_id), None
+        )
+        if item is None:
+            raise KeyError(proposal_id)
+        if status not in {None, "unreviewed", "reviewing", "in_progress", "resolved", "deferred"}:
+            raise ValueError("invalid issue management status")
+        comment = comment.strip()
+        assigner = assigner.strip()
+        records = self._issue_management_records()
+        record = records.setdefault(proposal_id, {"status": "unreviewed", "comments": [], "events": []})
+        timestamp = now().isoformat()
+        if status and status != record.get("status"):
+            record["status"] = status
+            record["events"].append({"type": "status", "status": status, "recorded_at": timestamp})
+        if comment:
+            entry = {"body": comment, "recorded_at": timestamp}
+            if assigner:
+                entry["assigner"] = assigner
+                record["assigner"] = assigner
+            if verification_run_id.strip():
+                entry["verification_run_id"] = verification_run_id.strip()
+            record["comments"].append(entry)
+            record["events"].append({"type": "comment", **entry})
+        self._save_issue_management_records(records)
+        return next(value for value in self.issue_management_items() if value["proposal_id"] == proposal_id)
 
     def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
         """List SDK-saved data files by persisted evaluation run and iteration.

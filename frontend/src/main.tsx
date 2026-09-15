@@ -30,6 +30,7 @@ const ImprovementsPage = lazy(() =>
     default: module.ImprovementsPage,
   })),
 );
+const IssuesPage = lazy(() => import("./features/issues/page").then((module) => ({ default: module.IssuesPage })));
 
 const SettingsPage = lazy(() =>
   import("./features/settings/page").then((module) => ({
@@ -56,6 +57,7 @@ const pages: Page[] = [
   "builds",
   "runs",
   "improvements",
+  "issues",
   "settings",
 ];
 const pageFromHash = (): Page => {
@@ -342,6 +344,7 @@ export default function App() {
       onApprove={approveRun}
       onReject={rejectRun}
     />,
+    issues: <IssuesPage locale={locale} onNotice={(message, tone) => room.setNotice(message, tone)} />,
     settings: (
       room.loading ? <>
         <SectionSkeleton rows={2} />
