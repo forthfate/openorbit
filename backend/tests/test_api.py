@@ -1273,6 +1273,37 @@ def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch
     assert "@runner.phase" in captured["source"]
 
 
+def test_saved_runner_graph_preview_uses_the_selected_version(monkeypatch):
+    store = store_module.ConsoleStore()
+    expected = {"nodes": [{"id": "start"}], "edges": []}
+    captured = {}
+
+    def preview(runner_id, repository, runner_version=None):
+        captured.update(runner_id=runner_id, repository=repository, runner_version=runner_version)
+        return expected
+
+    monkeypatch.setattr(store, "_runner_graph_definition", preview)
+
+    assert store.runner_graph_preview("runner-id", 5) == expected
+    assert captured == {"runner_id": "runner-id", "repository": None, "runner_version": 5}
+
+
+def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
+    store = store_module.ConsoleStore()
+    captured = {}
+    expected = {"nodes": [{"id": "draft"}], "edges": []}
+
+    def preview(source):
+        captured["source"] = source
+        return expected
+
+    monkeypatch.setattr(store, "preview_runner_graph", preview)
+    draft = store.create_runner_graph_draft("from orbit_sdk import runner\n")
+
+    assert store.preview_runner_graph_draft(draft["id"]) == expected
+    assert captured["source"] == "from orbit_sdk import runner\n"
+
+
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [

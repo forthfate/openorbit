@@ -352,9 +352,6 @@ function Direct({
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
   const selectedRunner = runners.find((runner) => runner.id === d.runner_id);
-  const selectedRunnerSource = d.runner_version === null
-    ? selectedRunner?.source
-    : selectedRunner?.versions?.find((version) => version.version === d.runner_version)?.source ?? selectedRunner?.source;
   const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
   return (
@@ -409,7 +406,7 @@ function Direct({
               {(runners.find((item) => item.id === d.runner_id)?.versions ?? []).slice().sort((a, b) => b.version - a.version).map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
             </select>
           </Field>
-          {selectedRunnerSource && <RunnerWorkflowPreview key={selectedRunnerSource} source={selectedRunnerSource} locale={locale} />}
+          {selectedRunner && <RunnerWorkflowPreview key={`${selectedRunner.id}-${d.runner_version ?? "latest"}`} runnerId={selectedRunner.id} version={d.runner_version} locale={locale} />}
           <Field
             label={copy.targetEnvironment.label}
             description={copy.targetEnvironment.hint}
@@ -614,14 +611,15 @@ function Direct({
   );
 }
 
-function RunnerWorkflowPreview({ source, locale }: { source: string; locale: Locale }) {
+function RunnerWorkflowPreview({ runnerId, version, locale }: { runnerId: string; version: number | null; locale: Locale }) {
   const t = locales[locale].ui;
   const [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null);
   const [graphLoading, setGraphLoading] = useState(true);
   const [graphError, setGraphError] = useState("");
   useEffect(() => {
     let active = true;
-    api<WorkflowGraphDefinition | null>("/api/runners/preview-graph", "POST", { source })
+    const query = version === null ? "" : `?version=${encodeURIComponent(version)}`;
+    api<WorkflowGraphDefinition | null>(`/api/runners/${encodeURIComponent(runnerId)}/preview-graph${query}`)
       .then((graph) => {
         if (active) setWorkflowGraph(graph);
       })
@@ -632,7 +630,7 @@ function RunnerWorkflowPreview({ source, locale }: { source: string; locale: Loc
         if (active) setGraphLoading(false);
       });
     return () => { active = false; };
-  }, [source]);
+  }, [runnerId, version]);
   return <section className="build-runner-workflow" aria-label={t.workflowGraph}>
     <strong>{t.workflowGraph}</strong>
     <p>{t.runnerWorkflowDescription}</p>

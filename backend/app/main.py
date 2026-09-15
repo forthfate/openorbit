@@ -492,6 +492,10 @@ class RunnerGraphPreview(BaseModel):
     source: str = Field(min_length=1, max_length=100_000)
 
 
+class RunnerGraphDraft(BaseModel):
+    source: str = Field(min_length=1, max_length=250_000)
+
+
 class RunnerTemplateValues(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
     name: str = Field(min_length=1, max_length=120)
@@ -556,6 +560,21 @@ def delete_runner_template(template_id: str):
 @app.get("/api/runners")
 def runners():
     return store.runners()
+
+
+@app.get("/api/runners/{runner_id}/preview-graph")
+def preview_saved_runner_graph(runner_id: str, version: int | None = Query(default=None, ge=1)):
+    return safely(lambda: store.runner_graph_preview(runner_id, version))
+
+
+@app.post("/api/runners/graph-drafts", status_code=201)
+def create_runner_graph_draft(values: RunnerGraphDraft):
+    return store.create_runner_graph_draft(values.source)
+
+
+@app.get("/api/runners/graph-drafts/{draft_id}/preview")
+def preview_runner_graph_draft(draft_id: str):
+    return safely(lambda: store.preview_runner_graph_draft(draft_id))
 
 
 @app.post("/api/runners/preview-graph")

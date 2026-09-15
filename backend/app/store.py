@@ -864,6 +864,7 @@ class ConsoleStore:
         # test dialog without becoming an evaluation-run record or surviving a
         # server restart.
         self._test_sessions: dict[str, Run] = {}
+        self._runner_graph_drafts: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
         self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
@@ -2402,6 +2403,35 @@ if __name__ == "__main__":
     ) -> dict[str, Any] | None:
         """Read the runner's optional visual-workflow declaration safely."""
         return self._runner_graph_from_entry(self._runner_entry_path(runner_id, runner_version), repository)
+
+    def runner_graph_preview(
+        self, runner_id: str, runner_version: int | None = None
+    ) -> dict[str, Any] | None:
+        """Read a saved runner version's workflow without sending its source to the client."""
+        return self._runner_graph_definition(runner_id, None, runner_version)
+
+    def create_runner_graph_draft(self, source: str) -> dict[str, str]:
+        """Store an unsaved runner revision briefly so its graph can be requested by ID."""
+        source = self._canonicalize_runner_source(source)
+        compile(source, "runner-graph-draft.py", "exec")
+        now_monotonic = time.monotonic()
+        with self._lock:
+            self._runner_graph_drafts = {
+                draft_id: value
+                for draft_id, value in self._runner_graph_drafts.items()
+                if now_monotonic - value[1] < 1800
+            }
+            draft_id = uuid.uuid4().hex
+            self._runner_graph_drafts[draft_id] = (source, now_monotonic)
+        return {"id": draft_id}
+
+    def preview_runner_graph_draft(self, draft_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            value = self._runner_graph_drafts.get(draft_id)
+            if value is None or time.monotonic() - value[1] >= 1800:
+                self._runner_graph_drafts.pop(draft_id, None)
+                raise KeyError(draft_id)
+        return self.preview_runner_graph(value[0])
 
     def preview_runner_graph(self, source: str) -> dict[str, Any] | None:
         """Build a visual workflow from unsaved runner source without retaining it."""

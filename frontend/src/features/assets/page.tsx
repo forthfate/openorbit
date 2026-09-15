@@ -421,7 +421,8 @@ function RunnerModal({
     graphInFlight.current = source;
     setGraphLoading(true);
     setGraphError("");
-    api<WorkflowGraphDefinition | null>("/api/runners/preview-graph", "POST", { source })
+    api<{ id: string }>("/api/runners/graph-drafts", "POST", { source })
+      .then((draft) => api<WorkflowGraphDefinition | null>(`/api/runners/graph-drafts/${encodeURIComponent(draft.id)}/preview`))
       .then((graph) => {
         if (draftSource.current !== source) return;
         setWorkflowGraph(graph);
