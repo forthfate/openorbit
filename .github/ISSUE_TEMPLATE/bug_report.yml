@@ -1,0 +1,65 @@
+name: Bug Report
+description: Report a reproducible problem or unexpected error in OpenOrbit
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report an issue! Please provide as much detail as possible to help us investigate and resolve it quickly.
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem Description
+      description: A clear and concise description of the bug.
+      placeholder: Describe what happened...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Exact steps to reproduce the behavior.
+      placeholder: |
+        1. Start the application with '...'
+        2. Navigate to '...'
+        3. Click on '...'
+        4. Observe error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+      placeholder: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually occurred, including any error messages or unexpected states.
+      placeholder: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment & Versions
+      description: Relevant environment information (OS, Node version, Python version, browser, OpenOrbit version).
+      placeholder: |
+        - OS: [e.g. Linux Ubuntu 22.04 / macOS 14 / Windows 11]
+        - Python version: [e.g. 3.13.0]
+        - Node.js version: [e.g. 24.0.0]
+        - OpenOrbit version: [e.g. v0.8.0 or commit hash]
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, logs, terminal outputs, or screenshots about the problem here.
+      placeholder: Optional additional logs or screenshots...
+    validations:
+      required: false
