@@ -4204,9 +4204,13 @@ if __name__ == "__main__":
             if run.id in self._test_sessions:
                 self._test_sessions[run.id] = run
                 return
-        temporary = self._path(run.id).with_suffix(".tmp")
-        temporary.write_text(run.model_dump_json(indent=2), encoding="utf-8")
-        temporary.replace(self._path(run.id))
+            # Live output is persisted from a reader thread while the main
+            # execution thread also updates the same Run. Keep the complete
+            # temporary-file replacement atomic per store instance so both
+            # writers cannot race on `<run>.tmp`.
+            temporary = self._path(run.id).with_suffix(".tmp")
+            temporary.write_text(run.model_dump_json(indent=2), encoding="utf-8")
+            temporary.replace(self._path(run.id))
 
     def _load(self, run_id: str) -> Run:
         with self._lock:
