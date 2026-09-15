@@ -115,6 +115,7 @@ export function EvaluationsPage({
   locale,
   initialSelectedRun,
   onSelectedRunClose,
+  detailOnly = false,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
@@ -126,6 +127,7 @@ export function EvaluationsPage({
   locale: Locale;
   initialSelectedRun?: Run | null;
   onSelectedRunClose?: () => void;
+  detailOnly?: boolean;
 }) {
   const t = locales[locale].common,
     l = copy[locale],
@@ -786,7 +788,8 @@ export function EvaluationsPage({
       </div>
     ) : undefined;
   return (
-    <section className="panel active-evaluation-panel">
+    <>
+      {!detailOnly && <section className="panel active-evaluation-panel">
       <div className="panel-title-action">
         <div className="panel-title-action__copy">
           <PanelHeader
@@ -940,6 +943,7 @@ export function EvaluationsPage({
       />
       <Pagination locale={locale} page={currentPage} totalPages={totalPages} totalItems={filteredRuns.length} pageSize={pageSize} onPageChange={setPage}/>
       <ConfirmDialog open={deleteSelectionOpen} title={ui.deleteSelectedTitle} description={ui.deleteSelectedDescription(selectedRunIds.size)} cancelLabel={l.cancel} confirmLabel={ui.delete} onCancel={()=>setDeleteSelectionOpen(false)} onConfirm={confirmDeleteSelected}/>
+      </section>}
       {selected && (
         <Modal
           open
@@ -1317,6 +1321,6 @@ export function EvaluationsPage({
           </div>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

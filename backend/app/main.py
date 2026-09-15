@@ -468,7 +468,7 @@ class PipelineAction(BaseModel):
 class RunnerAssetUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
-    source: str = Field(min_length=1, max_length=100_000)
+    source: str = Field(min_length=1, max_length=250_000)
     template_id: str | None = Field(default=None, max_length=64)
 
 
@@ -1038,7 +1038,7 @@ def template_translation_v1(values: TemplateTranslationRequest):
 
 class CycleAnalysisRequest(BaseModel):
     build_id: str = Field(min_length=1, max_length=200)
-    hours: int = Field(default=720, ge=1, le=8760)
+    hours: int = Field(default=720, ge=0, le=8760)
     locale: str | None = Field(
         default=None, min_length=2, max_length=35, pattern=r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"
     )
@@ -1283,7 +1283,7 @@ def list_improvement_iteration_data_v1(build_id: str | None = None):
 
 
 @app.get("/api/v1/improvements/analytics", tags=["Improvements"], operation_id="getImprovementAnalytics")
-def improvement_analytics_v1(hours: int = Query(default=24, ge=1, le=720)):
+def improvement_analytics_v1(hours: int = Query(default=24, ge=0, le=720)):
     return store.improvement_analytics(hours)
 
 

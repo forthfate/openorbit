@@ -1400,6 +1400,7 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
                     "filename": "evidence.json",
                     "path": "/tmp/orbit/evidence.json",
                     "relative_path": "evidence.json",
+                    "content_type": "",
                 }
             ],
         }

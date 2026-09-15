@@ -570,6 +570,7 @@
       "improvement": "Improvement",
       "trends": "Feedback trends",
       "range": "Range",
+      "unlimited": "No limit",
       "evaluation": "Result",
       "feedbackVolume": "Feedback by build",
       "iterationTrend": "Accepted feedback & score by iteration",
@@ -611,7 +612,17 @@
       "storedStateHint": "Current build-scoped state retained by the runner between executions.",
       "noStoredState": "No state has been saved for this build yet.",
       "updated": "Updated",
-      "rawState": "View raw state"
+      "rawState": "View raw state",
+      "relatedRuns": "Runs for this build",
+      "relatedRunsHint": "Check active work and the most recent completed runs for the selected build.",
+      "noRelatedRuns": "No runs for this build yet.",
+      "started": "Started",
+      "currentPhase": "Current phase",
+      "stop": "Stop",
+      "retry": "Retry run",
+      "retryWarning": "Retrying can change intermediate results in the working directory or external target.",
+      "restart": "Restart",
+      "resume": "Resume"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

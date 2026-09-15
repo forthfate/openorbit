@@ -335,7 +335,13 @@ export default function App() {
         onDeleteRuns={deleteRuns}
       />
     ),
-    improvements: <ImprovementsPage />,
+    improvements: <ImprovementsPage
+      runs={room.runs}
+      onStop={stopRun}
+      onRetry={retryRun}
+      onApprove={approveRun}
+      onReject={rejectRun}
+    />,
     settings: (
       room.loading ? <>
         <SectionSkeleton rows={2} />

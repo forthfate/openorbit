@@ -569,6 +569,7 @@
       "improvement": "개선",
       "trends": "피드백 추이",
       "range": "기간",
+      "unlimited": "제한 없음",
       "evaluation": "결과",
       "feedbackVolume": "빌드별 피드백",
       "iterationTrend": "반복별 수용 피드백 및 점수",
@@ -610,7 +611,17 @@
       "storedStateHint": "Runner가 실행 사이에 유지하는 현재 빌드별 상태입니다.",
       "noStoredState": "이 빌드에 아직 저장된 상태가 없습니다.",
       "updated": "갱신",
-      "rawState": "원본 상태 보기"
+      "rawState": "원본 상태 보기",
+      "relatedRuns": "이 빌드의 실행",
+      "relatedRunsHint": "선택한 빌드의 진행 중 작업과 최근 종료된 실행을 확인합니다.",
+      "noRelatedRuns": "이 빌드의 실행 이력이 아직 없습니다.",
+      "started": "시작",
+      "currentPhase": "현재 단계",
+      "stop": "정지",
+      "retry": "실행 재시도",
+      "retryWarning": "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.",
+      "restart": "처음부터",
+      "resume": "재개"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

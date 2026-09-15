@@ -569,6 +569,7 @@
       "improvement": "改善",
       "trends": "フィードバックの推移",
       "range": "期間",
+      "unlimited": "制限なし",
       "evaluation": "結果",
       "feedbackVolume": "ビルド別フィードバック",
       "iterationTrend": "反復別の受容フィードバックとスコア",
@@ -610,7 +611,17 @@
       "storedStateHint": "Runner が実行間で保持する現在のビルド単位の状態です。",
       "noStoredState": "このビルドにはまだ保存された状態がありません。",
       "updated": "更新",
-      "rawState": "生の状態を表示"
+      "rawState": "生の状態を表示",
+      "relatedRuns": "このビルドの実行",
+      "relatedRunsHint": "選択したビルドの実行中の作業と最近完了した実行を確認します。",
+      "noRelatedRuns": "このビルドの実行履歴はまだありません。",
+      "started": "開始",
+      "currentPhase": "現在のフェーズ",
+      "stop": "停止",
+      "retry": "実行を再試行",
+      "retryWarning": "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。",
+      "restart": "最初から",
+      "resume": "再開"
     },
     "quickStartLabels": {
       "openorbit.user-journey-smoke-test": {

@@ -1,4 +1,3 @@
-import { Check, Copy } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Area,
@@ -21,10 +20,12 @@ import type {
   ImprovementIterationData,
   Build,
   ProposalLifecycle,
+  Run,
   RunnerState,
   SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
+import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -37,14 +38,17 @@ import {
   resolveLocale,
   type Locale,
 } from "../../locales";
-import "./saved-data-files.css";
 import { FeedbackTrends } from "../dashboard/feedback-trends";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
+import { DataTable, type Column } from "../../components/ui/data-table";
+import { CircleStop, RotateCcw } from "lucide-react";
+import { EvaluationsPage } from "../evaluations/page";
 
 type ImprovementCopy = {
   improvement: string;
   trends: string;
   range: string;
+  unlimited: string;
   evaluation: string;
   feedbackVolume: string;
   iterationTrend: string;
@@ -87,6 +91,16 @@ type ImprovementCopy = {
   noStoredState: string;
   updated: string;
   rawState: string;
+  relatedRuns: string;
+  relatedRunsHint: string;
+  noRelatedRuns: string;
+  started: string;
+  currentPhase: string;
+  stop: string;
+  retry: string;
+  retryWarning: string;
+  restart: string;
+  resume: string;
 };
 type ChartHints = {
   feedbackByBuild: string;
@@ -115,6 +129,74 @@ const compactTimestamp = (locale: Locale, value?: string) =>
     : "—";
 const lastRunTimestamp = (build: Build) =>
   build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
+const terminalRun = (status: string) =>
+  ["succeeded", "failed", "cancelled"].includes(status);
+
+function RelatedRuns({
+  buildId, runs, locale, t, hours, onStop, onRetryRequest, onSelect,
+}: {
+  buildId: string;
+  runs: Run[];
+  locale: Locale;
+  t: (typeof copy)["en"];
+  hours: number;
+  onStop: (id: string) => void;
+  onRetryRequest: (run: Run) => void;
+  onSelect: (run: Run) => void;
+}) {
+  const [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
+  const related = useMemo(
+    () => runs.filter((run) =>
+      run.build_id === buildId && (rangeStart === 0 || !run.created_at || (Date.parse(run.created_at) || 0) >= rangeStart),
+    ).sort(
+      (left, right) => (Date.parse(right.created_at ?? "") || 0) - (Date.parse(left.created_at ?? "") || 0),
+    ),
+    [buildId, rangeStart, runs],
+  );
+  const active = related.filter((run) => !terminalRun(run.status));
+  const completed = related.filter((run) => terminalRun(run.status));
+  const visible = [...active, ...completed.slice(0, 5)];
+  const runUi = locales[locale].runUi;
+  const statusLabel = (status: string) => ({
+    succeeded: t.succeeded, failed: t.failed, cancelled: t.cancelled, running: t.running,
+    queued: runUi.queued,
+    awaiting_approval: runUi.awaitingApproval,
+  } as Record<string, string>)[status] ?? status;
+  const iteration = (run: Run) => {
+    const current = Math.max(0, ...(run.step_results ?? []).map((step) => step.loop_index ?? 0));
+    return run.loop_limit ? `${Math.min(current, run.loop_limit)}/${run.loop_limit}` : "—";
+  };
+  const columns: Column<Run>[] = [
+    { id: "run", header: t.run, render: (run) => <span className="related-run-id"><code>{run.id}</code><StatusBadge value={run.status} label={statusLabel(run.status)} /></span>, sortValue: (run) => run.id },
+    { id: "started", header: t.started, render: (run) => compactTimestamp(locale, run.created_at), sortValue: (run) => run.created_at },
+    { id: "iteration", header: t.iteration, render: iteration, sortValue: iteration },
+    { id: "phase", header: t.currentPhase, render: (run) => run.current_phase ?? "—", sortValue: (run) => run.current_phase },
+    { id: "actions", header: locales[locale].evaluation.action, render: (run) => {
+      const canRetry = terminalRun(run.status) && run.execution_type === "pipeline";
+      return <span className="build-actions">
+        {!terminalRun(run.status) && <button className="icon-button danger" title={t.stop} aria-label={t.stop} onClick={() => onStop(run.id)}><CircleStop size={16} /></button>}
+        {canRetry && <button className="icon-button" title={t.retry} aria-label={t.retry} onClick={() => onRetryRequest(run)}><RotateCcw size={16} /></button>}
+      </span>;
+    } },
+  ];
+  return (
+    <section className="panel related-runs" aria-labelledby="related-runs-title">
+      <div className="related-runs__heading">
+        <div>
+          <h2 id="related-runs-title">{t.relatedRuns}</h2>
+          <p>{t.relatedRunsHint}</p>
+        </div>
+        <div className="related-runs__counts">
+          <span>{t.running} <b>{active.length}</b></span>
+          <span>{t.succeeded} <b>{completed.filter((run) => run.status === "succeeded").length}</b></span>
+          <span>{t.failed} <b>{completed.filter((run) => run.status === "failed").length}</b></span>
+          <span>{t.cancelled} <b>{completed.filter((run) => run.status === "cancelled").length}</b></span>
+        </div>
+      </div>
+      <DataTable columns={columns} rows={visible} onRowClick={onSelect} className="related-runs-table" gridTemplateColumns="minmax(190px,1.4fr) minmax(118px,.85fr) 90px minmax(105px,1fr) minmax(145px,.9fr)" empty={t.noRelatedRuns} />
+    </section>
+  );
+}
 function Card({
   title,
   description,
@@ -343,89 +425,21 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
   );
 }
 
-function SavedDataFiles({
-  files,
-  t,
-}: {
-  files: SavedDataFile[];
-  t: (typeof copy)["en"];
-}) {
-  const [copied, setCopied] = useState<string | null>(null);
-  const displayedFiles = [...new Map(files.map((file) => [file.path, file])).values()];
-  if (!displayedFiles.length) return null;
-  const copyValue = async (value: string, key: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(key);
-      window.setTimeout(
-        () => setCopied((current) => (current === key ? null : current)),
-        1_500,
-      );
-    } catch {
-      setCopied(null);
-    }
-  };
-  return (
-    <section className="saved-data-files">
-      <strong>{t.savedDataFiles}</strong>
-      <div className="saved-data-files__list">
-        {displayedFiles.map((file, index) => (
-          <article key={`${file.path}-${index}`}>
-            <strong>{file.label || file.filename}</strong>
-            {file.label && (
-              <small>
-                {t.fileName}: {file.filename}
-              </small>
-            )}
-            <div>
-              <code>{file.path}</code>
-              <button
-                className="ghost icon-button"
-                type="button"
-                onClick={() => copyValue(file.path, `path-${index}`)}
-                aria-label={t.copyPath}
-                title={t.copyPath}
-              >
-                {copied === `path-${index}` ? <Check size={14} /> : <Copy size={14} />}
-              </button>
-            </div>
-            <button
-              className="ghost saved-data-files__copy-name"
-              type="button"
-              onClick={() => copyValue(file.filename, `name-${index}`)}
-            >
-              {copied === `name-${index}` ? <Check size={14} /> : <Copy size={14} />}
-              {t.copyFileName}
-            </button>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function iterationDataFiles(items: ProposalLifecycle[]): SavedDataFile[] {
-  return [
-    ...new Map(
-      items
-        .flatMap((item) => item.data_files ?? [])
-        .map((file) => [file.path, file]),
-    ).values(),
-  ];
-}
-
 function ProposalHistory({
   t,
   locale,
   buildId,
+  hours,
 }: {
   t: (typeof copy)["en"];
   locale: Locale;
   buildId?: string;
+  hours: number;
 }) {
   const [items, setItems] = useState<ProposalLifecycle[]>([]),
     [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
-    [selected, setSelected] = useState<ProposalLifecycle | null>(null);
+    [selected, setSelected] = useState<ProposalLifecycle | null>(null),
+    [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
   useEffect(() => {
     api<ProposalLifecycle[]>("/api/v1/improvements/proposals")
       .then(setItems)
@@ -476,7 +490,8 @@ function ProposalHistory({
       builds.set(resolvedBuildId, build);
       return group;
     };
-    for (const item of items.filter((item) => !buildId || item.build_id === buildId)) {
+    const inRange = (value?: string) => rangeStart === 0 || !value || (Date.parse(value) || 0) >= rangeStart;
+    for (const item of items.filter((item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at))) {
       iteration(
         item.build_id,
         item.build_name,
@@ -486,7 +501,7 @@ function ProposalHistory({
       ).items.push(item);
     }
     for (const item of iterationData.filter(
-      (item) => !buildId || item.build_id === buildId,
+      (item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at),
     )) {
       iteration(
         item.build_id,
@@ -513,7 +528,7 @@ function ProposalHistory({
               ?.recordedAt?.localeCompare(a.iterations.at(-1)?.recordedAt || "") || 0,
         ),
     }));
-  }, [items, iterationData, buildId]);
+  }, [items, iterationData, buildId, rangeStart]);
   const statusLabel = (value: string) =>
     value === "rejected"
       ? t.rejected
@@ -524,8 +539,9 @@ function ProposalHistory({
     typeof selected?.proposal[key] === "string"
       ? String(selected.proposal[key])
       : "";
+  const evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations");
   return (
-    <section className="cycle-proposal-history">
+    <section className="panel cycle-proposal-history">
       <h3>
         <SectionInfo title={t.history} description={t.historyHint} />
       </h3>
@@ -557,14 +573,23 @@ function ProposalHistory({
                       <summary>
                         <span>
                           <strong>
-                            {t.iteration} #{group.iteration}
+                            {t.iteration} #{group.iteration} <span className="proposal-tree__count">({group.items.length})</span>
                           </strong>
                           <small>
                             {timestamp(locale, group.recordedAt)}
                           </small>
                         </span>
                         <span className="proposal-tree__iteration-meta">
-                          <small>{group.items.length}</small>
+                          <EvidenceViewer
+                            className="proposal-tree__evidence"
+                            runId={run.runId}
+                            iteration={group.iteration}
+                            artifacts={visualEvidenceArtifacts([...group.dataFiles, ...group.items.flatMap((item) => item.data_files ?? [])])}
+                            imageLabel={evidenceCopy.viewImageEvidence}
+                            htmlLabel={evidenceCopy.viewHtmlEvidence}
+                            imageTitle={evidenceCopy.imageEvidence}
+                            htmlTitle={evidenceCopy.htmlEvidence}
+                          />
                         </span>
                       </summary>
                       <div>
@@ -592,13 +617,6 @@ function ProposalHistory({
                             </span>
                           </button>
                         ))}
-                        <SavedDataFiles
-                          files={[
-                            ...group.dataFiles,
-                            ...iterationDataFiles(group.items),
-                          ]}
-                          t={t}
-                        />
                       </div>
                     </details>
                   ))}
@@ -681,14 +699,15 @@ function ProposalHistory({
 function CycleImprovementAI({
   locale,
   build,
+  hours,
 }: {
   locale: Locale;
   build: string;
+  hours: number;
 }) {
   const [data, setData] = useState<ImprovementAnalytics>(),
     [analysis, setAnalysis] = useState(""),
     [loading, setLoading] = useState(false),
-    [hours, setHours] = useState(720),
     t = locales[locale].cycle;
   useEffect(() => {
     api<ImprovementAnalytics>(`/api/improvement-analytics?hours=${hours}`)
@@ -726,15 +745,6 @@ function CycleImprovementAI({
         <PanelHeader
           title={<SectionInfo title={t.title} description={t.titleHint} />}
         />
-        <label>
-          {t.range}
-          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-            <option value={24}>24h</option>
-            <option value={72}>3d</option>
-            <option value={168}>7d</option>
-            <option value={720}>30d</option>
-          </select>
-        </label>
       </div>
       <p className="hint">{t.description}</p>
       {build && (
@@ -774,7 +784,6 @@ function CycleImprovementAI({
               </div>
             )}
           </div>
-          <ProposalHistory t={copy[locale]} locale={locale} buildId={build} />
         </>
       )}
     </section>
@@ -850,12 +859,27 @@ function StoredState({
     </section>
   );
 }
-export function ImprovementsPage() {
+export function ImprovementsPage({
+  runs,
+  onStop,
+  onRetry,
+  onApprove,
+  onReject,
+}: {
+  runs: Run[];
+  onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
     [build, setBuild] = useState(""),
     [builds, setBuilds] = useState<Build[]>([]),
-    [initialLoading, setInitialLoading] = useState(true);
+    [initialLoading, setInitialLoading] = useState(true),
+    [selectedRun, setSelectedRun] = useState<Run | null>(null),
+    [retryingRun, setRetryingRun] = useState<Run | null>(null),
+    [hours, setHours] = useState(24);
   useEffect(() => {
     api<Build[]>("/api/builds")
       .then((next) => {
@@ -885,7 +909,14 @@ export function ImprovementsPage() {
       }),
     [builds],
   );
-  if (initialLoading) return <><SectionSkeleton rows={1} /><SectionSkeleton rows={4} /><SectionSkeleton rows={3} /></>;
+  if (initialLoading) return <>
+    <SectionSkeleton rows={1} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={3} />
+  </>;
   return (
     <>
       <section className="improvements-build-selector">
@@ -899,10 +930,54 @@ export function ImprovementsPage() {
             ))}
           </select>
         </label>
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+            <option value={0}>{t.unlimited}</option>
+          </select>
+        </label>
       </section>
+      <CycleImprovementAI locale={locale} build={build} hours={hours} />
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
+      {build && <RelatedRuns
+        key={`${build}:${hours}`}
+        buildId={build}
+        runs={runs}
+        locale={locale}
+        t={t}
+        hours={hours}
+        onStop={onStop}
+        onRetryRequest={setRetryingRun}
+        onSelect={setSelectedRun}
+      />}
+      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
-      <CycleImprovementAI locale={locale} build={build} />
+      {selectedRun && <EvaluationsPage
+        detailOnly
+        locale={locale}
+        runs={runs}
+        initialSelectedRun={selectedRun}
+        onSelectedRunClose={() => setSelectedRun(null)}
+        onStop={onStop}
+        onRetry={onRetry}
+        onApprove={onApprove}
+        onReject={onReject}
+        onEmergencyStop={() => undefined}
+        onDeleteRuns={() => Promise.resolve()}
+      />}
+      <Modal open={Boolean(retryingRun)} title={t.retry} onClose={() => setRetryingRun(null)} className="modal--confirm">
+        <div className="modal-form retry-confirmation">
+          <p className="confirm-description">{t.retryWarning}</p>
+          <div className="modal-actions">
+            <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{t.resume}</button>
+            <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{t.restart}</button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }
