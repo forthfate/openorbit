@@ -923,6 +923,7 @@ export function ImprovementsPage({
           </select>
         </label>
       </section>
+      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
       {build && <RelatedRuns
         buildId={build}
         runs={runs}
@@ -933,7 +934,6 @@ export function ImprovementsPage({
         onSelect={setSelectedRun}
       />}
       {build && <StoredState buildId={build} locale={locale} t={t} />}
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" />}
       <CycleImprovementAI locale={locale} build={build} />
       {selectedRun && <EvaluationsPage
         detailOnly
