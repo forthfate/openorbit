@@ -510,7 +510,12 @@ def adapter_command():
 
 
 def invoke(ctx, action):
-    return ctx.exec([*adapter_command(), action], cwd=ORBIT_PROJECT_PATH(), timeout=3600)
+    return ctx.exec(
+        [*adapter_command(), action],
+        cwd=ORBIT_PROJECT_PATH(),
+        timeout=3600,
+        target_log_source="external-adapter",
+    )
 
 
 @graph.step("check-adapter", title="Check adapter readiness", phase="before_all", outputs=["adapter_status"])
@@ -609,6 +614,7 @@ def invoke(ctx, action):
         cwd=ctx.project_root,
         timeout=3600,
         env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
+        target_log_source="external-agent",
     )
     try:
         result = json.loads(output)
@@ -730,6 +736,7 @@ def invoke(ctx, action):
         cwd=ctx.project_root,
         timeout=3600,
         env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
+        target_log_source="evidence-probe",
     )
     try:
         result = json.loads(output)

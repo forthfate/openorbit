@@ -1498,8 +1498,16 @@ class RunnerContext:
         )
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
         self.log(f"target model request started: {settings.provider}/{settings.model}")
+        self.target_log(
+            f"Model request started: {settings.provider}/{settings.model}",
+            source="target-model",
+        )
         response = provider.complete(settings, prompt)
         self.log(f"target model request completed: {settings.provider}/{settings.model}")
+        self.target_log(
+            f"Model request completed: {settings.provider}/{settings.model}",
+            source="target-model",
+        )
         return {
             "profile_name": str(profile.get("profile_name", "")),
             "model": settings.model,
@@ -1662,6 +1670,10 @@ class RunnerContext:
         if not selected_cases:
             raise ValueError("at least one fixed test case is required for a Playwright journey")
         self.log(f"browser journey started: {len(selected_cases)} case(s) against {base_url}")
+        self.target_log(
+            f"Playwright journey started: {len(selected_cases)} case(s)",
+            source="playwright",
+        )
         artifacts = (
             self.app_data
             / "artifacts"
@@ -1706,6 +1718,11 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         evidence["artifacts_directory"] = str(artifacts)
         passed = sum(bool(item.get("passed")) for item in evidence.get("results", []))
         self.log(f"browser journey completed: {passed}/{len(selected_cases)} case(s) passed")
+        self.target_log(
+            f"Playwright journey completed: {passed}/{len(selected_cases)} case(s) passed",
+            level="info" if passed == len(selected_cases) else "warn",
+            source="playwright",
+        )
         self.emit_result({"browser_journey": evidence})
         return evidence
 
@@ -1716,6 +1733,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         cwd: Path | None = None,
         timeout: int | None = None,
         env: dict[str, str] | None = None,
+        target_log_source: str | None = None,
     ) -> str:
         """Run one bounded child command and return its captured output.
 
@@ -1728,6 +1746,8 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             cwd: Child working directory; defaults to the target repository.
             timeout: Maximum duration in seconds; no timeout when omitted.
             env: Environment values that supplement the runner environment.
+            target_log_source: When set, forward bounded child-output lines to
+                the target-log stream under this source name.
 
         Returns:
             Combined standard output and standard error from the child.
@@ -1752,6 +1772,8 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             for line in process.stdout:
                 lines.append(line)
                 print(line, end="", flush=True)
+                if target_log_source and line.strip():
+                    self.target_log(line.strip(), source=target_log_source)
 
         reader = threading.Thread(target=forward_output, daemon=True)
         reader.start()

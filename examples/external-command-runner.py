@@ -29,7 +29,12 @@ def adapter_command():
 
 def invoke(ctx, action):
     """Run exactly one adapter action and preserve its output as run evidence."""
-    output = ctx.exec([*adapter_command(), action], cwd=ctx.project_root, timeout=3_600)
+    output = ctx.exec(
+        [*adapter_command(), action],
+        cwd=ctx.project_root,
+        timeout=3_600,
+        target_log_source="external-adapter",
+    )
     artifact = ctx.write_artifact(
         f"external-command/{action}.log", output, content_type="text/plain; charset=utf-8"
     )

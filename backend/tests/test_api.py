@@ -122,6 +122,53 @@ def test_runner_target_logs_are_retained_separately_from_runner_output(tmp_path,
     assert all(entry["iteration"] == 3 and entry["phase"] == "execute" for entry in step["target_logs"])
 
 
+def test_runner_exec_can_forward_child_output_to_target_logs(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    project = tmp_path / "target"
+    project.mkdir()
+    runner = project / "runner.py"
+    runner.write_text(
+        "import sys\n"
+        "from orbit_sdk import runner\n"
+        "@runner.phase('execute')\n"
+        "def run(ctx):\n"
+        "    ctx.exec([sys.executable, '-c', \"print('adapter ready')\"], target_log_source='test-adapter')\n"
+        "if __name__ == '__main__': runner.main()\n",
+        encoding="utf-8",
+    )
+    timestamp = store_module.now()
+    store = store_module.ConsoleStore()
+    store._save(
+        Run(
+            id="forwarded-target-log-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            repository=str(project),
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+
+    store._execute_step(
+        "forwarded-target-log-run",
+        Step(
+            id="run",
+            phase="execute",
+            name="Run",
+            command=[sys.executable, str(runner), "--phase", "execute"],
+            working_directory=str(project),
+        ),
+        loop_index=1,
+    )
+
+    step = store._load("forwarded-target-log-run").step_results[-1]
+    assert "adapter ready" in step["output"]
+    assert [(entry["source"], entry["message"]) for entry in step["target_logs"]] == [
+        ("test-adapter", "adapter ready"),
+    ]
+
+
 def test_running_workflow_function_is_retained_before_its_step_finishes(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     project = tmp_path / "target"
