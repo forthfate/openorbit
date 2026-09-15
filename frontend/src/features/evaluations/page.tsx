@@ -684,8 +684,8 @@ export function EvaluationsPage({
         resultAttemptFilter === "all" ||
         improvements.some((improvement) =>
           resultAttemptFilter === "attempted"
-            ? improvement.attempted === true || improvement.status === "adopted"
-            : improvement.attempted !== true && improvement.status !== "adopted",
+            ? improvement.attempted === true || ["adopted", "accepted"].includes(String(improvement.status))
+            : improvement.attempted !== true && !["adopted", "accepted"].includes(String(improvement.status)),
         );
       const improvementStatusMatches =
         resultImprovementStatus === "all" ||

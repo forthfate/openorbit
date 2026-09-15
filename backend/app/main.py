@@ -177,7 +177,7 @@ def runs():
         ]
         item["proposed_improvements"] = len(improvements)
         item["approved_improvements"] = sum(
-            improvement.get("status") == "adopted" for improvement in improvements
+            improvement.get("status") in {"adopted", "accepted"} for improvement in improvements
         )
         item["reported_issues"] = len(issues)
         values.append(item)
@@ -463,6 +463,13 @@ class PipelineCreate(BaseModel):
 
 class PipelineAction(BaseModel):
     action: Literal["approve", "reject", "cancel"]
+
+
+class IssueManagementUpdate(BaseModel):
+    status: Literal["unreviewed", "reviewing", "in_progress", "resolved", "deferred"] | None = None
+    comment: str = Field(default="", max_length=4_000)
+    assigner: str = Field(default="", max_length=120)
+    verification_run_id: str = Field(default="", max_length=128)
 
 
 class RunnerAssetUpdate(BaseModel):
@@ -1267,7 +1274,7 @@ def list_improvements_v1():
 )
 def list_proposal_lifecycles_v1(
     build_id: str | None = None,
-    status: Literal["proposed", "accepted", "rejected", "applied"] | None = None,
+    status: Literal["proposed", "acceptable", "accepted", "rejected", "applied"] | None = None,
 ):
     return store.proposal_lifecycles(build_id, status)
 
@@ -1280,6 +1287,18 @@ def list_proposal_lifecycles_v1(
 )
 def list_improvement_iteration_data_v1(build_id: str | None = None):
     return store.improvement_iteration_data(build_id)
+
+
+@app.get("/api/v1/issue-management", tags=["Improvements"], operation_id="listIssueManagementItems")
+def list_issue_management_items_v1():
+    return store.issue_management_items()
+
+
+@app.patch(
+    "/api/v1/issue-management/{proposal_id}", tags=["Improvements"], operation_id="updateIssueManagementItem"
+)
+def update_issue_management_item_v1(proposal_id: str, values: IssueManagementUpdate):
+    return safely(lambda: store.update_issue_management_item(proposal_id, **values.model_dump()))
 
 
 @app.get("/api/v1/improvements/analytics", tags=["Improvements"], operation_id="getImprovementAnalytics")

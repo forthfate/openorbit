@@ -62,6 +62,7 @@ type ImprovementCopy = {
   historyHint: string;
   allBuilds: string;
   allStates: string;
+  acceptable: string;
   rejected: string;
   proposed: string;
   decisionReason: string;
@@ -76,7 +77,6 @@ type ImprovementCopy = {
   feedbackCount: string;
   activeCount: string;
   noIterationFeedback: string;
-  adopted: string;
   low: string;
   medium: string;
   high: string;
@@ -330,8 +330,8 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
               <Legend />
               <Bar
                 yAxisId="count"
-                dataKey="accepted_count"
-                name={t.accepted}
+                dataKey="acceptable_count"
+                name={t.acceptable}
                 fill="#79c99e"
               />
               <Line
@@ -358,7 +358,7 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
               <ChartTooltip />
               <Legend />
               <Bar stackId="a" dataKey="proposed" name={t.proposed} fill="#f1d292" />
-              <Bar stackId="a" dataKey="adopted" name={t.adopted} fill="#79c99e" />
+              <Bar stackId="a" dataKey="acceptable" name={t.acceptable} fill="#79c99e" />
               <Bar stackId="a" dataKey="rejected" name={t.rejected} fill="#eaa89f" />
             </BarChart>
           </ResponsiveContainer>
@@ -532,7 +532,9 @@ function ProposalHistory({
     }));
   }, [items, iterationData, buildId, rangeStart]);
   const statusLabel = (value: string) =>
-    value === "rejected"
+    value === "acceptable"
+      ? t.acceptable
+      : value === "rejected"
       ? t.rejected
       : value === "proposed"
         ? t.proposed

@@ -7,6 +7,7 @@ import {
   FileCode2,
   PanelLeftClose,
   Play,
+  CircleAlert,
   Settings,
   Sparkles,
 } from "lucide-react";
@@ -60,6 +61,7 @@ export function AppShell({
     ["builds", <FileCode2 size={17} />, t.builds],
     ["runs", <Play size={17} />, t.runs],
     ["improvements", <BarChart3 size={17} />, t.improvements],
+    ["issues", <CircleAlert size={17} />, t.issues],
     ["settings", <Settings size={17} />, t.settings],
   ];
   const dashboardRepositoryLinks = page === "dashboard" && (

@@ -127,7 +127,7 @@ For example, to evaluate a support-agent prompt:
 1. Choose **Agent self-improvement**.
 2. Select the Git repository and managed prompt file, then choose your AI model profile.
 3. Enter one representative user request and its response-level acceptance criterion.
-4. Create the build and run it. OpenOrbit retains the actual target-AI response, asks the supervisor to review that evidence, and applies only an adopted, reversible prompt improvement on the following iteration.
+4. Create the build and run it. OpenOrbit retains the actual target-AI response and asks the supervisor to classify evidence-backed, reversible prompt improvements as acceptable. Only a human-accepted proposal can be applied on a following iteration.
 
 Quick Starts never store provider keys. They reference the environment-variable
 name already configured in the selected model profile.

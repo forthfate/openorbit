@@ -1553,7 +1553,7 @@ class RunnerContext:
                         f"{run_id}:{iteration}:{index}"
                         for index, proposal in enumerate(improvements)
                         if isinstance(proposal, dict)
-                        and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
+                        and str(proposal.get("status") or "").lower() == "accepted"
                     ]
                 return feedback
         return {}
