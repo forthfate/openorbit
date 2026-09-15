@@ -344,8 +344,15 @@ export function DashboardPage({
             >
               <small>{`${eventLabel} · ${relativeRunTime(eventTime, locale)}`}</small>
               <strong>{run.build_name ?? run.workflow_name}</strong>
-              <span>{runLabel(run.current_phase ?? run.status)}</span>
-              <StatusBadge value={run.status} label={runLabel(run.status)} />
+              <span className="evaluation-card__labels">
+                {run.current_phase && (
+                  <StatusBadge
+                    value={run.current_phase}
+                    label={runLabel(run.current_phase)}
+                  />
+                )}
+                <StatusBadge value={run.status} label={runLabel(run.status)} />
+              </span>
             </button>
           );
         })}
