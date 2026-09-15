@@ -386,6 +386,7 @@
       "buildListDescription": "対象、ワークフロー、再利用アセットをつなぐ反復タスクを管理します。",
       "createBuild": "ビルドを作成",
       "name": "名前",
+      "tasks": "タスク",
       "repository": "リポジトリ",
       "prompt": "プロンプト",
       "purpose": "目的",
@@ -734,6 +735,7 @@
     "evaluations": {
       "title": "実行履歴",
       "task": "タスク",
+      "orphanedBuild": "この実行のビルドはもう存在しません。",
       "evaluation": "結果",
       "iteration": "反復",
       "detail": "実行の詳細",

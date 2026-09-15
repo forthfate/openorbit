@@ -387,6 +387,7 @@
       "buildListDescription": "Create and manage recurring tasks that connect a target, workflow, and reusable assets.",
       "createBuild": "Create build",
       "name": "Name",
+      "tasks": "Tasks",
       "repository": "Repository",
       "prompt": "Prompt",
       "purpose": "Purpose",
@@ -735,6 +736,7 @@
     "evaluations": {
       "title": "Runs",
       "task": "Task",
+      "orphanedBuild": "The build for this run no longer exists.",
       "evaluation": "Result",
       "iteration": "Iteration",
       "detail": "Run detail",

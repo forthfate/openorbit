@@ -60,9 +60,14 @@ const pages: Page[] = [
   "issues",
   "settings",
 ];
-const pageFromHash = (): Page => {
-  const page = window.location.hash.slice(1);
-  return pages.includes(page as Page) ? (page as Page) : "dashboard";
+const pageFromLocation = (): Page => {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  if (pages.includes(path as Page)) return path as Page;
+
+  // Preserve links saved before the browser-path migration, then normalize
+  // them on first render below.
+  const legacyHash = window.location.hash.slice(1);
+  return pages.includes(legacyHash as Page) ? (legacyHash as Page) : "dashboard";
 };
 type ConfirmCopy = {
   title: string;
@@ -80,7 +85,7 @@ type AssetDeleteKind =
   | "target-environment";
 
 export default function App() {
-  const [page, setPageState] = useState<Page>(pageFromHash);
+  const [page, setPageState] = useState<Page>(pageFromLocation);
   const [locale, setLocaleState] = useState<Locale>(savedLocale);
   const [theme, setThemeState] = useState(savedTheme);
   const [deletingBuild, setDeletingBuild] = useState<string | null>(null);
@@ -94,16 +99,18 @@ export default function App() {
   const room = useControlRoom();
   const ui = locales[locale].ui;
   useEffect(() => {
-    const sync = () => setPageState(pageFromHash());
-    if (!window.location.hash)
-      window.history.replaceState(null, "", "#dashboard");
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const sync = () => setPageState(pageFromLocation());
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+    if (!pages.includes(path as Page) || window.location.hash)
+      window.history.replaceState(null, "", `/${pageFromLocation()}`);
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
   }, []);
   const setPage = (next: Page) => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    if (window.location.hash === `#${next}`) setPageState(next);
-    else window.location.hash = next;
+    if (window.location.pathname !== `/${next}` || window.location.hash)
+      window.history.pushState(null, "", `/${next}`);
+    setPageState(next);
   };
   const setLocale = (value: Locale) => {
     localStorage.setItem(localeStorageKey, value);
@@ -343,6 +350,7 @@ export default function App() {
         onReject={rejectRun}
         onEmergencyStop={() => setConfirmingEmergencyStop(true)}
         onDeleteRuns={deleteRuns}
+        knownBuilds={room.builds}
       />
     ),
     improvements: <ImprovementsPage

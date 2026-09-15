@@ -669,7 +669,6 @@ function Quick({
     ),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState(""),
     [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
     [graphLoading, setGraphLoading] = useState(true),
     [graphError, setGraphError] = useState("");
@@ -692,8 +691,8 @@ function Quick({
     try {
       await create(item.id, v);
       close();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.creationFailed);
+    } catch {
+      // The parent reports creation failures through the shared toast.
     } finally {
       setBusy(false);
     }
@@ -767,7 +766,6 @@ function Quick({
         </div>
       )}
       <div className="modal-actions">
-        {error && <small className="hint">{error}</small>}
         {review ? (
           <>
             <button className="ghost" onClick={() => setReview(false)}>
@@ -883,6 +881,10 @@ export function BuildsPage(props: {
   const quickStartLabels = localeMessages<
     Record<string, { name: string; description: string }>
   >(locale, "quickStartLabels");
+  const taskCount = (build: Build) =>
+    testCaseSets.find((set) => set.id === build.test_case_set_id)?.cases.length ??
+    build.test_cases?.length ??
+    0;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -980,6 +982,12 @@ export function BuildsPage(props: {
           </span>
         ),
         sortValue: (b) => b.name,
+      },
+      {
+        id: "tasks",
+        header: t.evaluation.tasks,
+        render: (b) => taskCount(b),
+        sortValue: taskCount,
       },
       {
         id: "repository",
@@ -1087,7 +1095,7 @@ export function BuildsPage(props: {
             setOpen(true);
           }}
           className="build-table"
-          gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
+          gridTemplateColumns="36px 1fr 90px 1fr 180px 180px 110px"
         />
         <Pagination
           locale={locale}

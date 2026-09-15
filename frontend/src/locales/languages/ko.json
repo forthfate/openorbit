@@ -386,6 +386,7 @@
       "buildListDescription": "대상, 워크플로, 재사용 자산을 연결한 반복 태스크를 관리합니다.",
       "createBuild": "빌드 생성",
       "name": "이름",
+      "tasks": "태스크",
       "repository": "저장소",
       "prompt": "프롬프트",
       "purpose": "목적",
@@ -734,6 +735,7 @@
     "evaluations": {
       "title": "실행 이력",
       "task": "태스크",
+      "orphanedBuild": "이 실행의 빌드가 더 이상 존재하지 않습니다.",
       "evaluation": "결과",
       "iteration": "반복",
       "detail": "실행 상세",
