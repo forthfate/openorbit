@@ -384,15 +384,22 @@ class RunnerContext:
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 
-    def _state_path(self, name: str) -> Path:
+    def _state_path(self, name: str, scope: str) -> Path:
         state_name = _state_name(name)
-        build_id = str(self.build.get("id") or _sha256(str(self.project_root).encode())[:16])
-        directory = self.app_data / "runner-state" / build_id
+        build_id = _state_name(str(self.build.get("id") or _sha256(str(self.project_root).encode())[:16]))
+        if scope not in {"build", "runner"}:
+            raise ValueError("state scope must be 'build' or 'runner'")
+        directory = self.app_data / "runner-state" / build_id / "build"
+        if scope == "runner":
+            runner_id = _state_name(
+                str(self.build.get("runner_id") or self.environment.get("ORBIT_RUNNER_ID") or "manual")
+            )
+            directory = self.app_data / "runner-state" / build_id / "runners" / runner_id
         directory.mkdir(parents=True, exist_ok=True)
         return directory / f"{state_name}.json"
 
-    def load_state(self, name: str, default: object = None) -> object:
-        """Load mutable, build-scoped runner state from Orbit AppData.
+    def load_state(self, name: str, default: object = None, *, scope: str = "runner") -> object:
+        """Load mutable runner- or build-scoped state from Orbit AppData.
 
         State is separate from immutable run evidence. Use it only for bounded
         continuation data required by a later run, such as a persona's last
@@ -401,11 +408,13 @@ class RunnerContext:
         Args:
             name: Stable state name containing letters, numbers, underscores, or hyphens.
             default: Value returned when no saved state exists.
+            scope: ``"runner"`` for runner-isolated state (the default), or
+                ``"build"`` for state shared by every runner in this build.
 
         Returns:
             The saved JSON value or ``default`` when the named state is absent.
         """
-        path = self._state_path(name)
+        path = self._state_path(name, scope)
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -416,8 +425,8 @@ class RunnerContext:
             raise RuntimeError(f"Orbit runner state is invalid: {name}")
         return document.get("value", default)
 
-    def save_state(self, name: str, value: object) -> dict[str, object]:
-        """Atomically save mutable, build-scoped runner state in Orbit AppData.
+    def save_state(self, name: str, value: object, *, scope: str = "runner") -> dict[str, object]:
+        """Atomically save mutable runner- or build-scoped state in Orbit AppData.
 
         The value is not copied into run evidence. Emit a bounded summary with
         :meth:`emit_result` when a particular state transition needs auditing.
@@ -425,11 +434,13 @@ class RunnerContext:
         Args:
             name: Stable state name containing letters, numbers, underscores, or hyphens.
             value: JSON-safe value to retain for a later invocation of this build.
+            scope: ``"runner"`` for runner-isolated state (the default), or
+                ``"build"`` for state shared by every runner in this build.
 
         Returns:
             State name, update timestamp, and JSON byte size.
         """
-        path = self._state_path(name)
+        path = self._state_path(name, scope)
         try:
             encoded_value = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         except (TypeError, ValueError) as error:
@@ -439,11 +450,17 @@ class RunnerContext:
             "updated_at": datetime.now(UTC).isoformat(),
             "run_id": self.environment.get("ORBIT_RUN_ID") or None,
             "iteration": self.loop_index,
+            "scope": scope,
             "value": json.loads(encoded_value),
         }
         payload = json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
         _atomic_write(path, payload)
-        return {"name": _state_name(name), "updated_at": document["updated_at"], "size": len(payload)}
+        return {
+            "name": _state_name(name),
+            "scope": scope,
+            "updated_at": document["updated_at"],
+            "size": len(payload),
+        }
 
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
         """Atomically materialize runner-owned files outside the target repository.

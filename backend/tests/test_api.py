@@ -1267,7 +1267,9 @@ def test_build_state_exposes_sdk_managed_state(tmp_path, monkeypatch):
         "- id: persona-quality\n  name: Persona quality\n  enabled: true\n  repository: ''\n",
         encoding="utf-8",
     )
-    state_dir = tmp_path / "app-data" / "runner-state" / "persona-quality"
+    state_dir = (
+        tmp_path / "app-data" / "runner-state" / "persona-quality" / "runners" / "persona-journey-runner"
+    )
     state_dir.mkdir(parents=True)
     (state_dir / "persona-journey.json").write_text(
         json.dumps(
@@ -1285,6 +1287,8 @@ def test_build_state_exposes_sdk_managed_state(tmp_path, monkeypatch):
     assert store_module.ConsoleStore().build_state("persona-quality") == [
         {
             "name": "persona-journey",
+            "scope": "runner",
+            "runner_id": "persona-journey-runner",
             "updated_at": "2026-09-14T00:00:00+00:00",
             "run_id": "run-1",
             "iteration": 2,

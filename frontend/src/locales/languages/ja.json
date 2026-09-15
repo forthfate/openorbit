@@ -612,6 +612,8 @@
       "noStoredState": "このビルドにはまだ保存された状態がありません。",
       "updated": "更新",
       "rawState": "生の状態を表示",
+      "buildState": "ビルド状態",
+      "runnerState": "ランナー状態",
       "relatedRuns": "このビルドの実行",
       "relatedRunsHint": "選択したビルドの実行中の作業と最近完了した実行を確認します。",
       "noRelatedRuns": "このビルドの実行履歴はまだありません。",
