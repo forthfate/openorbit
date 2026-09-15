@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "id": "openorbit.agent-self-improvement",
-  "version": "1.1.1",
-  "name": "Agent self-improvement",
-  "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
+  "id": "openorbit.critical-flow-proof",
+  "version": "1.0.2",
+  "name": "Critical flow proof",
+  "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
   "publisher": {
     "name": "OpenOrbit"
   },
@@ -13,67 +13,76 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "Agent self-improvement",
-      "placeholder": "e.g. Support agent prompt improvement",
+      "default": "Critical flow proof",
+      "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
     },
     {
       "key": "repository",
-      "label": "Git repository",
+      "label": "Target repository",
       "type": "workspace",
       "required": true,
-      "placeholder": "/absolute/path/to/your-git-repository",
+      "placeholder": "/absolute/path/to/your-repository",
       "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
-      "label": "Browser base URL (optional)",
+      "label": "Browser base URL",
       "type": "url",
-      "required": false,
-      "placeholder": "Not used for target-AI response evaluation",
-      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
-    },
-    {
-      "key": "managed_prompt_path",
-      "label": "Agent prompt file path",
-      "type": "string",
       "required": true,
-      "default": "examples/agent-improvement-sample-prompt.md",
-      "placeholder": "e.g. prompts/system.md",
-      "tooltip": "Path relative to the repository for the prompt file managed by the improvement cycle."
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence."
     },
     {
       "key": "journey_name",
-      "label": "Test case name",
+      "label": "Critical flow name",
       "type": "string",
       "required": true,
-      "default": "Missing refund context",
-      "placeholder": "e.g. Missing order details",
+      "default": "Complete a critical task",
+      "placeholder": "e.g. Sign in and complete checkout",
       "tooltip": "Short, stable name shown for this fixed evaluation case."
     },
     {
-      "key": "journey_prompt",
-      "label": "User request",
+      "key": "journey_path",
+      "label": "Start path",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. I need a refund, but I do not have my order number.",
-      "tooltip": "The exact user request or task supplied to the evaluated target."
+      "default": "/",
+      "placeholder": "e.g. /checkout",
+      "tooltip": "Path opened first by the browser journey, relative to the browser base URL."
+    },
+    {
+      "key": "journey_prompt",
+      "label": "User actions",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. Sign in, add an item, and complete checkout.",
+      "tooltip": "The exact user actions or request used to exercise the target."
     },
     {
       "key": "acceptance",
       "label": "Success condition",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. The response is complete, grounded, and has no error.",
+      "placeholder": "e.g. The confirmation page shows the completed order.",
       "tooltip": "Observable evidence required for this case to be considered successful."
+    },
+    {
+      "key": "focus",
+      "label": "Review focus",
+      "type": "string",
+      "required": true,
+      "default": "completion, recovery, and user-visible evidence",
+      "placeholder": "e.g. clear recovery from a failed checkout",
+      "tooltip": "The product behavior or experience that the repeated journey should prioritize."
     },
     {
       "key": "profile_name",
       "label": "AI model profile name",
       "type": "string",
       "required": true,
-      "default": "Agent improvement AI",
-      "placeholder": "e.g. Agent evaluation GPT-4o",
+      "default": "Journey supervisor",
+      "placeholder": "e.g. Production evaluation supervisor",
       "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
     },
     {
@@ -92,7 +101,7 @@
           "label": "AWS Bedrock"
         }
       ],
-      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
+      "tooltip": "Select the provider that serves the supervisor model."
     },
     {
       "key": "model",
@@ -132,22 +141,23 @@
   "assets": {
     "runner": {
       "name": "${build_name} runner",
-      "description": "Agent self-improvement runner created by Quick Start.",
-      "template_id": "native-improvement-cycle",
+      "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
+      "template_id": "playwright-continuous-journey",
       "source_file": "runner.py"
     },
     "prompt_template": {
       "name": "${build_name} policy",
       "version": 1,
-      "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met."
+      "content": "Review rendered evidence for ${focus}. Preserve user safety, explain evidence, and propose only reversible improvements."
     },
     "test_case_set": {
-      "name": "${build_name} validation",
-      "description": "A fixed agent validation journey created by Quick Start.",
+      "name": "${build_name} journeys",
+      "description": "A bounded recurring user journey.",
       "cases": [
         {
-          "id": "agent-journey",
+          "id": "critical-flow",
           "name": "${journey_name}",
+          "path": "${journey_path}",
           "prompt": "${journey_prompt}",
           "acceptance": "${acceptance}"
         }
@@ -155,13 +165,13 @@
     },
     "execution_environment": {
       "name": "${build_name} execution",
-      "executor_type": "local"
+      "executor_type": "local",
+      "environment_variables": {}
     },
     "target_environment": {
       "name": "${build_name} target",
       "repository": "${repository}",
-      "browser_base_url": "${base_url}",
-      "managed_prompt_path": "${managed_prompt_path}"
+      "browser_base_url": "${base_url}"
     },
     "model_profile": {
       "profile_name": "${profile_name}",
@@ -174,12 +184,13 @@
   },
   "build": {
     "name": "${build_name}",
-    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
+    "purpose": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
+    "browser_base_url": "${base_url}",
     "model_profile_name": "${profile_name}",
     "timezone": "Asia/Tokyo",
-    "repeat_interval_minutes": 30,
-    "run_limit": 3,
-    "approval_score": 8,
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
     "enabled": true
   }
 }

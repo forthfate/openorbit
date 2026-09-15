@@ -33,6 +33,6 @@ export type WorkflowStep = { id:string; phase:'before_all'|'before_each'|'execut
 export type Workflow = { id:string; name:string; description:string; kind:string; enabled:boolean; risk:string; steps?:WorkflowStep[] }
 export type RunnerAsset = { id:string; name:string; description:string; template_id:string; source:string;version:number;versions?:{version:number;source:string;sha256?:string;created_at?:string}[];created_at?:string }
 export type RunnerTemplate = { id:string; name:string; description:string; source:string; origin?:'built-in'|'user' }
-export type QuickStartParameter = {key:string;label:string;type:'string'|'workspace'|'url'|'model_profile'|'select';required?:boolean;default?:string;description?:string;placeholder?:string;options?:{value:string;label:string}[]}
+export type QuickStartParameter = {key:string;label:string;type:'string'|'workspace'|'url'|'model_profile'|'select';required?:boolean;default?:string;description?:string;tooltip?:string;placeholder?:string;options?:{value:string;label:string}[]}
 export type QuickStart = {schema_version:number;id:string;version:string;name:string;description:string;publisher?:{name:string;url?:string};parameters:QuickStartParameter[]}
 export type Dashboard = { active_builds:Build[]; active_runs:Run[]; recent_runs?:Run[]; metrics:{builds:number;completed_evaluations:number;commits:number} }

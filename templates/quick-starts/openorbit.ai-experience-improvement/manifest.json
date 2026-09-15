@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "id": "openorbit.ai-slo-drift-monitor",
-  "version": "1.0.1",
-  "name": "AI SLO and behavior drift monitor",
-  "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
+  "id": "openorbit.ai-experience-improvement",
+  "version": "1.0.0",
+  "name": "AI experience improvement",
+  "description": "Repeatedly observe a real AI experience through a bounded adapter and retain structured evidence for supervised improvements.",
   "publisher": {
     "name": "OpenOrbit"
   },
@@ -13,8 +13,8 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "AI operational SLO monitor",
-      "placeholder": "e.g. Production AI SLO monitor",
+      "default": "AI experience improvement",
+      "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
     },
     {
@@ -26,30 +26,28 @@
       "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
-      "key": "probe_command",
-      "label": "Structured evaluator command",
+      "key": "agent_command",
+      "label": "AI adapter command",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. uv run ai-eval",
-      "description": "A command that supports preflight, prepare, run-probes, and collect-evidence and returns JSON for each action.",
-      "tooltip": "Command OpenOrbit invokes once per probe action. It must return one JSON object to stdout."
+      "placeholder": "e.g. uv run product-agent",
+      "tooltip": "Command OpenOrbit invokes for one bounded AI-adapter action. It must return before OpenOrbit schedules another iteration."
     },
     {
-      "key": "slo_focus",
-      "label": "SLO focus",
+      "key": "experience_goal",
+      "label": "User experience goal",
       "type": "string",
       "required": true,
-      "default": "response quality, policy compliance, latency, and cost",
-      "placeholder": "e.g. grounded answers and p95 latency under 3 seconds",
-      "tooltip": "Quality, safety, latency, or cost objectives that the fixed probe matrix should assess."
+      "placeholder": "e.g. help users resolve a billing question safely",
+      "tooltip": "The user outcome that the external AI adapter should evaluate or improve."
     },
     {
       "key": "profile_name",
       "label": "AI model profile name",
       "type": "string",
       "required": true,
-      "default": "AI operations supervisor",
-      "placeholder": "e.g. Production AI operations supervisor",
+      "default": "Journey supervisor",
+      "placeholder": "e.g. Production evaluation supervisor",
       "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
     },
     {
@@ -68,7 +66,7 @@
           "label": "AWS Bedrock"
         }
       ],
-      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
+      "tooltip": "Select the provider that serves the supervisor model."
     },
     {
       "key": "model",
@@ -108,25 +106,25 @@
   "assets": {
     "runner": {
       "name": "${build_name} runner",
-      "description": "Evidence-gated AI SLO and drift monitor created by Quick Start.",
-      "template_id": "evidence-gated-probe-cycle",
+      "description": "Bounded external AI experience runner.",
+      "template_id": "json-agent-cycle",
       "source_file": "runner.py"
     },
     "prompt_template": {
       "name": "${build_name} policy",
       "version": 1,
-      "content": "Review the fixed AI SLO evidence for ${slo_focus}. Compare each reported metric with its retained baseline and threshold. Report only evidence-backed drift, regressions, or risks; propose reversible improvements with explicit validation and rollback steps."
+      "content": "Review the retained AI experience evidence for ${experience_goal}. Identify only evidence-backed user harm, friction, or regressions and propose reversible improvements."
     },
     "test_case_set": {
-      "name": "${build_name} probe matrix",
-      "description": "A fixed, repeatable AI operational SLO probe matrix.",
+      "name": "${build_name} goal",
+      "description": "One recurring AI experience goal.",
       "cases": [
         {
-          "id": "ai-slo-drift",
-          "name": "AI SLO and behavior drift",
+          "id": "ai-experience",
+          "name": "${experience_goal}",
           "path": "/",
-          "prompt": "Evaluate ${slo_focus} against the evaluator's fixed representative input matrix.",
-          "acceptance": "Return structured current metrics, baseline comparisons, configured thresholds, outliers, and reproducible evidence for every detected drift."
+          "prompt": "Assess ${experience_goal}.",
+          "acceptance": "Return structured evidence, risks, and an explicit next check."
         }
       ]
     },
@@ -134,7 +132,7 @@
       "name": "${build_name} execution",
       "executor_type": "local",
       "environment_variables": {
-        "ORBIT_PROBE_COMMAND": "${probe_command}"
+        "ORBIT_AGENT_COMMAND": "${agent_command}"
       }
     },
     "target_environment": {
@@ -152,12 +150,12 @@
   },
   "build": {
     "name": "${build_name}",
-    "purpose": "Continuously monitor AI operational SLOs and behavior drift with retained evidence.",
+    "purpose": "Continuously learn from a real AI experience: ${experience_goal}.",
     "model_profile_name": "${profile_name}",
     "timezone": "Asia/Tokyo",
-    "repeat_interval_minutes": 1440,
-    "run_limit": 30,
-    "approval_score": 8,
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
     "enabled": true
   }
 }

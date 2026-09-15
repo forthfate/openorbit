@@ -987,6 +987,45 @@ def test_template_translation_cache_only_accepts_display_text_shape(tmp_path, mo
         )
 
 
+def test_quick_start_translation_includes_placeholders_and_tooltips(monkeypatch):
+    store = store_module.ConsoleStore()
+    manifest = {
+        "id": "example.translated-quick-start",
+        "name": "Translated quick start",
+        "description": "Checks translated form help.",
+        "parameters": [
+            {
+                "key": "repository",
+                "label": "Repository",
+                "placeholder": "/absolute/path/to/repository",
+                "tooltip": "The workspace that OpenOrbit inspects.",
+            }
+        ],
+    }
+    monkeypatch.setattr(store, "quick_starts", lambda: [manifest])
+
+    source = store.template_translation_input("quick-start", manifest["id"])
+    translated = store.validate_template_translation(
+        source,
+        {
+            "name": "번역된 퀵스타트",
+            "description": "번역된 폼 도움말을 확인합니다.",
+            "parameters": [
+                {
+                    "label": "저장소",
+                    "placeholder": "/절대/경로/저장소",
+                    "tooltip": "OpenOrbit이 검사할 작업공간입니다.",
+                }
+            ],
+        },
+    )
+
+    assert source["parameters"][0]["placeholder"] == "/absolute/path/to/repository"
+    assert source["parameters"][0]["tooltip"] == "The workspace that OpenOrbit inspects."
+    assert translated["parameters"][0]["placeholder"] == "/절대/경로/저장소"
+    assert translated["parameters"][0]["tooltip"] == "OpenOrbit이 검사할 작업공간입니다."
+
+
 def test_v1_project_list_uses_gitlab_style_pagination_headers():
     response = TestClient(app).get("/api/v1/projects?page=1&per_page=1")
     assert response.status_code == 200

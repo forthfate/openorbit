@@ -14,21 +14,24 @@
       "type": "string",
       "required": true,
       "default": "Site exploration review",
-      "placeholder": "e.g. Production site exploration review"
+      "placeholder": "e.g. Production site exploration review",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
     },
     {
       "key": "repository",
       "label": "Target repository",
       "type": "workspace",
       "required": true,
-      "placeholder": "/absolute/path/to/your-repository"
+      "placeholder": "/absolute/path/to/your-repository",
+      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
       "label": "Browser base URL",
       "type": "url",
       "required": true,
-      "placeholder": "http://localhost:3000"
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
     },
     {
       "key": "review_focus",
@@ -36,7 +39,8 @@
       "type": "string",
       "required": true,
       "default": "clarity, usefulness, and friction",
-      "placeholder": "e.g. first-time visitor experience"
+      "placeholder": "e.g. first-time visitor experience",
+      "tooltip": "Product experience, route, or concern the site review should prioritize."
     },
     {
       "key": "profile_name",
@@ -44,7 +48,8 @@
       "type": "string",
       "required": true,
       "default": "Site exploration AI",
-      "placeholder": "e.g. Production site exploration supervisor"
+      "placeholder": "e.g. Production site exploration supervisor",
+      "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
     },
     {
       "key": "provider",
@@ -61,21 +66,24 @@
           "value": "aws-bedrock",
           "label": "AWS Bedrock"
         }
-      ]
+      ],
+      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
     },
     {
       "key": "model",
       "label": "Model / deployment",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. gpt-4o"
+      "placeholder": "e.g. gpt-4o",
+      "tooltip": "Provider model ID or deployment name used for evaluation."
     },
     {
       "key": "endpoint",
       "label": "Provider endpoint",
       "type": "url",
       "required": false,
-      "placeholder": "https://your-resource.openai.azure.com"
+      "placeholder": "https://your-resource.openai.azure.com",
+      "tooltip": "Provider base endpoint. Azure OpenAI requires this; Bedrock can leave it blank."
     },
     {
       "key": "region",
@@ -83,7 +91,8 @@
       "type": "string",
       "required": true,
       "default": "us-east-1",
-      "placeholder": "e.g. eastus"
+      "placeholder": "e.g. eastus",
+      "tooltip": "Cloud region used by the selected provider, such as eastus or us-east-1."
     },
     {
       "key": "secret_env",
@@ -91,7 +100,8 @@
       "type": "string",
       "required": true,
       "default": "AZURE_OPENAI_API_KEY",
-      "placeholder": "e.g. AZURE_OPENAI_API_KEY"
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY",
+      "tooltip": "Name of the environment variable that holds the provider API key or credentials."
     }
   ],
   "assets": {

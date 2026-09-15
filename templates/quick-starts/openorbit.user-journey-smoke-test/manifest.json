@@ -14,21 +14,24 @@
       "type": "string",
       "required": true,
       "default": "Browser quality check",
-      "placeholder": "e.g. Production browser smoke test"
+      "placeholder": "e.g. Production browser smoke test",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
     },
     {
       "key": "repository",
       "label": "Target repository",
       "type": "workspace",
       "required": true,
-      "placeholder": "/absolute/path/to/your-repository"
+      "placeholder": "/absolute/path/to/your-repository",
+      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
       "key": "base_url",
       "label": "Browser base URL",
       "type": "url",
       "required": true,
-      "placeholder": "http://localhost:3000"
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
     },
     {
       "key": "journey_name",
@@ -36,7 +39,8 @@
       "type": "string",
       "required": true,
       "default": "Home page smoke test",
-      "placeholder": "e.g. Sign in and view orders"
+      "placeholder": "e.g. Sign in and view orders",
+      "tooltip": "Short, stable name shown for this fixed evaluation case."
     },
     {
       "key": "journey_path",
@@ -44,28 +48,32 @@
       "type": "string",
       "required": true,
       "default": "/",
-      "placeholder": "e.g. /login"
+      "placeholder": "e.g. /login",
+      "tooltip": "Path opened first by the browser journey, relative to the browser base URL."
     },
     {
       "key": "journey_prompt",
       "label": "User actions",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. Sign in with the test account and open order history."
+      "placeholder": "e.g. Sign in with the test account and open order history.",
+      "tooltip": "The exact user request or task supplied to the evaluated target."
     },
     {
       "key": "acceptance",
       "label": "Success condition",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. The order history page loads without an error."
+      "placeholder": "e.g. The order history page loads without an error.",
+      "tooltip": "Observable evidence required for this case to be considered successful."
     },
     {
       "key": "expected_text",
       "label": "Expected visible text (optional)",
       "type": "string",
       "required": false,
-      "placeholder": "e.g. Recent orders"
+      "placeholder": "e.g. Recent orders",
+      "tooltip": "Optional text that must be visibly rendered for the browser case to pass."
     },
     {
       "key": "profile_name",
@@ -73,7 +81,8 @@
       "type": "string",
       "required": true,
       "default": "Browser quality AI",
-      "placeholder": "e.g. Evaluation GPT-4o"
+      "placeholder": "e.g. Evaluation GPT-4o",
+      "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
     },
     {
       "key": "provider",
@@ -90,21 +99,24 @@
           "value": "aws-bedrock",
           "label": "AWS Bedrock"
         }
-      ]
+      ],
+      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
     },
     {
       "key": "model",
       "label": "Model / deployment",
       "type": "string",
       "required": true,
-      "placeholder": "e.g. gpt-4o"
+      "placeholder": "e.g. gpt-4o",
+      "tooltip": "Provider model ID or deployment name used for evaluation."
     },
     {
       "key": "endpoint",
       "label": "Provider endpoint",
       "type": "url",
       "required": false,
-      "placeholder": "https://your-resource.openai.azure.com"
+      "placeholder": "https://your-resource.openai.azure.com",
+      "tooltip": "Provider base endpoint. Azure OpenAI requires this; Bedrock can leave it blank."
     },
     {
       "key": "region",
@@ -112,7 +124,8 @@
       "type": "string",
       "required": true,
       "default": "us-east-1",
-      "placeholder": "e.g. eastus"
+      "placeholder": "e.g. eastus",
+      "tooltip": "Cloud region used by the selected provider, such as eastus or us-east-1."
     },
     {
       "key": "secret_env",
@@ -120,7 +133,8 @@
       "type": "string",
       "required": true,
       "default": "AZURE_OPENAI_API_KEY",
-      "placeholder": "e.g. AZURE_OPENAI_API_KEY"
+      "placeholder": "e.g. AZURE_OPENAI_API_KEY",
+      "tooltip": "Name of the environment variable that holds the provider API key or credentials."
     }
   ],
   "assets": {

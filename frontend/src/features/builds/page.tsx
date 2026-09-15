@@ -76,6 +76,7 @@ type QuickStartTranslation = {
   parameters?: {
     label: string;
     description?: string;
+    tooltip?: string;
     placeholder?: string;
     options?: { label: string }[];
   }[];
@@ -730,7 +731,7 @@ function Quick({
       ) : (
         <div className="modal-form">
           {display.parameters.map((p) => (
-            <Field key={p.key} label={p.label}>
+            <Field key={p.key} label={p.label} description={p.tooltip ?? p.description}>
               {p.type === "select" ? (
                 <select
                   value={v[p.key]}

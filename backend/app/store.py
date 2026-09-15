@@ -363,6 +363,7 @@ class ConsoleStore:
                     {
                         **{"label": parameter["label"]},
                         **({"description": parameter["description"]} if "description" in parameter else {}),
+                        **({"tooltip": parameter["tooltip"]} if "tooltip" in parameter else {}),
                         **({"placeholder": parameter["placeholder"]} if "placeholder" in parameter else {}),
                         **(
                             {
@@ -545,6 +546,8 @@ class ConsoleStore:
         }
 
     def quick_starts(self) -> list[dict[str, Any]]:
+        builtins = self._built_in_quick_starts()
+        builtin_ids = {str(item.get("id", "")) for item in builtins}
         custom = []
         package_ids: set[str] = set()
         for directory in sorted(path for path in QUICK_STARTS.iterdir() if path.is_dir()):
@@ -560,15 +563,16 @@ class ConsoleStore:
             except (OSError, ValueError, json.JSONDecodeError):
                 continue
             package_ids.add(str(manifest.get("id", directory.name)))
-            custom.append(manifest)
+            if str(manifest.get("id", directory.name)) not in builtin_ids:
+                custom.append(manifest)
         for path in sorted(QUICK_STARTS.glob("*.json")):
             try:
                 manifest = json.loads(path.read_text(encoding="utf-8"))
-                if str(manifest.get("id")) not in package_ids:
+                if str(manifest.get("id")) not in package_ids | builtin_ids:
                     custom.append(manifest)
             except (OSError, ValueError):
                 continue
-        manifests = [*self._built_in_quick_starts(), *custom]
+        manifests = [*builtins, *custom]
         return [self._public_quick_start(item) for item in manifests]
 
     def preview_quick_start_graph(self, quick_start_id: str) -> dict[str, Any] | None:

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "id": "openorbit.ai-slo-drift-monitor",
-  "version": "1.0.1",
-  "name": "AI SLO and behavior drift monitor",
-  "description": "Repeatedly assess AI quality, safety, latency, and cost against a fixed baseline. Connects an existing structured AI evaluator; OpenOrbit retains the evidence, supervision, and improvement decisions.",
+  "id": "openorbit.continuous-user-journey",
+  "version": "2.0.0",
+  "name": "Continuous user journey",
+  "description": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
   "publisher": {
     "name": "OpenOrbit"
   },
@@ -13,43 +13,58 @@
       "label": "Evaluation name",
       "type": "string",
       "required": true,
-      "default": "AI operational SLO monitor",
-      "placeholder": "e.g. Production AI SLO monitor",
+      "default": "Continuous user journey",
+      "placeholder": "e.g. Production journey evaluation",
       "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
     },
     {
       "key": "repository",
-      "label": "Evaluator workspace",
+      "label": "Target repository",
       "type": "workspace",
       "required": true,
-      "placeholder": "/absolute/path/to/your-ai-evaluator",
+      "placeholder": "/absolute/path/to/your-repository",
       "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
     },
     {
-      "key": "probe_command",
-      "label": "Structured evaluator command",
-      "type": "string",
+      "key": "base_url",
+      "label": "Browser base URL",
+      "type": "url",
       "required": true,
-      "placeholder": "e.g. uv run ai-eval",
-      "description": "A command that supports preflight, prepare, run-probes, and collect-evidence and returns JSON for each action.",
-      "tooltip": "Command OpenOrbit invokes once per probe action. It must return one JSON object to stdout."
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence."
     },
     {
-      "key": "slo_focus",
-      "label": "SLO focus",
+      "key": "persona",
+      "label": "User perspective",
       "type": "string",
       "required": true,
-      "default": "response quality, policy compliance, latency, and cost",
-      "placeholder": "e.g. grounded answers and p95 latency under 3 seconds",
-      "tooltip": "Quality, safety, latency, or cost objectives that the fixed probe matrix should assess."
+      "placeholder": "e.g. a first-time small-business owner",
+      "tooltip": "The user perspective that guides the simulated journey and its decisions."
+    },
+    {
+      "key": "goal",
+      "label": "Ongoing goal",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. understand whether I can complete my first task safely",
+      "tooltip": "The concrete outcome the critical flow should prove with retained evidence."
+    },
+    {
+      "key": "focus",
+      "label": "What to learn",
+      "type": "string",
+      "required": true,
+      "default": "clarity, safe next actions, and friction",
+      "placeholder": "e.g. clear recovery from a failed checkout",
+      "tooltip": "The product behavior or experience that the repeated journey should prioritize."
     },
     {
       "key": "profile_name",
       "label": "AI model profile name",
       "type": "string",
       "required": true,
-      "default": "AI operations supervisor",
-      "placeholder": "e.g. Production AI operations supervisor",
+      "default": "Journey supervisor",
+      "placeholder": "e.g. Production evaluation supervisor",
       "tooltip": "Name for the model profile that this Quick Start creates and assigns to the build."
     },
     {
@@ -68,7 +83,7 @@
           "label": "AWS Bedrock"
         }
       ],
-      "tooltip": "Select the provider that serves the supervisor and, where applicable, target AI model."
+      "tooltip": "Select the provider that serves the supervisor model."
     },
     {
       "key": "model",
@@ -107,39 +122,38 @@
   ],
   "assets": {
     "runner": {
-      "name": "${build_name} runner",
-      "description": "Evidence-gated AI SLO and drift monitor created by Quick Start.",
-      "template_id": "evidence-gated-probe-cycle",
+      "name": "${build_name} autonomous persona runner",
+      "description": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
+      "template_id": "autonomous-persona-journey",
       "source_file": "runner.py"
     },
     "prompt_template": {
       "name": "${build_name} policy",
       "version": 1,
-      "content": "Review the fixed AI SLO evidence for ${slo_focus}. Compare each reported metric with its retained baseline and threshold. Report only evidence-backed drift, regressions, or risks; propose reversible improvements with explicit validation and rollback steps."
+      "content": "Review rendered evidence for ${focus}. Preserve user safety, explain evidence, and propose only reversible improvements."
     },
     "test_case_set": {
-      "name": "${build_name} probe matrix",
-      "description": "A fixed, repeatable AI operational SLO probe matrix.",
+      "name": "${build_name} journeys",
+      "description": "A bounded recurring user journey.",
       "cases": [
         {
-          "id": "ai-slo-drift",
-          "name": "AI SLO and behavior drift",
+          "id": "persona-journey",
+          "name": "${persona}",
           "path": "/",
-          "prompt": "Evaluate ${slo_focus} against the evaluator's fixed representative input matrix.",
-          "acceptance": "Return structured current metrics, baseline comparisons, configured thresholds, outliers, and reproducible evidence for every detected drift."
+          "prompt": "As ${persona}, pursue this goal over repeated visits: ${goal}. ${focus}.",
+          "acceptance": "Retain rendered evidence and a specific next check; do not claim success without a visible result."
         }
       ]
     },
     "execution_environment": {
       "name": "${build_name} execution",
       "executor_type": "local",
-      "environment_variables": {
-        "ORBIT_PROBE_COMMAND": "${probe_command}"
-      }
+      "environment_variables": {}
     },
     "target_environment": {
       "name": "${build_name} target",
-      "repository": "${repository}"
+      "repository": "${repository}",
+      "browser_base_url": "${base_url}"
     },
     "model_profile": {
       "profile_name": "${profile_name}",
@@ -152,12 +166,13 @@
   },
   "build": {
     "name": "${build_name}",
-    "purpose": "Continuously monitor AI operational SLOs and behavior drift with retained evidence.",
+    "purpose": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
+    "browser_base_url": "${base_url}",
     "model_profile_name": "${profile_name}",
     "timezone": "Asia/Tokyo",
-    "repeat_interval_minutes": 1440,
-    "run_limit": 30,
-    "approval_score": 8,
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
     "enabled": true
   }
 }
