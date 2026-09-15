@@ -134,6 +134,26 @@
         "modelDeployment": {
           "label": "모델 / 배포 이름",
           "hint": "호출할 프로바이더별 모델 또는 배포 이름입니다."
+        },
+        "azureEndpoint": {
+          "label": "Azure 엔드포인트",
+          "hint": "https://your-resource.openai.azure.com 같은 Azure OpenAI 리소스 엔드포인트입니다."
+        },
+        "region": {
+          "label": "리전",
+          "hint": "eastus 또는 us-east-1처럼 이 프로바이더에 사용하는 클라우드 리전입니다."
+        },
+        "awsProfile": {
+          "label": "AWS CLI 프로필(선택 사항)",
+          "hint": "Bedrock 요청에 사용할 선택적 로컬 AWS CLI 자격 증명 프로필입니다."
+        },
+        "secretEnv": {
+          "label": "시크릿 환경 변수",
+          "hint": "이 프로바이더의 API 키나 자격 증명을 담은 환경 변수 이름입니다."
+        },
+        "createNewAiProfile": {
+          "label": "새 AI 모델 프로필 생성…",
+          "hint": "이 빌드에 새 AI 모델 프로필을 생성하고 할당합니다."
         }
       }
     },

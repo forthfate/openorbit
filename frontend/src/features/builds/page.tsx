@@ -86,6 +86,11 @@ export type ProfileFormCopy = {
   profileName: LabelCopy;
   provider: LabelCopy;
   modelDeployment: LabelCopy;
+  azureEndpoint: LabelCopy;
+  region: LabelCopy;
+  awsProfile: LabelCopy;
+  secretEnv: LabelCopy;
+  createNewAiProfile: LabelCopy;
 };
 type BuildWizardCopy = {
   basics: string;
@@ -210,12 +215,16 @@ const Field = ({
   label,
   description,
   children,
+  as = "label",
 }: {
   label: string;
   description?: string;
   children: ReactNode;
-}) => (
-  <label className="modal-setting-row">
+  as?: "div" | "label";
+}) => {
+  const Container = as;
+  return (
+  <Container className="modal-setting-row">
     <span>
       {description ? (
         <SectionInfo title={label} description={description} />
@@ -224,8 +233,9 @@ const Field = ({
       )}
     </span>
     {children}
-  </label>
-);
+  </Container>
+  );
+};
 export function ProfileForm({
   settings,
   setSettings,
@@ -272,7 +282,7 @@ export function ProfileForm({
       </Field>
       {settings.provider === "azure-openai" ? (
         <>
-          <Field label={t.azureEndpoint}>
+          <Field label={t.azureEndpoint} description={help.azureEndpoint.hint}>
             <input
               type="url"
               placeholder="https://your-resource.openai.azure.com"
@@ -282,7 +292,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.secretEnv}>
+          <Field label={t.secretEnv} description={help.secretEnv.hint}>
             <input
               placeholder="AZURE_OPENAI_API_KEY"
               value={settings.secret_env}
@@ -294,7 +304,7 @@ export function ProfileForm({
         </>
       ) : (
         <>
-          <Field label={t.region}>
+          <Field label={t.region} description={help.region.hint}>
             <input
               placeholder="us-east-1"
               value={settings.region}
@@ -303,7 +313,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.awsProfile}>
+          <Field label={t.awsProfile} description={help.awsProfile.hint}>
             <input
               placeholder="default"
               value={settings.aws_profile ?? ""}
@@ -655,7 +665,9 @@ function Quick({
   locale: Locale;
 }) {
   const t = locales[locale].ui;
+  const profileCopy = localeMessages<{ profileForm: ProfileFormCopy }>(locale, "settingsPage").profileForm;
   const display = item;
+  const createProfileValue = "__create_model_profile__";
   const [v, setV] = useState<Record<string, string>>(() =>
       Object.fromEntries(
         item.parameters.map((p) => [
@@ -667,6 +679,15 @@ function Quick({
         ]),
       ),
     ),
+    [newProfile, setNewProfile] = useState<Settings>({
+      profile_name: "",
+      provider: "azure-openai",
+      model: "",
+      endpoint: "",
+      region: "us-east-1",
+      secret_env: "AZURE_OPENAI_API_KEY",
+      aws_profile: "",
+    }),
     [review, setReview] = useState(false),
     [busy, setBusy] = useState(false),
     [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
@@ -689,7 +710,21 @@ function Quick({
   const submit = async () => {
     setBusy(true);
     try {
-      await create(item.id, v);
+      const profileParameter = display.parameters.find((parameter) => parameter.type === "model_profile");
+      const inputs = { ...v };
+      if (profileParameter && inputs[profileParameter.key] === createProfileValue) {
+        inputs[profileParameter.key] = newProfile.profile_name;
+        Object.assign(inputs, {
+          __model_profile_mode: "create",
+          __model_profile_provider: newProfile.provider,
+          __model_profile_model: newProfile.model,
+          __model_profile_endpoint: newProfile.endpoint,
+          __model_profile_region: newProfile.region,
+          __model_profile_secret_env: newProfile.secret_env,
+          __model_profile_aws_profile: newProfile.aws_profile ?? "",
+        });
+      }
+      await create(item.id, inputs);
       close();
     } catch {
       // The parent reports creation failures through the shared toast.
@@ -722,15 +757,97 @@ function Quick({
             {display.parameters.map((p) => (
               <>
                 <dt key={`${p.key}a`}>{p.label}</dt>
-                <dd key={`${p.key}b`}>{v[p.key] || "—"}</dd>
+                <dd key={`${p.key}b`}>
+                  {p.type === "model_profile" && v[p.key] === createProfileValue
+                    ? newProfile.profile_name || "—"
+                    : v[p.key] || "—"}
+                </dd>
               </>
             ))}
           </dl>
         </div>
       ) : (
         <div className="modal-form">
-          {display.parameters.map((p) => (
-            <Field key={p.key} label={p.label} description={p.tooltip ?? p.description}>
+          {display.parameters.map((p) =>
+            p.type === "model_profile" ? (
+              <div className="quick-start-model-profile" key={p.key}>
+                <Field label={p.label} description={p.tooltip ?? p.description} as="div">
+                  <select
+                    value={v[p.key]}
+                    onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
+                  >
+                    {profiles.map((x) => (
+                      <option key={x.profile_name} value={x.profile_name}>
+                        {x.profile_name}
+                      </option>
+                    ))}
+                    <option value={createProfileValue}>{profileCopy.createNewAiProfile.label}</option>
+                  </select>
+                </Field>
+                {v[p.key] === createProfileValue && (
+                  <div className="quick-start-profile-form">
+                    <Field label={profileCopy.profileName.label} description={profileCopy.profileName.hint}>
+                      <input
+                        value={newProfile.profile_name}
+                        onChange={(e) => setNewProfile({ ...newProfile, profile_name: e.target.value })}
+                      />
+                    </Field>
+                    <Field label={profileCopy.provider.label} description={profileCopy.provider.hint}>
+                      <select
+                        value={newProfile.provider}
+                        onChange={(e) => setNewProfile({ ...newProfile, provider: e.target.value })}
+                      >
+                        <option value="azure-openai">Azure OpenAI</option>
+                        <option value="aws-bedrock">AWS Bedrock</option>
+                      </select>
+                    </Field>
+                    <Field label={profileCopy.modelDeployment.label} description={profileCopy.modelDeployment.hint}>
+                      <input
+                        value={newProfile.model}
+                        onChange={(e) => setNewProfile({ ...newProfile, model: e.target.value })}
+                      />
+                    </Field>
+                    {newProfile.provider === "azure-openai" ? (
+                      <>
+                        <Field label={profileCopy.azureEndpoint.label} description={profileCopy.azureEndpoint.hint}>
+                          <input
+                            type="url"
+                            placeholder="https://your-resource.openai.azure.com"
+                            value={newProfile.endpoint}
+                            onChange={(e) => setNewProfile({ ...newProfile, endpoint: e.target.value })}
+                          />
+                        </Field>
+                        <Field label={profileCopy.secretEnv.label} description={profileCopy.secretEnv.hint}>
+                          <input
+                            placeholder="AZURE_OPENAI_API_KEY"
+                            value={newProfile.secret_env}
+                            onChange={(e) => setNewProfile({ ...newProfile, secret_env: e.target.value })}
+                          />
+                        </Field>
+                      </>
+                    ) : (
+                      <>
+                        <Field label={profileCopy.region.label} description={profileCopy.region.hint}>
+                          <input
+                            placeholder="us-east-1"
+                            value={newProfile.region}
+                            onChange={(e) => setNewProfile({ ...newProfile, region: e.target.value })}
+                          />
+                        </Field>
+                        <Field label={profileCopy.awsProfile.label} description={profileCopy.awsProfile.hint}>
+                          <input
+                            placeholder="default"
+                            value={newProfile.aws_profile ?? ""}
+                            onChange={(e) => setNewProfile({ ...newProfile, aws_profile: e.target.value })}
+                          />
+                        </Field>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Field key={p.key} label={p.label} description={p.tooltip ?? p.description}>
               {p.type === "select" ? (
                 <select
                   value={v[p.key]}
@@ -742,17 +859,6 @@ function Quick({
                     </option>
                   ))}
                 </select>
-              ) : p.type === "model_profile" ? (
-                <select
-                  value={v[p.key]}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                >
-                  {profiles.map((x) => (
-                    <option key={x.profile_name} value={x.profile_name}>
-                      {x.profile_name}
-                    </option>
-                  ))}
-                </select>
               ) : (
                 <input
                   type={p.type === "url" ? "url" : "text"}
@@ -761,8 +867,9 @@ function Quick({
                   onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
                 />
               )}
-            </Field>
-          ))}
+              </Field>
+            ),
+          )}
         </div>
       )}
       <div className="modal-actions">
