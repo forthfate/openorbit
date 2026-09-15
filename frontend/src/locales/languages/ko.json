@@ -22,6 +22,7 @@
       "id": "ID",
       "name": "이름",
       "columnName": "이름",
+      "columnUsage": "사용 중인 빌드",
       "columnCreated": "생성일",
       "columnActions": "작업",
       "version": "버전",

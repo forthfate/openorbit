@@ -296,6 +296,7 @@ export default function App() {
     assets: (
       <AssetsPage
         locale={locale}
+        builds={room.builds}
         workflows={room.workflows}
         runners={room.runners}
         promptTemplates={room.promptTemplates}
