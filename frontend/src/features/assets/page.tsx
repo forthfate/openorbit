@@ -38,7 +38,7 @@ import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
 import { WorkflowGraph } from "../../components/workflow-graph";
 import { YamlEditor } from "../../components/ui/yaml-editor";
-import { api } from "../../services/api";
+import { api, upload } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileForm, type ProfileFormCopy } from "../builds/page";
@@ -441,12 +441,7 @@ function RunnerModal({
   const importTemplate = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const values = JSON.parse(await file.text()) as RunnerTemplate;
-      const imported = await api<RunnerTemplate>(
-        "/api/runner-templates/import",
-        "POST",
-        values,
-      );
+      const imported = await upload<RunnerTemplate>("/api/runner-templates/import-package", file);
       setTemplates((current) => [
         ...current.filter((template) => template.id !== imported.id),
         imported,
@@ -507,7 +502,7 @@ function RunnerModal({
                 ref={importInput}
                 className="visually-hidden"
                 type="file"
-                accept="application/json,.json"
+                accept="application/zip,.zip"
                 onChange={(event) => importTemplate(event.target.files?.[0])}
               />
               <button

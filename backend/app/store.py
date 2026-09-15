@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -302,6 +305,67 @@ class ConsoleStore:
             if path.is_file() and key not in documents:
                 documents[key] = path.read_text(encoding="utf-8")
         return documents
+
+    @staticmethod
+    def _unpack_template_zip(
+        archive: bytes, filename: str, metadata_filename: str
+    ) -> tuple[tempfile.TemporaryDirectory, Path]:
+        """Safely unpack a single template package into a temporary directory."""
+        if not filename.lower().endswith(".zip"):
+            raise ValueError("template package must be a .zip file")
+        if not archive or len(archive) > 10 * 1024 * 1024:
+            raise ValueError("template package must be smaller than 10 MB")
+        try:
+            bundle = zipfile.ZipFile(io.BytesIO(archive))
+        except zipfile.BadZipFile as error:
+            raise ValueError("template package is not a valid ZIP archive") from error
+        with bundle:
+            members = [member for member in bundle.infolist() if not member.is_dir()]
+            if not members:
+                raise ValueError("template package is empty")
+            if sum(member.file_size for member in members) > 25 * 1024 * 1024:
+                raise ValueError("template package expands to more than 25 MB")
+            normalized: dict[zipfile.ZipInfo, PurePosixPath] = {}
+            paths: set[PurePosixPath] = set()
+            for member in members:
+                name = member.filename.replace("\\", "/")
+                path = PurePosixPath(name)
+                if (
+                    path.is_absolute()
+                    or not path.parts
+                    or any(part in ("", ".", "..") for part in path.parts)
+                    or stat.S_ISLNK(member.external_attr >> 16)
+                    or path in paths
+                ):
+                    raise ValueError("template package contains an unsafe file path")
+                normalized[member] = path
+                paths.add(path)
+
+            roots = [path.parent for path in paths if path.name == metadata_filename]
+            root = PurePosixPath(".") if PurePosixPath(metadata_filename) in paths else None
+            if root is None:
+                candidates = [candidate for candidate in roots if len(candidate.parts) == 1]
+                if len(candidates) != 1:
+                    raise ValueError(
+                        f"template package requires {metadata_filename} at its root or in one folder"
+                    )
+                root = candidates[0]
+            if root != PurePosixPath(".") and any(root not in path.parents for path in paths):
+                raise ValueError("template package must contain exactly one package folder")
+
+            temporary = tempfile.TemporaryDirectory(prefix="orbit-template-")
+            destination = Path(temporary.name)
+            try:
+                for member, path in normalized.items():
+                    relative = path if root == PurePosixPath(".") else path.relative_to(root)
+                    target = destination / relative.as_posix()
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with bundle.open(member) as source, target.open("wb") as output:
+                        shutil.copyfileobj(source, output)
+            except Exception:
+                temporary.cleanup()
+                raise
+        return temporary, destination
 
     def _custom_runner_templates(self) -> list[dict[str, str]]:
         """Load both the legacy flat files and portable folder packages.
@@ -693,6 +757,27 @@ class ConsoleStore:
         shutil.copytree(source, destination)
         return self._public_quick_start(manifest)
 
+    def import_quick_start_package_zip(self, archive: bytes, filename: str) -> dict[str, Any]:
+        """Validate and install a portable Quick Start ZIP package."""
+        temporary, source = self._unpack_template_zip(archive, filename, "manifest.json")
+        try:
+            manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+            runner = manifest.get("assets", {}).get("runner", {})
+            if not isinstance(runner, dict) or not str(runner.get("source_file", "")).strip():
+                raise ValueError("quick start package runner requires source_file")
+            validated = deepcopy(manifest)
+            validated["assets"]["runner"]["source"] = self._package_source(source, str(runner["source_file"]))
+            validated = self._validate_quick_start(validated)
+            quick_start_id = str(validated["id"])
+            destination = QUICK_STARTS / quick_start_id
+            if any(item["id"] == quick_start_id for item in self.quick_starts()) or destination.exists():
+                raise ValueError("quick start ID already exists")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, destination)
+            return self._public_quick_start(validated)
+        finally:
+            temporary.cleanup()
+
     @staticmethod
     def _substitute(value: Any, inputs: dict[str, str]) -> Any:
         if isinstance(value, str):
@@ -798,6 +883,41 @@ class ConsoleStore:
         if any(item["id"] == template_id for item in self.available_runner_templates()):
             raise ValueError("runner template ID already exists")
         return self._write_runner_template(template_id, values)
+
+    def import_runner_template_package_zip(self, archive: bytes, filename: str) -> dict[str, str]:
+        """Validate and install a portable Runner Template ZIP package."""
+        temporary, source_directory = self._unpack_template_zip(archive, filename, "template.json")
+        try:
+            values = json.loads((source_directory / "template.json").read_text(encoding="utf-8"))
+            template_id = str(values.get("id", ""))
+            if not re.fullmatch(r"[a-z][a-z0-9-]{2,63}", template_id):
+                raise ValueError("runner template must use a lowercase ID")
+            template = {
+                "id": template_id,
+                "name": str(values.get("name", "")).strip(),
+                "description": str(values.get("description", "")).strip(),
+            }
+            if not template["name"] or not template["description"]:
+                raise ValueError("runner template requires a name and description")
+            entrypoint = str(values.get("entrypoint", "runner.py"))
+            source = self._package_source(source_directory, entrypoint)
+            compile(source, f"{template_id}.py", "exec")
+            if any(item["id"] == template_id for item in self.available_runner_templates()):
+                raise ValueError("runner template ID already exists")
+            destination = RUNNER_TEMPLATES / template_id
+            if destination.exists():
+                raise ValueError("runner template ID already exists")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_directory, destination)
+            return {
+                **template,
+                "source": source,
+                "origin": "user",
+                "package_path": str(destination),
+                **self._package_documents(destination),
+            }
+        finally:
+            temporary.cleanup()
 
     def _write_runner_template(self, template_id: str, values: dict[str, str]) -> dict[str, str]:
         source = self._canonicalize_runner_source(str(values["source"]))

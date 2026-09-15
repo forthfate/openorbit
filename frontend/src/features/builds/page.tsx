@@ -39,7 +39,7 @@ import {
   locales,
   type Locale,
 } from "../../locales";
-import { api } from "../../services/api";
+import { api, upload } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
 
@@ -939,9 +939,7 @@ export function BuildsPage(props: {
   const importItem = async (f: File | undefined) => {
     if (!f) return;
     try {
-      await api("/api/quick-starts/import", "POST", {
-        manifest: JSON.parse(await f.text()),
-      });
+      await upload("/api/quick-starts/import-package", f);
       setItems(await api("/api/quick-starts"));
     } catch (e) {
       setError(e instanceof Error ? e.message : ui.importFailed);
@@ -1160,7 +1158,7 @@ export function BuildsPage(props: {
                 className="visually-hidden"
                 ref={file}
                 type="file"
-                accept="application/json,.json"
+                accept="application/zip,.zip"
                 onChange={(e) => importItem(e.target.files?.[0])}
               />
               <div className="template-picker-actions">

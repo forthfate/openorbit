@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
+from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -527,6 +527,12 @@ def import_quick_start(values: QuickStartImport):
     return safely(lambda: store.import_quick_start(values.manifest))
 
 
+@app.post("/api/quick-starts/import-package", status_code=201)
+async def import_quick_start_package(file: UploadFile = File(...)):
+    archive = await file.read()
+    return safely(lambda: store.import_quick_start_package_zip(archive, file.filename or ""))
+
+
 @app.post("/api/quick-starts/{quick_start_id}/preview-graph")
 def preview_quick_start_graph(quick_start_id: str):
     return safely(lambda: store.preview_quick_start_graph(quick_start_id))
@@ -545,6 +551,12 @@ def runner_templates():
 @app.post("/api/runner-templates/import")
 def import_runner_template(values: RunnerTemplateValues):
     return safely(lambda: store.create_runner_template(values.model_dump()))
+
+
+@app.post("/api/runner-templates/import-package", status_code=201)
+async def import_runner_template_package(file: UploadFile = File(...)):
+    archive = await file.read()
+    return safely(lambda: store.import_runner_template_package_zip(archive, file.filename or ""))
 
 
 @app.put("/api/runner-templates/{template_id}")

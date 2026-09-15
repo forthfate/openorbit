@@ -1,8 +1,10 @@
 import base64
+import io
 import json
 import sys
 import threading
 import time
+import zipfile
 from types import SimpleNamespace
 
 import orbit_sdk as sdk
@@ -1494,6 +1496,113 @@ def test_folder_template_packages_keep_documentation_and_external_runner_source(
     assert template["readme"] == "# Runner docs\n"
     assert template["license"] == "MIT\n"
     assert template["package_path"] == str(runner_package)
+
+
+def _template_zip(files: dict[str, str]) -> bytes:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        for name, content in files.items():
+            bundle.writestr(name, content)
+    return archive.getvalue()
+
+
+def test_runner_template_zip_import_preserves_the_complete_package(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    store = store_module.ConsoleStore()
+    imported = store.import_runner_template_package_zip(
+        _template_zip(
+            {
+                "portable-runner/template.json": json.dumps(
+                    {"id": "portable-runner", "name": "Portable", "description": "ZIP package."}
+                ),
+                "portable-runner/runner.py": "from orbit_sdk import runner\n",
+                "portable-runner/README.md": "# Portable runner\n",
+                "portable-runner/LICENSE": "OpenOrbit License\n",
+                "portable-runner/support/example.txt": "kept\n",
+            }
+        ),
+        "portable-runner.zip",
+    )
+
+    package = store_module.RUNNER_TEMPLATES / "portable-runner"
+    assert imported["id"] == "portable-runner"
+    assert (package / "README.md").read_text(encoding="utf-8") == "# Portable runner\n"
+    assert (package / "support" / "example.txt").read_text(encoding="utf-8") == "kept\n"
+    assert next(item for item in store.available_runner_templates() if item["id"] == "portable-runner")[
+        "readme"
+    ]
+
+
+def test_quick_start_zip_import_preserves_the_complete_package(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "QUICK_STARTS", tmp_path / "quick-starts")
+    source = store_module.ROOT / "templates" / "quick-starts" / "openorbit.ai-experience-improvement"
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    manifest["id"] = "example.portable-ai-journey"
+    archive = _template_zip(
+        {
+            "portable-quick-start/manifest.json": json.dumps(manifest),
+            "portable-quick-start/runner.py": (source / "runner.py").read_text(encoding="utf-8"),
+            "portable-quick-start/README.md": "# Portable quick start\n",
+            "portable-quick-start/LICENSE": "OpenOrbit License\n",
+            "portable-quick-start/assets/notes.txt": "kept\n",
+        }
+    )
+    store = store_module.ConsoleStore()
+
+    imported = store.import_quick_start_package_zip(archive, "portable-quick-start.zip")
+
+    package = store_module.QUICK_STARTS / "example.portable-ai-journey"
+    assert imported["id"] == "example.portable-ai-journey"
+    assert (package / "LICENSE").read_text(encoding="utf-8") == "OpenOrbit License\n"
+    assert (package / "assets" / "notes.txt").read_text(encoding="utf-8") == "kept\n"
+    assert any(item["id"] == "example.portable-ai-journey" for item in store.quick_starts())
+
+
+def test_template_zip_import_rejects_path_traversal(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    store = store_module.ConsoleStore()
+
+    with pytest.raises(ValueError, match="unsafe file path"):
+        store.import_runner_template_package_zip(
+            _template_zip(
+                {
+                    "bad/template.json": json.dumps(
+                        {"id": "bad-template", "name": "Bad", "description": "Bad ZIP."}
+                    ),
+                    "bad/runner.py": "pass\n",
+                    "../outside.txt": "nope\n",
+                }
+            ),
+            "bad.zip",
+        )
+
+    assert not (tmp_path / "outside.txt").exists()
+    assert not (store_module.RUNNER_TEMPLATES / "bad-template").exists()
+
+
+def test_runner_template_package_upload_api_accepts_zip(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNER_TEMPLATES", tmp_path / "runner-templates")
+    monkeypatch.setattr(main_module, "store", store_module.ConsoleStore())
+    response = TestClient(app).post(
+        "/api/runner-templates/import-package",
+        files={
+            "file": (
+                "api-runner.zip",
+                _template_zip(
+                    {
+                        "api-runner/template.json": json.dumps(
+                            {"id": "api-runner", "name": "API runner", "description": "Uploaded package."}
+                        ),
+                        "api-runner/runner.py": "from orbit_sdk import runner\n",
+                    }
+                ),
+                "application/zip",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["id"] == "api-runner"
 
 
 def test_build_star_is_persisted_without_changing_other_build_fields(tmp_path, monkeypatch):
