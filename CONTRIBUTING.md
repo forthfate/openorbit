@@ -49,6 +49,40 @@ React application with a Vite production build before each commit.
 
 The React hook needs `pnpm install` to have been run once.
 
+## Local verification
+
+Run the checks below for the kind of change you made rather than the full
+list. Backend checks match what CI runs exactly (see
+`.github/workflows/ci.yml`); for frontend, linting is enforced locally via the
+pre-commit hook, but CI's frontend job only runs the production build, and
+the Playwright specs are not run in CI at all.
+
+**Documentation-only change** (`*.md`, `docs/`): no command is required.
+Proofread the rendered file and confirm any command or path you referenced
+still matches the repository.
+
+**Backend change** (`backend/`, `orbit/`, `tests/`):
+
+```bash
+uv run ruff check orbit/ backend/ tests/
+PYTHONPATH=backend uv run pytest -q
+```
+
+**Frontend change** (`frontend/`, outside `frontend/e2e/`):
+
+```bash
+pnpm --filter agent-improvement-console-ui run lint
+pnpm --filter agent-improvement-console-ui run build
+```
+
+**UI end-to-end change** (`frontend/e2e/`): the specs under `frontend/e2e/`
+are not run in CI. They expect the app already running locally (see the
+Quick start section in `README.md`) and the specific evaluation builds each
+spec asserts on already created by hand. Prepare that data first, then run
+the affected spec and report what you observed in the pull request — do not
+assume a spec ran cleanly just because it compiles.
+
+
 ## Releases
 
 Every release follows the same protected sequence so that a version tag always
@@ -100,3 +134,4 @@ has completed successfully.
   their original values.
 
 Contributions are licensed under MIT.
+
