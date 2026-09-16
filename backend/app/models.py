@@ -38,6 +38,7 @@ class Step(BaseModel):
     approval: Literal["not_required", "required"] = "not_required"
     on_failure: Literal["stop", "continue"] = "stop"
     minimum_interval_seconds: int = Field(default=0, ge=0, le=86_400)
+    after_supervision: bool = False
 
     @field_validator("phase", mode="before")
     @classmethod

@@ -9,24 +9,7 @@ import hashlib
 import json
 import re
 
-from orbit_runner_kit import CallbackCycle
-from orbit_sdk import runner as orbit_runner
-
-
-class _LegacyDeclarations:
-    def connect(self, *_args, **_kwargs):
-        pass
-
-    def step(self, *_args, **_kwargs):
-        return lambda handler: handler
-
-
-class _LegacyRunner:
-    def phase(self, *_args, **_kwargs):
-        return lambda handler: handler
-
-
-graph, runner = _LegacyDeclarations(), _LegacyRunner()
+from orbit_sdk import graph, runner
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
 AGENT_PROVIDER = "${agent_provider}"
@@ -36,8 +19,9 @@ graph.connect("validate-target", "prepare-prompt")
 graph.connect("prepare-prompt", "exercise-target", label="managed prompt")
 graph.connect("exercise-target", "assess-candidate", kind="data", label="responses")
 graph.connect("assess-candidate", "retain-iteration")
-graph.connect("retain-iteration", "prepare-prompt", kind="loop", label="next evaluation")
-graph.connect("retain-iteration", "restore-baseline", kind="condition", label="completed")
+graph.connect("retain-iteration", "propose-agent-change", label="supervisor assessment")
+graph.connect("propose-agent-change", "prepare-prompt", kind="loop", label="next evaluation")
+graph.connect("propose-agent-change", "restore-baseline", kind="condition", label="completed")
 # Marker comments make replacement idempotent and preserve the surrounding
 # target prompt content that OpenOrbit does not own.
 PROMPT_BLOCK_START = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_START -->"
@@ -205,46 +189,6 @@ def before_each(ctx):
 
 
 @graph.step(
-    "propose-agent-change",
-    title="Create agent proposal for assessed issue",
-    phase="after_supervision",
-    inputs=["candidate_verdict"],
-    outputs=["agent_proposal"],
-)
-@runner.phase("after_supervision")
-def after_supervision(ctx):
-    """Create a proposal only after the supervisor has assessed an Issue."""
-    issue = ctx.current_issue_assessment
-    assessment = issue.get("evaluation") if isinstance(issue, dict) else None
-    decision = assessment.get("approval") if isinstance(assessment, dict) else None
-    if not issue:
-        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "no_reported_issue"}})
-        return
-    if decision == "rejected":
-        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "issue_rejected", "issue": issue}})
-        ctx.log("Skipped AI agent work because the supervisor rejected the issue")
-        return
-    agent = ctx.run_ai_agent(agent_task(ctx), provider=AGENT_PROVIDER, options=AGENT_OPTIONS)
-    proposal = agent.get("proposal", {})
-    if agent["feedback"] and agent["changed_files"] and proposal.get("fingerprint"):
-        ctx.register_evaluation(
-            str(agent["feedback"]),
-            changed_files=[str(path) for path in agent["changed_files"]],
-            validation="Agent completed its autonomous repository task.",
-            improvement_fingerprint=str(proposal["fingerprint"]),
-        )
-    ctx.emit_result(
-        {
-            "agent_proposal": {
-                "issue": issue,
-                "agent": {key: value for key, value in agent.items() if key != "output"},
-            }
-        }
-    )
-    ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
-
-
-@graph.step(
     "exercise-target",
     title="Exercise target AI",
     phase="execute",
@@ -305,7 +249,7 @@ def execute(ctx):
     inputs=["target_responses"],
     outputs=["candidate_verdict"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="assess-candidate")
 def verify(ctx):
     # Promote a candidate only after the required number of stable evaluations.
     state = load_state(ctx)
@@ -344,6 +288,47 @@ def verify(ctx):
 
 
 @graph.step(
+    "propose-agent-change",
+    title="Create agent proposal for assessed issue",
+    phase="after_each",
+    inputs=["iteration_snapshot"],
+    outputs=["agent_proposal"],
+    after_supervision=True,
+)
+@runner.phase("after_each", step_id="propose-agent-change")
+def propose_agent_change(ctx):
+    """Create a proposal after retaining evidence and assessing the Issue."""
+    issue = ctx.current_issue_assessment
+    assessment = issue.get("evaluation") if isinstance(issue, dict) else None
+    decision = assessment.get("approval") if isinstance(assessment, dict) else None
+    if not issue:
+        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "no_reported_issue"}})
+        return
+    if decision == "rejected":
+        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "issue_rejected", "issue": issue}})
+        ctx.log("Skipped AI agent work because the supervisor rejected the issue")
+        return
+    agent = ctx.run_ai_agent(agent_task(ctx), provider=AGENT_PROVIDER, options=AGENT_OPTIONS)
+    proposal = agent.get("proposal", {})
+    if agent["feedback"] and agent["changed_files"] and proposal.get("fingerprint"):
+        ctx.register_evaluation(
+            str(agent["feedback"]),
+            changed_files=[str(path) for path in agent["changed_files"]],
+            validation="Agent completed its autonomous repository task.",
+            improvement_fingerprint=str(proposal["fingerprint"]),
+        )
+    ctx.emit_result(
+        {
+            "agent_proposal": {
+                "issue": issue,
+                "agent": {key: value for key, value in agent.items() if key != "output"},
+            }
+        }
+    )
+    ctx.log("Refreshed the rollback-protected prompt from accepted supervisor feedback")
+
+
+@graph.step(
     "retain-iteration",
     title="Retain iteration evidence",
     phase="after_each",
@@ -372,60 +357,5 @@ def after_all(ctx):
     ctx.log("Restored the native improvement target without committing changes")
 
 
-CallbackCycle(
-    steps=(
-        ("validate-target", "Validate target", "before_all", (), ("evaluation_contract",)),
-        (
-            "prepare-prompt",
-            "Prepare prompt candidate",
-            "before_each",
-            ("evaluation_contract",),
-            ("managed_prompt",),
-        ),
-        ("exercise-target", "Exercise target AI", "execute", ("managed_prompt",), ("target_responses",)),
-        (
-            "assess-candidate",
-            "Assess candidate evidence",
-            "verify",
-            ("target_responses",),
-            ("candidate_verdict",),
-        ),
-        (
-            "propose-agent-change",
-            "Create agent proposal for assessed issue",
-            "after_supervision",
-            ("candidate_verdict",),
-            ("agent_proposal",),
-        ),
-        (
-            "retain-iteration",
-            "Retain iteration evidence",
-            "after_each",
-            ("candidate_verdict",),
-            ("iteration_snapshot",),
-        ),
-        ("restore-baseline", "Restore baseline", "after_all", ("iteration_snapshot",), ("restored_target",)),
-    ),
-    edges=(
-        ("validate-target", "prepare-prompt", "execution", None),
-        ("prepare-prompt", "exercise-target", "execution", "managed prompt"),
-        ("exercise-target", "assess-candidate", "data", "responses"),
-        ("assess-candidate", "propose-agent-change", "execution", "issue assessed"),
-        ("propose-agent-change", "retain-iteration", "execution", None),
-        ("retain-iteration", "prepare-prompt", "loop", "next evaluation"),
-        ("retain-iteration", "restore-baseline", "condition", "completed"),
-    ),
-).install(
-    {
-        "validate-target": before_all,
-        "prepare-prompt": before_each,
-        "exercise-target": execute,
-        "assess-candidate": verify,
-        "propose-agent-change": after_supervision,
-        "retain-iteration": after_each,
-        "restore-baseline": after_all,
-    }
-)
-
 if __name__ == "__main__":
-    orbit_runner.main()
+    runner.main()

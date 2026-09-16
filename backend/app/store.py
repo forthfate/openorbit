@@ -1136,6 +1136,49 @@ class ConsoleStore:
     def _runner_execution_plan(self, runner_id: str, runner_version: int | None = None) -> Workflow:
         """Build the lifecycle declared by a runner without a workflow asset."""
         runner = self._runner(runner_id)
+        definition = self._runner_graph_definition(runner_id, None, runner_version)
+        graph_nodes = definition.get("nodes", []) if isinstance(definition, dict) else []
+        lifecycle_phases = {"before_all", "before_each", "execute", "verify", "after_each", "after_all"}
+        if isinstance(graph_nodes, list) and any(
+            isinstance(node, dict) and node.get("after_supervision", False) for node in graph_nodes
+        ):
+            steps = [
+                Step(
+                    id=str(node["id"]),
+                    phase=str(node["phase"]),
+                    name=str(node.get("title") or node["id"]),
+                    command=[
+                        sys.executable,
+                        str(self._runner_entry_path(runner_id, runner_version)),
+                        "--phase",
+                        str(node["phase"]),
+                        "--step",
+                        str(node["id"]),
+                    ],
+                    working_directory=str(ROOT),
+                    timeout_seconds=86_400 if node["phase"] == "execute" else 300,
+                    approval="not_required",
+                    on_failure="stop",
+                    after_supervision=bool(node.get("after_supervision", False)),
+                )
+                for node in graph_nodes
+                if isinstance(node, dict) and node.get("phase") in lifecycle_phases
+            ]
+            if steps:
+                return Workflow(
+                    id=runner_id,
+                    name=runner["name"],
+                    description=runner["description"],
+                    kind="improvement"
+                    if runner.get("template_id") == "native-improvement-cycle"
+                    else "simulation",
+                    enabled=True,
+                    risk="medium",
+                    runner_id=runner_id,
+                    runner_version=runner_version or int(runner["version"]),
+                    steps=steps,
+                    test_steps=deepcopy(steps),
+                )
         source = runner["source"]
         if runner_version is not None:
             selected = next(
@@ -1154,7 +1197,6 @@ class ConsoleStore:
             "before_each",
             "execute",
             "verify",
-            "after_supervision",
             "after_each",
             "after_all",
         )
@@ -2197,7 +2239,12 @@ class ConsoleStore:
                     score = None
                 if not isinstance(improvements, list):
                     continue
-                for index, proposal in enumerate(improvements):
+                # The first supervision pass produces Issue proposals and their
+                # operator-facing rationale. A later agent-proposal assessment
+                # evaluates a worktree diff; its generated improvements are
+                # review feedback, not new persona/Issue proposals.
+                issue_proposals = improvements if record.get("stage") != "agent_proposal_assessment" else []
+                for index, proposal in enumerate(issue_proposals):
                     if not isinstance(proposal, dict):
                         continue
                     source_status = str(proposal.get("status") or "proposed").lower()
@@ -2298,9 +2345,9 @@ class ConsoleStore:
                             },
                             "decision": decision,
                             "score": score,
-                            "decision_rationale": str(evaluation.get("summary") or "")
-                            if isinstance(evaluation, dict)
-                            else "",
+                            # This evaluation is intentionally retained with
+                            # the Run, but is not an Issue decision rationale.
+                            "decision_rationale": "",
                             "issue_evaluation": linked_issue.get("evaluation")
                             if isinstance(linked_issue, dict)
                             else None,
@@ -2319,9 +2366,7 @@ class ConsoleStore:
                                     "event_type": "decision",
                                     "proposal_id": proposal_id,
                                     "decision": decision,
-                                    "rationale": str(evaluation.get("summary") or "")
-                                    if isinstance(evaluation, dict)
-                                    else "",
+                                    "rationale": "",
                                     "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
                                     "iteration": iteration,
                                     "phase": "supervisor",
@@ -3595,7 +3640,14 @@ class ConsoleStore:
         if workflow.runner_id:
             runner_path = self._runner_entry_path(workflow.runner_id, run.runner_version)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
-                step.command = [sys.executable, str(runner_path), "--phase", step.phase]
+                step.command = [
+                    sys.executable,
+                    str(runner_path),
+                    "--phase",
+                    step.phase,
+                    "--step",
+                    step.id,
+                ]
                 step.working_directory = run.repository or str(ROOT)
         with self.tracer.start_as_current_span(
             "workflow.run",
@@ -3614,9 +3666,13 @@ class ConsoleStore:
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
             before_all = [step for step in steps if step.phase == "before_all"]
-            loop_steps = [step for step in steps if step.phase in {"before_each", "execute", "verify"}]
-            after_supervision = [step for step in steps if step.phase == "after_supervision"]
-            after_each = [step for step in steps if step.phase == "after_each"]
+            loop_steps = [
+                step
+                for step in steps
+                if step.phase in {"before_each", "execute", "verify"} and not step.after_supervision
+            ]
+            post_supervision_steps = [step for step in steps if step.after_supervision]
+            after_each = [step for step in steps if step.phase == "after_each" and not step.after_supervision]
             after_all = [step for step in steps if step.phase == "after_all"]
             if not self._wait_for_schedule(run_id):
                 return
@@ -3713,21 +3769,21 @@ class ConsoleStore:
                         self._execute_step(run_id, step, loop_index, resources)
                         if self._load(run_id).status in {"failed", "cancelled"}:
                             break
-                # The supervisor first assesses discovered issues.  The agent
-                # phase may then create a proposal for an issue the supervisor
-                # did not reject; only that concrete proposal receives the
-                # second, independent score/decision.
-                if run.execution_mode == "run" and self._load(run_id).status == "running":
-                    self._complete_supervision(run_id)
-                    for step in after_supervision:
-                        self._execute_step(run_id, step, loop_index, resources)
-                    if after_supervision and self._load(run_id).status == "running":
-                        self._complete_supervision(run_id, stage="agent_proposal_assessment")
-                # Cleanup is part of the lifecycle contract, not merely the
-                # happy path. Run it after an earlier phase fails or a user
-                # cancels the Run; the terminal status remains unchanged.
+                # Retain all iteration evidence before the supervisor selects
+                # an Issue. The post-supervision agent work is displayed as an
+                # after_each step, but runs only after that selection exists.
                 for step in after_each:
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
+                # The supervisor first assesses discovered issues. The agent
+                # may then create a proposal for an issue the supervisor did
+                # not reject; only that concrete proposal receives the second,
+                # independent score/decision.
+                if run.execution_mode == "run" and self._load(run_id).status == "running":
+                    self._complete_supervision(run_id)
+                    for step in post_supervision_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                    if post_supervision_steps and self._load(run_id).status == "running":
+                        self._complete_supervision(run_id, stage="agent_proposal_assessment")
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
                 if (

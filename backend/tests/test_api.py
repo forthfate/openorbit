@@ -1505,7 +1505,7 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
                 "before_each",
                 "execute",
                 "verify",
-                "after_supervision",
+                "after_each",
                 "after_each",
                 "after_all",
             ],
@@ -2042,6 +2042,79 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
             ],
         }
     ]
+
+
+def test_issue_management_excludes_agent_assessment_feedback_from_issue_rationales(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    issue = {
+        "title": "Observed policy claim",
+        "evaluation": {"approval": "approved", "score": 6, "summary": "Observed in the response."},
+    }
+    store._save(
+        Run(
+            id="run-agent-review",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            step_results=[
+                {
+                    "loop_index": 1,
+                    "result": {
+                        "agent_run": {
+                            "feedback": "Added a policy guardrail.",
+                            "changed_files": ["prompt.md"],
+                            "proposal": {"fingerprint": "a" * 64},
+                        },
+                        "agent_proposal": {"issue": issue},
+                    },
+                }
+            ],
+            supervisor_results=[
+                {
+                    "iteration": 1,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [
+                            {"title": "Issue proposal", "status": "proposed", "rationale": "Issue reason."}
+                        ],
+                        "reported_issues": [issue],
+                    },
+                },
+                {
+                    "iteration": 1,
+                    "stage": "agent_proposal_assessment",
+                    "response": {
+                        "evaluation": {
+                            "approval": "rejected",
+                            "score": 2,
+                            "summary": "Agent review summary.",
+                        },
+                        "improvements": [
+                            {
+                                "title": "Do not expose this as an Issue",
+                                "status": "proposed",
+                                "rationale": "Agent feedback.",
+                            }
+                        ],
+                        "reported_issues": [],
+                    },
+                },
+            ],
+        )
+    )
+
+    lifecycle = store.proposal_lifecycles()
+
+    assert [item["title"] for item in lifecycle] == [
+        "Issue proposal",
+        "Agent change: Added a policy guardrail.",
+    ]
+    assert lifecycle[0]["decision_rationale"] == "Issue reason."
+    assert lifecycle[1]["decision_rationale"] == ""
 
 
 def test_hello_accepts_unsaved_profile_settings():

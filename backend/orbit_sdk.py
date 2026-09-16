@@ -55,6 +55,7 @@ class GraphNode:
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
     description: str | None = None
+    after_supervision: bool = False
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,7 @@ class Graph:
         inputs: tuple[str, ...] | list[str] = (),
         outputs: tuple[str, ...] | list[str] = (),
         description: str | None = None,
+        after_supervision: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Annotate one function as a visual workflow node.
 
@@ -109,6 +111,7 @@ class Graph:
                 inputs=tuple(inputs),
                 outputs=tuple(outputs),
                 description=description,
+                after_supervision=after_supervision,
             )
             self._nodes[node_id] = node
             setattr(handler, "__orbit_graph_node__", node)
@@ -156,6 +159,7 @@ class Graph:
                     "inputs": list(node.inputs),
                     "outputs": list(node.outputs),
                     "description": node.description,
+                    "after_supervision": node.after_supervision,
                 }
                 for node in self._nodes.values()
             ],
@@ -2024,7 +2028,7 @@ class Runner:
         self._handlers: dict[str, Callable[[RunnerContext], None]] = {}
 
     def phase(
-        self, name: str
+        self, name: str, *, step_id: str | None = None
     ) -> Callable[[Callable[[RunnerContext], None]], Callable[[RunnerContext], None]]:
         """Register a function as a handler for one runner lifecycle phase.
 
@@ -2039,7 +2043,8 @@ class Runner:
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
             phase = canonical_phase(name)
-            self._handlers[phase] = handler
+            key = f"{phase}:{step_id}" if step_id else phase
+            self._handlers[key] = handler
             setattr(handler, "__orbit_phase__", phase)
             return handler
 
@@ -2058,13 +2063,15 @@ class Runner:
         parser = argparse.ArgumentParser(description="Orbit runner phase")
         command = parser.add_mutually_exclusive_group(required=True)
         command.add_argument("--phase")
+        parser.add_argument("--step")
         command.add_argument("--graph", action="store_true")
         args = parser.parse_args()
         if args.graph:
             print(json.dumps(graph.definition(), ensure_ascii=False))
             return
         phase = canonical_phase(args.phase)
-        handler = self._handlers.get(phase)
+        handler = self._handlers.get(f"{phase}:{args.step}") if args.step else None
+        handler = handler or self._handlers.get(phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
         context = RunnerContext(

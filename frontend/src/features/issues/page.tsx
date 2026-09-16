@@ -39,7 +39,6 @@ type Copy = {
   aiDecision: string;
   decisionRationale: string;
   persona: string;
-  score: string;
   taskId: string;
   iteration: string;
   run: string;
@@ -342,16 +341,6 @@ export function IssuesPage({
       sortValue: (x) => x.assigner,
     },
     {
-      id: "score",
-      header: t.score,
-      render: (x) => x.issue_evaluation
-        ? <span title={`Issue decision: ${x.issue_evaluation.approval}`}>
-            Issue {x.issue_evaluation.score}/10 · Proposal {x.score == null ? "—" : `${x.score}/10`}
-          </span>
-        : (x.score == null ? "—" : `${x.score}/10`),
-      sortValue: (x) => x.score,
-    },
-    {
       id: "decision",
       header: t.aiDecision,
       render: (x) => (
@@ -499,7 +488,7 @@ export function IssuesPage({
             setRun("");
           }}
           className="issue-management-table"
-          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
+          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) 82px 110px 110px"
         />
         <Pagination
           locale={locale}
