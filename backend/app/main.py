@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -145,6 +147,56 @@ def health():
 @app.get("/api/v1/health", tags=["System"], operation_id="getHealth", summary="Get API health")
 def health_v1():
     return health()
+
+
+@app.get("/api/system/readiness", tags=["System"], summary="Get required local system capabilities")
+def system_readiness():
+    """Report prerequisites required by the control room as a whole.
+
+    Keep this intentionally separate from build-specific validation: these
+    checks decide whether the application can safely offer its core features,
+    while repository, browser, and Docker requirements vary per build.
+    """
+    application = store.application_settings()
+    profiles = {profile["profile_name"]: profile for profile in store.profiles()}
+    selected_profile = str(application.get("chat_model_profile_name", "")).strip()
+    profile = profiles.get(selected_profile)
+
+    ai_detail = "ready"
+    if not selected_profile:
+        ai_detail = "profile_not_selected"
+    elif profile is None:
+        ai_detail = "profile_not_found"
+    elif not profile.get("model", "").strip():
+        ai_detail = "model_not_set"
+    elif profile.get("provider") == "azure-openai":
+        if not profile.get("endpoint", "").strip():
+            ai_detail = "endpoint_not_set"
+        elif not profile.get("secret_env", "").strip() or not os.environ.get(profile["secret_env"].strip()):
+            ai_detail = "secret_not_available"
+    elif profile.get("provider") == "aws-bedrock":
+        has_environment_credentials = bool(
+            os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")
+        )
+        if not profile.get("aws_profile", "").strip() and not has_environment_credentials:
+            ai_detail = "credentials_not_available"
+
+    git_executable = shutil.which("git")
+    checks = [
+        {
+            "id": "system_ai",
+            "status": "ready" if ai_detail == "ready" else "blocked",
+            "detail": ai_detail,
+            "settings_page": "settings",
+        },
+        {
+            "id": "git",
+            "status": "ready" if git_executable else "blocked",
+            "detail": "ready" if git_executable else "not_installed",
+            "settings_page": None,
+        },
+    ]
+    return {"ready": all(check["status"] == "ready" for check in checks), "checks": checks}
 
 
 @app.get("/api/v1", tags=["System"], operation_id="getApiInfo", summary="Get API entry-point information")

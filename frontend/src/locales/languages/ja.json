@@ -72,6 +72,25 @@
       "title": "OpenOrbit",
       "titleSeparator": " - "
     },
+    "systemReadiness": {
+      "title": "システム設定が必要です",
+      "description": "必須のシステム要件を利用できないため、OpenOrbit の主要機能を正常に使用できません。",
+      "openSettings": "設定を開く",
+      "checks": {
+        "system_ai": {
+          "title": "システム AI",
+          "details": {
+            "profile_not_selected": "使用するシステム AI モデルを選択してください。",
+            "profile_not_found": "選択されたシステム AI プロファイルが見つかりません。",
+            "model_not_set": "選択されたプロファイルにモデルまたはデプロイ名がありません。",
+            "endpoint_not_set": "選択された Azure プロファイルにエンドポイントがありません。",
+            "secret_not_available": "選択されたプロファイルのシークレット環境変数を利用できません。",
+            "credentials_not_available": "AWS 認証情報または AWS CLI プロファイルを設定してください。"
+          }
+        },
+        "git": { "title": "Git", "details": { "not_installed": "Git をインストールしてから OpenOrbit サーバーを再起動してください。" } }
+      }
+    },
     "navigationAccessibility": {
       "expandNavigation": "ナビゲーションを展開",
       "collapseNavigation": "ナビゲーションを折りたたむ",
