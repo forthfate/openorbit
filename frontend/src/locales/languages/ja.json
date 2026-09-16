@@ -22,7 +22,7 @@
       "id": "ID",
       "name": "名前",
       "columnName": "名前",
-      "columnUsage": "使用中のビルド",
+      "columnUsage": "使用数",
       "columnCreated": "作成日",
       "columnActions": "操作",
       "version": "バージョン",
