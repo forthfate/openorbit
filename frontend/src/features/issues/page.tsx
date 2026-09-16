@@ -10,6 +10,7 @@ import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
+import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
@@ -99,6 +100,7 @@ export function IssuesPage({
     [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
+    [agentDiff, setAgentDiff] = useState<{ proposalId: string; value: string } | null>(null),
     [modalTab, setModalTab] = useState<"details" | "history">("details"),
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
@@ -129,6 +131,12 @@ export function IssuesPage({
       .catch(() => setBuilds([]));
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
   }, []);
+  useEffect(() => {
+    if (!selected || selected.proposal.kind !== "agent_change") return;
+    api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
+      .then((result) => setAgentDiff({ proposalId: selected.proposal_id, value: result.diff }))
+      .catch(() => setAgentDiff({ proposalId: selected.proposal_id, value: "" }));
+  }, [selected]);
   useEffect(() => {
     if (!filtersOpen) return;
     const close = (event: PointerEvent) => {
@@ -205,6 +213,20 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
+  const decideAgentProposal = (decision: "approve" | "reject") =>
+    selected &&
+    api<IssueManagementItem>(
+      `/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/decision`,
+      "POST",
+      { decision },
+    )
+      .then((item) => {
+        setSelected(item);
+        setManagementStatus(item.management_status);
+        load();
+        onNotice(decision === "approve" ? "Agent proposal committed to its branch." : "Agent proposal worktree and branch removed.", "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
   const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
   const toggleIssue = (proposalId: string) =>
     setSelectedIssueIds((current) => {
@@ -527,6 +549,25 @@ export function IssuesPage({
                   <section className="issue-management-rationale">
                     <h3>{t.decisionRationale}</h3>
                     <p>{selected.decision_rationale}</p>
+                  </section>
+                )}
+                {selected.proposal.kind === "agent_change" && (
+                  <section className="issue-management-diff">
+                    <h3>Agent proposal diff</h3>
+                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label="Agent proposal diff" /> : <p className="hint">No file changes were proposed.</p>}
+                  </section>
+                )}
+                {selected.proposal.kind === "agent_change" && (
+                  <section className="issue-management-proposal-action">
+                    <h3>Agent proposal branch</h3>
+                    <p>{selected.proposal_branch || "—"}</p>
+                    {selected.proposal_commit && <p>Committed: {selected.proposal_commit}</p>}
+                    {selected.proposal_action === "pending" && (
+                      <div className="modal-actions">
+                        <button className="approve" onClick={() => decideAgentProposal("approve")}>Approve and commit</button>
+                        <button className="danger" onClick={() => decideAgentProposal("reject")}>Reject and remove</button>
+                      </div>
+                    )}
                   </section>
                 )}
                 <label className="modal-setting-row">

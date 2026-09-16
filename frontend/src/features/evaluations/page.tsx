@@ -1027,7 +1027,12 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.decision}</small>
-              <strong>{evaluation?.approval ?? "—"}</strong>
+              <strong
+                title={evaluation?.summary || undefined}
+                aria-label={evaluation?.summary ? `${evaluation.approval}: ${evaluation.summary}` : undefined}
+              >
+                {evaluation?.approval ?? "—"}
+              </strong>
             </div>
           </div>
           <section className="run-detail-workflow-graph" aria-label={l.workflowGraph}>

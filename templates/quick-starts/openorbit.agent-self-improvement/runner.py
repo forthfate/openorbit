@@ -29,6 +29,8 @@ class _LegacyRunner:
 graph, runner = _LegacyDeclarations(), _LegacyRunner()
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
+AGENT_PROVIDER = "${agent_provider}"
+AGENT_OPTIONS = "${agent_options}"
 
 graph.connect("validate-target", "prepare-prompt")
 graph.connect("prepare-prompt", "exercise-target", label="managed prompt")
@@ -122,6 +124,23 @@ def managed_prompt_evidence(ctx):
     }
 
 
+def agent_task(ctx):
+    """Give the coding agent a bounded, autonomous improvement objective."""
+    feedback = ctx.previous_supervisor_feedback
+    return "\n".join(
+        (
+            "You are the autonomous improvement agent for this repository.",
+            "Do not ask questions or wait for approval. First inspect the repository and the managed prompt, then make exactly one atomic, evidence-backed improvement, validate it, and finish the task completely.",
+            "You are working in an isolated proposal worktree. Make the complete change there; it will be captured as a reviewable diff and will not be applied to the source repository automatically. Do not commit, reset, or discard unrelated user changes.",
+            f"Managed prompt path: {ctx.build.get('managed_prompt_path') or ctx.build.get('prompt_bundle')}",
+            f"Build purpose: {ctx.build.get('purpose', '')}",
+            f"Fixed acceptance criteria: {json.dumps([case.get('acceptance', '') for case in ctx.test_cases], ensure_ascii=False)}",
+            f"Previous supervisor feedback: {json.dumps(feedback.get('improvements', []), ensure_ascii=False)}",
+            "If you completed meaningful feedback or a change, print one final line exactly in this format: ORBIT_AGENT_FEEDBACK: <concise completed-work summary>. If there is no meaningful feedback, do not print that marker.",
+        )
+    )
+
+
 @graph.step("validate-target", title="Validate target", phase="before_all", outputs=["evaluation_contract"])
 @runner.phase("before_all")
 def before_all(ctx):
@@ -169,6 +188,22 @@ def before_each(ctx):
         prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
+    agent = ctx.run_ai_agent(
+        agent_task(ctx),
+        provider=AGENT_PROVIDER,
+        options=AGENT_OPTIONS,
+    )
+    # A score belongs to one concrete agent improvement, not to an iteration.
+    # No retained diff means no improvement was proposed and therefore no
+    # evaluation request, score, or decision is created.
+    proposal = agent.get("proposal", {})
+    if agent["feedback"] and agent["changed_files"] and proposal.get("fingerprint"):
+        ctx.register_evaluation(
+            str(agent["feedback"]),
+            changed_files=[str(path) for path in agent["changed_files"]],
+            validation="Agent completed its autonomous repository task.",
+            improvement_fingerprint=str(proposal["fingerprint"]),
+        )
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -180,6 +215,7 @@ def before_each(ctx):
                 "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
+                "agent": {key: value for key, value in agent.items() if key != "output"},
             }
         }
     )

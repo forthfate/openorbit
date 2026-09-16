@@ -2143,6 +2143,7 @@ class ConsoleStore:
                         "response": run.supervisor_response,
                     }
                 ]
+            seen_agent_improvements: set[str] = set()
             for record in records:
                 if not isinstance(record, dict):
                     continue
@@ -2236,6 +2237,83 @@ class ConsoleStore:
                             ],
                         }
                     )
+                # Coding-agent changes are first-class review proposals too.
+                # They are emitted by the SDK only when the agent supplied
+                # explicit feedback, and their immutable worktree diff stays
+                # attached to the resulting Issue.
+                for step in run.step_results:
+                    if not isinstance(step, dict) or step.get("loop_index") != iteration:
+                        continue
+                    result = step.get("result")
+                    agent = result.get("agent_run") if isinstance(result, dict) else None
+                    if not isinstance(agent, dict) or not str(agent.get("feedback") or "").strip():
+                        continue
+                    proposal_data = agent.get("proposal")
+                    proposal_data = proposal_data if isinstance(proposal_data, dict) else {}
+                    fingerprint = str(proposal_data.get("fingerprint") or "")
+                    if not fingerprint or fingerprint in seen_agent_improvements:
+                        continue
+                    seen_agent_improvements.add(fingerprint)
+                    approval = (
+                        str(evaluation.get("approval") or "pending").lower()
+                        if isinstance(evaluation, dict)
+                        else "pending"
+                    )
+                    decision = (
+                        "accepted"
+                        if approval == "approved"
+                        else "rejected"
+                        if approval == "rejected"
+                        else "pending"
+                    )
+                    proposal_id = f"{run.id}:agent:{fingerprint[:16]}"
+                    values.append(
+                        {
+                            "proposal_id": proposal_id,
+                            "title": f"Agent change: {str(agent.get('feedback')).strip()}",
+                            "target": "agent_worktree",
+                            "proposal": {
+                                "kind": "agent_change",
+                                "feedback": str(agent.get("feedback")).strip(),
+                                "changed_files": agent.get("changed_files", []),
+                                "diff": proposal_data.get("diff", ""),
+                                "diff_artifact": proposal_data.get("diff_artifact"),
+                                "base_revision": proposal_data.get("base_revision"),
+                                "branch": proposal_data.get("branch", ""),
+                                "worktree_path": proposal_data.get("worktree_path", ""),
+                                "fingerprint": fingerprint,
+                            },
+                            "decision": decision,
+                            "score": score,
+                            "decision_rationale": str(evaluation.get("summary") or "")
+                            if isinstance(evaluation, dict)
+                            else "",
+                            "status": "proposed" if decision == "pending" else decision,
+                            "build_id": run.build_id,
+                            "build_name": run.build_name,
+                            "run_id": run.id,
+                            "iteration": iteration,
+                            "personas": personas,
+                            "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                            "data_files": data_files,
+                            "prompt_version": None,
+                            "events": [
+                                {
+                                    "id": proposal_id,
+                                    "event_type": "decision",
+                                    "proposal_id": proposal_id,
+                                    "decision": decision,
+                                    "rationale": str(evaluation.get("summary") or "")
+                                    if isinstance(evaluation, dict)
+                                    else "",
+                                    "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
+                                    "iteration": iteration,
+                                    "phase": "supervisor",
+                                    "run_id": run.id,
+                                }
+                            ],
+                        }
+                    )
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
@@ -2275,6 +2353,9 @@ class ConsoleStore:
                 {
                     **proposal,
                     "management_status": record.get("status", "unreviewed"),
+                    "proposal_action": record.get("proposal_action", "pending"),
+                    "proposal_branch": str((proposal.get("proposal") or {}).get("branch") or ""),
+                    "proposal_commit": str(record.get("proposal_commit") or ""),
                     "assigner": record.get("assigner", ""),
                     "comments": record.get("comments", []),
                     "management_events": record.get("events", []),
@@ -2339,6 +2420,108 @@ class ConsoleStore:
             deleted += 1
         self._save_issue_management_records(records)
         return {"deleted": deleted}
+
+    def issue_management_diff(self, proposal_id: str) -> dict[str, Any]:
+        """Return the immutable worktree patch attached to an agent Issue."""
+        item = next(
+            (value for value in self.issue_management_items() if value["proposal_id"] == proposal_id), None
+        )
+        if item is None:
+            raise KeyError(proposal_id)
+        proposal = item.get("proposal")
+        if not isinstance(proposal, dict) or proposal.get("kind") != "agent_change":
+            return {"diff": "", "changed_files": []}
+        changed_files = proposal.get("changed_files")
+        return {
+            "diff": str(proposal.get("diff") or ""),
+            "changed_files": changed_files if isinstance(changed_files, list) else [],
+            "base_revision": proposal.get("base_revision"),
+        }
+
+    def decide_agent_issue(self, proposal_id: str, decision: str) -> dict[str, Any]:
+        """Commit or discard a pending agent worktree proposal from its Issue."""
+        if decision not in {"approve", "reject"}:
+            raise ValueError("decision must be approve or reject")
+        item = next(
+            (value for value in self.issue_management_items() if value["proposal_id"] == proposal_id), None
+        )
+        if item is None:
+            raise KeyError(proposal_id)
+        proposal = item.get("proposal")
+        if not isinstance(proposal, dict) or proposal.get("kind") != "agent_change":
+            raise ValueError("only agent worktree proposals can be decided from an Issue")
+        branch = str(proposal.get("branch") or "").strip()
+        worktree_value = str(proposal.get("worktree_path") or "").strip()
+        if not branch or not worktree_value:
+            raise ValueError("this agent proposal was created before worktree review was enabled")
+        worktree = Path(worktree_value).resolve()
+        worktree_root = (APP_DATA / "agent-worktrees").resolve()
+        if worktree_root not in worktree.parents:
+            raise ValueError("agent proposal worktree is outside Orbit storage")
+        source_repository = Path(self._load(str(item.get("run_id") or "")).repository).resolve()
+        if not source_repository.is_dir():
+            raise ValueError("agent proposal source repository is no longer available")
+        records = self._issue_management_records()
+        record = records.setdefault(proposal_id, {"status": "unreviewed", "comments": [], "events": []})
+        previous = str(record.get("proposal_action") or "pending")
+        if previous != "pending":
+            return next(
+                value for value in self.issue_management_items() if value["proposal_id"] == proposal_id
+            )
+        timestamp = now().isoformat()
+        if decision == "approve":
+            if not worktree.is_dir():
+                raise ValueError("agent proposal worktree is no longer available")
+            changed = subprocess.run(
+                ["git", "diff", "--quiet", "--"], cwd=worktree, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if changed.returncode == 0:
+                raise ValueError("agent proposal has no uncommitted changes")
+            if changed.returncode > 1:
+                raise ValueError(
+                    changed.stderr.decode("utf-8", "replace").strip() or "cannot inspect agent proposal"
+                )
+            subprocess.run(
+                ["git", "add", "--all"],
+                cwd=worktree,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            message = f"Orbit agent proposal: {str(proposal.get('feedback') or 'approved change')[:160]}"
+            subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=worktree,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, text=True, stdout=subprocess.PIPE
+            ).stdout.strip()
+            record.update({"proposal_action": "approved", "proposal_commit": commit, "status": "resolved"})
+            record["events"].append(
+                {"type": "proposal_approved", "branch": branch, "commit": commit, "recorded_at": timestamp}
+            )
+        else:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            record.update({"proposal_action": "rejected", "status": "resolved"})
+            record["events"].append({"type": "proposal_rejected", "branch": branch, "recorded_at": timestamp})
+        self._save_issue_management_records(records)
+        return next(value for value in self.issue_management_items() if value["proposal_id"] == proposal_id)
 
     def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
         """List SDK-saved data files by persisted evaluation run and iteration.
@@ -3603,7 +3786,7 @@ class ConsoleStore:
         return False
 
     @staticmethod
-    def _validated_supervisor_result(text: str) -> dict[str, Any]:
+    def _validated_supervisor_result(text: str, *, require_evaluation: bool = False) -> dict[str, Any]:
         """Validate the exact structured result required by the manager template."""
         try:
             result = json.loads(text)
@@ -3622,6 +3805,8 @@ class ConsoleStore:
         ):
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
+        if require_evaluation and evaluation is None:
+            raise ValueError("supervisor evaluation is required for a registered agent result")
         if evaluation is not None:
             if (
                 not isinstance(evaluation, dict)
@@ -3687,6 +3872,44 @@ class ConsoleStore:
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
         return result
 
+    @staticmethod
+    def _evaluation_request_for_iteration(
+        run: Run, iteration: int, candidate_id: str | None
+    ) -> dict[str, Any] | None:
+        """Return the explicit SDK evaluation request for this agent result.
+
+        A normal iteration is evidence for improvement feedback, but is not by
+        itself a subject to score.  Only ``RunnerContext.register_evaluation``
+        can opt an agent result into score/approval evaluation.
+        """
+        for step in reversed(run.step_results):
+            if step.get("loop_index") != iteration:
+                continue
+            if candidate_id is not None and step.get("candidate_id") != candidate_id:
+                continue
+            result = step.get("result")
+            request = result.get("evaluation_request") if isinstance(result, dict) else None
+            if not isinstance(request, dict):
+                continue
+            feedback = request.get("feedback")
+            if (
+                request.get("subject") != "agent_change"
+                or not isinstance(feedback, str)
+                or not feedback.strip()
+            ):
+                continue
+            value = {
+                "subject": "agent_change",
+                "feedback": feedback.strip(),
+                "changed_files": request.get("changed_files", []),
+                "validation": request.get("validation", ""),
+            }
+            fingerprint = str(request.get("improvement_fingerprint") or "")
+            if fingerprint:
+                value["improvement_fingerprint"] = fingerprint
+            return value
+        return None
+
     def _complete_supervision(self, run_id: str) -> None:
         """Ask the configured manager model and retain its validated JSON per Run.
 
@@ -3714,6 +3937,17 @@ class ConsoleStore:
             ),
             None,
         )
+        evaluation_request = self._evaluation_request_for_iteration(run, iteration, candidate_id)
+        if evaluation_request and evaluation_request.get("improvement_fingerprint"):
+            fingerprint = evaluation_request["improvement_fingerprint"]
+            already_evaluated = any(
+                isinstance(record, dict)
+                and isinstance(record.get("evaluation_request"), dict)
+                and record["evaluation_request"].get("improvement_fingerprint") == fingerprint
+                for record in run.supervisor_results
+            )
+            if already_evaluated:
+                evaluation_request = None
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -3785,6 +4019,19 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
+        if evaluation_request:
+            supervisor_prompt += "\n\n# Agent result to evaluate\n"
+            supervisor_prompt += json.dumps(evaluation_request, ensure_ascii=False, default=str)
+            supervisor_prompt += (
+                "\n\nThe SDK explicitly registered this completed agent result for evaluation. "
+                "Include evaluation and score only this agent result; do not score the iteration itself."
+            )
+        else:
+            supervisor_prompt += (
+                "\n\nNo SDK agent result was registered for evaluation in this iteration. "
+                "Keep improvements and reported_issues as usual, but omit evaluation entirely. "
+                "Do not assign a score or approval to the iteration."
+            )
         with self.tracer.start_as_current_span(
             "supervisor.evaluate",
             attributes={
@@ -3806,7 +4053,14 @@ class ConsoleStore:
                 response_text = provider.complete(settings, supervisor_prompt)
                 span.set_attributes(_telemetry_text_metadata("gen_ai.response", response_text))
                 span.add_event("gen_ai.response.received")
-                result = self._validated_supervisor_result(response_text)
+                result = self._validated_supervisor_result(
+                    response_text, require_evaluation=evaluation_request is not None
+                )
+                # Manager templates created before agent-result evaluation can
+                # still return an evaluation by default.  A score is invalid
+                # without the SDK's explicit registration, so never retain it.
+                if evaluation_request is None:
+                    result.pop("evaluation", None)
                 evaluation = result.get("evaluation")
                 if evaluation is not None:
                     threshold = (
@@ -3838,6 +4092,7 @@ class ConsoleStore:
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
+                        "evaluation_request": evaluation_request,
                         "recorded_at": now().isoformat(),
                     }
                 )

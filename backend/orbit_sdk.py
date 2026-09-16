@@ -12,9 +12,11 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import threading
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -1647,6 +1649,169 @@ class RunnerContext:
             ``None``. The evidence is emitted to Orbit's runner protocol.
         """
         print("__ORBIT_RESULT__" + json.dumps(values, ensure_ascii=False), flush=True)
+
+    def register_evaluation(
+        self,
+        feedback: str,
+        *,
+        subject: str = "agent_change",
+        changed_files: list[str] | None = None,
+        validation: str = "",
+        improvement_fingerprint: str = "",
+    ) -> dict[str, object]:
+        """Register an AI-agent result that should receive a supervisor evaluation.
+
+        Register only after the agent has completed a meaningful change or
+        produced actionable feedback.  Merely running an iteration does not
+        create an evaluation, score, or approval decision.
+
+        Args:
+            feedback: Concise account of the agent's completed work and its evidence.
+            subject: Stable evaluation subject.  ``agent_change`` is the supported
+                default for autonomous SDK agents.
+            changed_files: Repository-relative files changed by the agent, if any.
+            validation: Verification performed by the agent after its work.
+
+        Returns:
+            The structured evaluation request emitted for the current step.
+        """
+        normalized_feedback = feedback.strip()
+        if not normalized_feedback:
+            raise ValueError("evaluation feedback must not be empty")
+        if subject != "agent_change":
+            raise ValueError("evaluation subject must be agent_change")
+        normalized_files = [
+            str(path).strip() for path in (changed_files or []) if isinstance(path, str) and path.strip()
+        ]
+        request = {
+            "subject": subject,
+            "feedback": normalized_feedback,
+            "changed_files": list(dict.fromkeys(normalized_files)),
+            "validation": validation.strip(),
+            "improvement_fingerprint": improvement_fingerprint.strip(),
+        }
+        self.emit_result({"evaluation_request": request})
+        return request
+
+    def run_ai_agent(
+        self,
+        prompt: str,
+        *,
+        provider: str,
+        options: str = "",
+        timeout: int = 1_800,
+    ) -> dict[str, object]:
+        """Run a locally installed coding agent and retain its completion evidence.
+
+        The agent must print ``ORBIT_AGENT_FEEDBACK: <summary>`` as its final
+        feedback line to opt its work into evaluation.  This keeps a silent or
+        no-op agent run from creating a score for the iteration.
+        """
+        normalized_prompt = prompt.strip()
+        if not normalized_prompt:
+            raise ValueError("AI agent prompt must not be empty")
+        commands = {
+            # ``--approve-for-me`` already selects Codex's workspace-write
+            # sandbox.  The CLI rejects supplying both flags together.
+            "codex": (["codex", "exec", "--approve-for-me"], []),
+            "claude-code": (["claude"], ["-p"]),
+            "kiro": (["kiro-cli", "chat"], []),
+        }
+        if provider not in commands:
+            raise ValueError("AI agent provider must be codex, claude-code, or kiro")
+        try:
+            extra_arguments = shlex.split(options)
+        except ValueError as error:
+            raise ValueError("AI agent options must be a valid command argument string") from error
+        executable, prompt_arguments = commands[provider]
+        # Agent edits are proposals, never writes to the evaluated repository.
+        # A proposal branch/worktree gives the coding agent a real Git checkout while
+        # preserving the operator's working tree and its uncommitted changes.
+        self._git_repository_root()
+        run_id = str(self.environment.get("ORBIT_RUN_ID") or "manual")
+        worktree_id = f"{run_id}-{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        worktree = ORBIT_APP_DATA / "agent-worktrees" / worktree_id
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        base_revision = self.git_head()
+        if not base_revision:
+            raise ValueError("AI agent proposals require a checked-out Git revision")
+        branch = f"orbit/agent-proposal/{run_id}/{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        self.exec(
+            ["git", "worktree", "add", "-b", branch, str(worktree), base_revision],
+            cwd=self.project_root,
+            target_log_source="ai-agent",
+        )
+        output = ""
+        changed_files: list[str] = []
+        patch = ""
+        keep_worktree = False
+        try:
+            output = self.exec(
+                [*executable, *extra_arguments, *prompt_arguments, normalized_prompt],
+                cwd=worktree,
+                timeout=timeout,
+                target_log_source="ai-agent",
+            )
+            # Include newly-created files in the review patch without creating
+            # a commit.  Intent-to-add is local to this disposable proposal
+            # worktree and is finalized only after Issue approval.
+            self.exec(["git", "add", "--intent-to-add", "--all"], cwd=worktree)
+            changed_files = [
+                line
+                for line in self.exec(["git", "diff", "--name-only", "--"], cwd=worktree).splitlines()
+                if line
+            ]
+            patch = self.exec(["git", "diff", "--binary", "--"], cwd=worktree)
+            feedback = next(
+                (
+                    line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                    for line in reversed(output.splitlines())
+                    if line.startswith("ORBIT_AGENT_FEEDBACK:")
+                    and line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                ),
+                "",
+            )
+            keep_worktree = bool(feedback and patch)
+        finally:
+            if not keep_worktree:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree)],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        artifact = (
+            self.write_artifact(f"agent-proposals/{worktree_id}.patch", patch, content_type="text/x-diff")
+            if patch
+            else None
+        )
+        result = {
+            "provider": provider,
+            "feedback": feedback,
+            "changed_files": changed_files,
+            "output": output[-12_000:],
+            "proposal": {
+                "worktree_id": worktree_id,
+                "base_revision": base_revision,
+                "branch": branch if keep_worktree else "",
+                "worktree_path": str(worktree) if keep_worktree else "",
+                "diff": patch,
+                "fingerprint": _sha256(patch.encode("utf-8")) if patch else "",
+                "diff_artifact": artifact,
+            },
+        }
+        self.emit_result({"agent_run": result})
+        return result
 
     def playwright_journey(self, cases: list[dict[str, object]] | None = None) -> dict[str, object]:
         """Run bounded, read-only Playwright page checks for the supplied cases.

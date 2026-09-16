@@ -982,6 +982,27 @@ def test_deleting_issue_management_items_hides_them_without_deleting_run_evidenc
     assert store.delete_issue_management_items([proposal["proposal_id"]]) == {"deleted": 0}
 
 
+def test_issue_management_exposes_an_agent_worktree_diff(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
+    store = store_module.ConsoleStore()
+    proposal = {
+        "proposal_id": "run-1:1:agent",
+        "proposal": {
+            "kind": "agent_change",
+            "changed_files": ["prompt.md"],
+            "base_revision": "abc123",
+            "diff": "diff --git a/prompt.md b/prompt.md\n",
+        },
+    }
+    monkeypatch.setattr(store, "proposal_lifecycles", lambda: [proposal])
+
+    assert store.issue_management_diff(proposal["proposal_id"]) == {
+        "diff": "diff --git a/prompt.md b/prompt.md\n",
+        "changed_files": ["prompt.md"],
+        "base_revision": "abc123",
+    }
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()
@@ -1155,6 +1176,38 @@ def test_supervisor_result_requires_the_two_template_return_keys():
         assert "improvements and reported_issues" in str(error)
     else:
         raise AssertionError("invalid supervisor result was accepted")
+
+
+def test_registered_agent_result_requires_a_supervisor_evaluation():
+    with pytest.raises(ValueError, match="registered agent result"):
+        store_module.ConsoleStore._validated_supervisor_result(
+            '{"improvements": [], "reported_issues": []}', require_evaluation=True
+        )
+
+
+def test_evaluation_request_is_limited_to_the_matching_iteration_and_candidate():
+    run = SimpleNamespace(
+        step_results=[
+            {
+                "loop_index": 1,
+                "candidate_id": "1-1",
+                "result": {"evaluation_request": {"subject": "agent_change", "feedback": "Updated retry"}},
+            },
+            {
+                "loop_index": 2,
+                "candidate_id": "2-1",
+                "result": {"evaluation_request": {"subject": "agent_change", "feedback": "Updated parser"}},
+            },
+        ]
+    )
+
+    assert store_module.ConsoleStore._evaluation_request_for_iteration(run, 2, "2-1") == {
+        "subject": "agent_change",
+        "feedback": "Updated parser",
+        "changed_files": [],
+        "validation": "",
+    }
+    assert store_module.ConsoleStore._evaluation_request_for_iteration(run, 2, "2-2") is None
 
 
 def test_supervisor_result_normalizes_a_numeric_string_score():
@@ -1519,6 +1572,22 @@ def test_ai_slo_drift_quick_start_uses_a_recurring_evidence_gate():
     assert "playwright" not in runner["source"].lower()
     assert execution["environment_variables"] == {"ORBIT_PROBE_COMMAND": "${probe_command}"}
     assert "baseline" in quick_start["assets"]["prompt_template"]["content"]
+
+
+def test_agent_self_improvement_quick_start_embeds_agent_parameters_in_its_runner():
+    store = store_module.ConsoleStore()
+    quick_start = next(
+        item for item in store._built_in_quick_starts() if item["id"] == "openorbit.agent-self-improvement"
+    )
+
+    resolved = store._substitute(
+        quick_start["assets"]["runner"]["source"],
+        {"agent_provider": "claude-code", "agent_options": "--model sonnet"},
+    )
+
+    assert 'AGENT_PROVIDER = "claude-code"' in resolved
+    assert 'AGENT_OPTIONS = "--model sonnet"' in resolved
+    assert "agent_provider" not in quick_start["build"]
 
 
 def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monkeypatch):
