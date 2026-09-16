@@ -23,6 +23,7 @@
       "id": "ID",
       "name": "Name",
       "columnName": "Name",
+      "columnUsage": "Uses",
       "columnCreated": "Created",
       "columnActions": "Actions",
       "version": "Version",
