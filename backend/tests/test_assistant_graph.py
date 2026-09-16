@@ -47,5 +47,10 @@ def test_assistant_prompt_uses_local_mcp_as_the_control_room_source_of_truth():
 
     assert DEFAULT_MCP_URL == "http://127.0.0.1:3000/mcp/"
     assert "OpenOrbit MCP tools as the source of truth" in prompt
+    assert "Execution environment:" in prompt
+    assert "- OS: " in prompt
+    assert "- Default shell: " in prompt
+    assert "- Current working directory: " in prompt
+    assert "- Current local time: " in prompt
     assert "Respond in BCP 47 locale 'ko-KR'." in prompt
     assert "Assistant: Earlier answer" in prompt
