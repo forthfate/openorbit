@@ -409,7 +409,15 @@
       "deleteSelected": "Delete selected",
       "deleteSelectedTitle": "Delete selected issues?",
       "deleteSelectedDescription": "{count} issues will be hidden from Issue management. The source run and evidence are retained.",
-      "delete": "Delete"
+      "delete": "Delete",
+      "agentProposalDiff": "Agent proposal diff",
+      "noAgentProposalChanges": "No file changes were proposed.",
+      "agentProposalBranch": "Agent proposal branch",
+      "committed": "Committed",
+      "approveAndCommit": "Approve and commit",
+      "rejectAndRemove": "Reject and remove",
+      "agentProposalCommitted": "Agent proposal committed to its branch.",
+      "agentProposalRemoved": "Agent proposal worktree and branch removed."
     },
     "settingsLogs": {
       "title": "Orbit operational logs",

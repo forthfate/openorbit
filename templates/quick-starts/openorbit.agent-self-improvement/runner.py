@@ -126,7 +126,7 @@ def managed_prompt_evidence(ctx):
 
 def agent_task(ctx):
     """Give the coding agent a bounded, autonomous improvement objective."""
-    feedback = ctx.previous_supervisor_feedback
+    issue = ctx.current_issue_assessment
     return "\n".join(
         (
             "You are the autonomous improvement agent for this repository.",
@@ -135,7 +135,7 @@ def agent_task(ctx):
             f"Managed prompt path: {ctx.build.get('managed_prompt_path') or ctx.build.get('prompt_bundle')}",
             f"Build purpose: {ctx.build.get('purpose', '')}",
             f"Fixed acceptance criteria: {json.dumps([case.get('acceptance', '') for case in ctx.test_cases], ensure_ascii=False)}",
-            f"Previous supervisor feedback: {json.dumps(feedback.get('improvements', []), ensure_ascii=False)}",
+            f"Supervisor-assessed issue to resolve: {json.dumps(issue, ensure_ascii=False)}",
             "If you completed meaningful feedback or a change, print one final line exactly in this format: ORBIT_AGENT_FEEDBACK: <concise completed-work summary>. If there is no meaningful feedback, do not print that marker.",
         )
     )
@@ -188,22 +188,6 @@ def before_each(ctx):
         prompt_update = update_prompt_from_accepted_proposals(ctx, accepted)
     accepted_ids = [str(value) for value in feedback.get("_orbit_proposal_ids", [])]
     proposal_applications = ctx.record_proposal_application(accepted_ids, prompt_update)
-    agent = ctx.run_ai_agent(
-        agent_task(ctx),
-        provider=AGENT_PROVIDER,
-        options=AGENT_OPTIONS,
-    )
-    # A score belongs to one concrete agent improvement, not to an iteration.
-    # No retained diff means no improvement was proposed and therefore no
-    # evaluation request, score, or decision is created.
-    proposal = agent.get("proposal", {})
-    if agent["feedback"] and agent["changed_files"] and proposal.get("fingerprint"):
-        ctx.register_evaluation(
-            str(agent["feedback"]),
-            changed_files=[str(path) for path in agent["changed_files"]],
-            validation="Agent completed its autonomous repository task.",
-            improvement_fingerprint=str(proposal["fingerprint"]),
-        )
     fingerprint, changed = candidate(ctx)
     ctx.emit_result(
         {
@@ -215,6 +199,44 @@ def before_each(ctx):
                 "requires_human_approval": requires_human_approval,
                 "managed_prompt": managed_prompt_evidence(ctx),
                 "proposal_applications": proposal_applications,
+            }
+        }
+    )
+
+
+@graph.step(
+    "propose-agent-change",
+    title="Create agent proposal for assessed issue",
+    phase="after_supervision",
+    inputs=["candidate_verdict"],
+    outputs=["agent_proposal"],
+)
+@runner.phase("after_supervision")
+def after_supervision(ctx):
+    """Create a proposal only after the supervisor has assessed an Issue."""
+    issue = ctx.current_issue_assessment
+    assessment = issue.get("evaluation") if isinstance(issue, dict) else None
+    decision = assessment.get("approval") if isinstance(assessment, dict) else None
+    if not issue:
+        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "no_reported_issue"}})
+        return
+    if decision == "rejected":
+        ctx.emit_result({"agent_proposal": {"skipped": True, "reason": "issue_rejected", "issue": issue}})
+        ctx.log("Skipped AI agent work because the supervisor rejected the issue")
+        return
+    agent = ctx.run_ai_agent(agent_task(ctx), provider=AGENT_PROVIDER, options=AGENT_OPTIONS)
+    proposal = agent.get("proposal", {})
+    if agent["feedback"] and agent["changed_files"] and proposal.get("fingerprint"):
+        ctx.register_evaluation(
+            str(agent["feedback"]),
+            changed_files=[str(path) for path in agent["changed_files"]],
+            validation="Agent completed its autonomous repository task.",
+            improvement_fingerprint=str(proposal["fingerprint"]),
+        )
+    ctx.emit_result(
+        {
+            "agent_proposal": {
+                "issue": issue,
                 "agent": {key: value for key, value in agent.items() if key != "output"},
             }
         }
@@ -369,6 +391,13 @@ CallbackCycle(
             ("candidate_verdict",),
         ),
         (
+            "propose-agent-change",
+            "Create agent proposal for assessed issue",
+            "after_supervision",
+            ("candidate_verdict",),
+            ("agent_proposal",),
+        ),
+        (
             "retain-iteration",
             "Retain iteration evidence",
             "after_each",
@@ -381,7 +410,8 @@ CallbackCycle(
         ("validate-target", "prepare-prompt", "execution", None),
         ("prepare-prompt", "exercise-target", "execution", "managed prompt"),
         ("exercise-target", "assess-candidate", "data", "responses"),
-        ("assess-candidate", "retain-iteration", "execution", None),
+        ("assess-candidate", "propose-agent-change", "execution", "issue assessed"),
+        ("propose-agent-change", "retain-iteration", "execution", None),
         ("retain-iteration", "prepare-prompt", "loop", "next evaluation"),
         ("retain-iteration", "restore-baseline", "condition", "completed"),
     ),
@@ -391,6 +421,7 @@ CallbackCycle(
         "prepare-prompt": before_each,
         "exercise-target": execute,
         "assess-candidate": verify,
+        "propose-agent-change": after_supervision,
         "retain-iteration": after_each,
         "restore-baseline": after_all,
     }

@@ -1500,7 +1500,15 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
         ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
         (
             "openorbit.agent-self-improvement",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            [
+                "before_all",
+                "before_each",
+                "execute",
+                "verify",
+                "after_supervision",
+                "after_each",
+                "after_all",
+            ],
         ),
         (
             "openorbit.ai-slo-drift-monitor",

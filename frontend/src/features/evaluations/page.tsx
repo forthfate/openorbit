@@ -42,6 +42,7 @@ const phases = [
   "before_each",
   "execute",
   "verify",
+  "after_supervision",
   "after_each",
   "after_all",
 ] as const;

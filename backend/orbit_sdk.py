@@ -34,6 +34,7 @@ PHASE_ALIASES = {
     "setup": "before_each",
     "run": "execute",
     "eval": "verify",
+    "post_supervision": "after_supervision",
     "teardown": "after_each",
     "finalize": "after_all",
 }
@@ -1566,6 +1567,41 @@ class RunnerContext:
                         and str(proposal.get("status") or "").lower() == "accepted"
                     ]
                 return feedback
+        return {}
+
+    @property
+    def current_issue_assessment(self) -> dict[str, object]:
+        """Return this iteration's first supervisor-assessed actionable issue.
+
+        The post-supervision agent phase uses this as its sole objective.  A
+        rejected issue is deliberately returned too, so the runner can record
+        an explicit skip rather than treating absence as approval.
+        """
+        run_id = self.environment.get("ORBIT_RUN_ID", "").strip()
+        if not run_id:
+            return {}
+        try:
+            values = json.loads(
+                (self.app_data / "data" / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return {}
+        for record in reversed(values.get("supervisor_results", [])):
+            if not isinstance(record, dict) or record.get("stage") != "issue_assessment":
+                continue
+            if int(record.get("iteration", 0)) != self.loop_index:
+                continue
+            response = record.get("response")
+            if not isinstance(response, dict):
+                continue
+            issues = response.get("reported_issues")
+            if isinstance(issues, list):
+                candidates = [dict(issue) for issue in issues if isinstance(issue, dict)]
+                for issue in candidates:
+                    assessment = issue.get("evaluation")
+                    if not isinstance(assessment, dict) or assessment.get("approval") != "rejected":
+                        return issue
+                return candidates[0] if candidates else {}
         return {}
 
     def log(self, message: str) -> None:

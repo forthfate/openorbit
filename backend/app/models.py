@@ -15,12 +15,22 @@ PHASE_ALIASES = {
     "teardown": "after_each",
     "finalize": "after_all",
 }
-LIFECYCLE_PHASES = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
+LIFECYCLE_PHASES = (
+    "before_all",
+    "before_each",
+    "execute",
+    "verify",
+    "after_supervision",
+    "after_each",
+    "after_all",
+)
 
 
 class Step(BaseModel):
     id: str
-    phase: Literal["before_all", "before_each", "execute", "verify", "after_each", "after_all"]
+    phase: Literal[
+        "before_all", "before_each", "execute", "verify", "after_supervision", "after_each", "after_all"
+    ]
     name: str
     command: list[str]
     working_directory: str
@@ -59,6 +69,16 @@ class Workflow(BaseModel):
         return phases in (
             ["before_all", "before_each", "execute", "verify", "after_each"],
             ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_each", "execute", "verify", "after_supervision", "after_each"],
+            [
+                "before_all",
+                "before_each",
+                "execute",
+                "verify",
+                "after_supervision",
+                "after_each",
+                "after_all",
+            ],
         )
 
 

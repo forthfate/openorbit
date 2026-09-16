@@ -63,6 +63,14 @@ type Copy = {
   acceptable: string;
   accepted: string;
   rejected: string;
+  agentProposalDiff: string;
+  noAgentProposalChanges: string;
+  agentProposalBranch: string;
+  committed: string;
+  approveAndCommit: string;
+  rejectAndRemove: string;
+  agentProposalCommitted: string;
+  agentProposalRemoved: string;
 };
 const statuses = [
   "unreviewed",
@@ -224,7 +232,7 @@ export function IssuesPage({
         setSelected(item);
         setManagementStatus(item.management_status);
         load();
-        onNotice(decision === "approve" ? "Agent proposal committed to its branch." : "Agent proposal worktree and branch removed.", "success");
+        onNotice(decision === "approve" ? t.agentProposalCommitted : t.agentProposalRemoved, "success");
       })
       .catch((error) => onNotice(error.message, "warning"));
   const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
@@ -336,7 +344,11 @@ export function IssuesPage({
     {
       id: "score",
       header: t.score,
-      render: (x) => (x.score == null ? "—" : `${x.score}/10`),
+      render: (x) => x.issue_evaluation
+        ? <span title={`Issue decision: ${x.issue_evaluation.approval}`}>
+            Issue {x.issue_evaluation.score}/10 · Proposal {x.score == null ? "—" : `${x.score}/10`}
+          </span>
+        : (x.score == null ? "—" : `${x.score}/10`),
       sortValue: (x) => x.score,
     },
     {
@@ -553,19 +565,19 @@ export function IssuesPage({
                 )}
                 {selected.proposal.kind === "agent_change" && (
                   <section className="issue-management-diff">
-                    <h3>Agent proposal diff</h3>
-                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label="Agent proposal diff" /> : <p className="hint">No file changes were proposed.</p>}
+                    <h3>{t.agentProposalDiff}</h3>
+                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
                   </section>
                 )}
                 {selected.proposal.kind === "agent_change" && (
                   <section className="issue-management-proposal-action">
-                    <h3>Agent proposal branch</h3>
+                    <h3>{t.agentProposalBranch}</h3>
                     <p>{selected.proposal_branch || "—"}</p>
-                    {selected.proposal_commit && <p>Committed: {selected.proposal_commit}</p>}
+                    {selected.proposal_commit && <p>{t.committed}: {selected.proposal_commit}</p>}
                     {selected.proposal_action === "pending" && (
                       <div className="modal-actions">
-                        <button className="approve" onClick={() => decideAgentProposal("approve")}>Approve and commit</button>
-                        <button className="danger" onClick={() => decideAgentProposal("reject")}>Reject and remove</button>
+                        <button className="approve" onClick={() => decideAgentProposal("approve")}>{t.approveAndCommit}</button>
+                        <button className="danger" onClick={() => decideAgentProposal("reject")}>{t.rejectAndRemove}</button>
                       </div>
                     )}
                   </section>

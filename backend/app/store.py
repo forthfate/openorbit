@@ -1149,7 +1149,15 @@ class ConsoleStore:
             if selected is None:
                 raise ValueError(f"runner version {runner_version} does not exist")
             source = str(selected["source"])
-        lifecycle_order = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
+        lifecycle_order = (
+            "before_all",
+            "before_each",
+            "execute",
+            "verify",
+            "after_supervision",
+            "after_each",
+            "after_all",
+        )
         declared = {
             PHASE_ALIASES.get(phase, phase)
             for phase in re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', source)
@@ -2241,6 +2249,8 @@ class ConsoleStore:
                 # They are emitted by the SDK only when the agent supplied
                 # explicit feedback, and their immutable worktree diff stays
                 # attached to the resulting Issue.
+                if record.get("stage") != "agent_proposal_assessment":
+                    continue
                 for step in run.step_results:
                     if not isinstance(step, dict) or step.get("loop_index") != iteration:
                         continue
@@ -2250,6 +2260,8 @@ class ConsoleStore:
                         continue
                     proposal_data = agent.get("proposal")
                     proposal_data = proposal_data if isinstance(proposal_data, dict) else {}
+                    agent_proposal = result.get("agent_proposal") if isinstance(result, dict) else {}
+                    linked_issue = agent_proposal.get("issue") if isinstance(agent_proposal, dict) else None
                     fingerprint = str(proposal_data.get("fingerprint") or "")
                     if not fingerprint or fingerprint in seen_agent_improvements:
                         continue
@@ -2282,12 +2294,16 @@ class ConsoleStore:
                                 "branch": proposal_data.get("branch", ""),
                                 "worktree_path": proposal_data.get("worktree_path", ""),
                                 "fingerprint": fingerprint,
+                                "issue": linked_issue,
                             },
                             "decision": decision,
                             "score": score,
                             "decision_rationale": str(evaluation.get("summary") or "")
                             if isinstance(evaluation, dict)
                             else "",
+                            "issue_evaluation": linked_issue.get("evaluation")
+                            if isinstance(linked_issue, dict)
+                            else None,
                             "status": "proposed" if decision == "pending" else decision,
                             "build_id": run.build_id,
                             "build_name": run.build_name,
@@ -3599,6 +3615,7 @@ class ConsoleStore:
             steps = workflow.steps_for(run.execution_mode)
             before_all = [step for step in steps if step.phase == "before_all"]
             loop_steps = [step for step in steps if step.phase in {"before_each", "execute", "verify"}]
+            after_supervision = [step for step in steps if step.phase == "after_supervision"]
             after_each = [step for step in steps if step.phase == "after_each"]
             after_all = [step for step in steps if step.phase == "after_all"]
             if not self._wait_for_schedule(run_id):
@@ -3696,6 +3713,16 @@ class ConsoleStore:
                         self._execute_step(run_id, step, loop_index, resources)
                         if self._load(run_id).status in {"failed", "cancelled"}:
                             break
+                # The supervisor first assesses discovered issues.  The agent
+                # phase may then create a proposal for an issue the supervisor
+                # did not reject; only that concrete proposal receives the
+                # second, independent score/decision.
+                if run.execution_mode == "run" and self._load(run_id).status == "running":
+                    self._complete_supervision(run_id)
+                    for step in after_supervision:
+                        self._execute_step(run_id, step, loop_index, resources)
+                    if after_supervision and self._load(run_id).status == "running":
+                        self._complete_supervision(run_id, stage="agent_proposal_assessment")
                 # Cleanup is part of the lifecycle contract, not merely the
                 # happy path. Run it after an earlier phase fails or a user
                 # cancels the Run; the terminal status remains unchanged.
@@ -3703,8 +3730,6 @@ class ConsoleStore:
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
                 if self._load(run_id).status in {"failed", "cancelled"}:
                     break
-                if run.execution_mode == "run" and self._load(run_id).status == "running":
-                    self._complete_supervision(run_id)
                 if (
                     loop_index < run.loop_limit
                     and run.repeat_interval_minutes
@@ -3808,6 +3833,17 @@ class ConsoleStore:
         if require_evaluation and evaluation is None:
             raise ValueError("supervisor evaluation is required for a registered agent result")
         if evaluation is not None:
+            ConsoleStore._validate_evaluation(evaluation)
+        for issue in result["reported_issues"]:
+            issue_evaluation = issue.get("evaluation")
+            if issue_evaluation is not None:
+                ConsoleStore._validate_evaluation(issue_evaluation)
+        return result
+
+    @staticmethod
+    def _validate_evaluation(evaluation: Any) -> None:
+        """Validate either an issue assessment or an agent-proposal assessment."""
+        if evaluation is not None:
             if (
                 not isinstance(evaluation, dict)
                 or not {"score", "approval", "summary"}.issubset(evaluation)
@@ -3870,7 +3906,6 @@ class ConsoleStore:
                     or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
-        return result
 
     @staticmethod
     def _evaluation_request_for_iteration(
@@ -3910,7 +3945,7 @@ class ConsoleStore:
             return value
         return None
 
-    def _complete_supervision(self, run_id: str) -> None:
+    def _complete_supervision(self, run_id: str, *, stage: str = "issue_assessment") -> None:
         """Ask the configured manager model and retain its validated JSON per Run.
 
         A missing profile is observable but never turns a successfully completed
@@ -3938,16 +3973,25 @@ class ConsoleStore:
             None,
         )
         evaluation_request = self._evaluation_request_for_iteration(run, iteration, candidate_id)
+        if stage == "issue_assessment":
+            evaluation_request = None
+        elif stage != "agent_proposal_assessment":
+            raise ValueError(f"unsupported supervision stage: {stage}")
+        elif evaluation_request is None:
+            # No Agent feedback and no retained diff means there is no proposal
+            # to score.  Issue assessment is already retained independently.
+            return
         if evaluation_request and evaluation_request.get("improvement_fingerprint"):
             fingerprint = evaluation_request["improvement_fingerprint"]
             already_evaluated = any(
                 isinstance(record, dict)
+                and record.get("stage") == stage
                 and isinstance(record.get("evaluation_request"), dict)
                 and record["evaluation_request"].get("improvement_fingerprint") == fingerprint
                 for record in run.supervisor_results
             )
             if already_evaluated:
-                evaluation_request = None
+                return
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -4019,7 +4063,16 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
-        if evaluation_request:
+        if stage == "issue_assessment":
+            supervisor_prompt += (
+                "\n\n# Issue assessment required\n"
+                "Assess every reported_issues item independently. Each issue must include "
+                "evaluation: {score, approval, summary}; approval is approved, pending, or rejected. "
+                "This is the score/decision for the discovered issue, not for the iteration. "
+                "Do not include a top-level evaluation. An agent may only create a proposal for an issue "
+                "whose approval is not rejected."
+            )
+        elif evaluation_request:
             supervisor_prompt += "\n\n# Agent result to evaluate\n"
             supervisor_prompt += json.dumps(evaluation_request, ensure_ascii=False, default=str)
             supervisor_prompt += (
@@ -4056,6 +4109,10 @@ class ConsoleStore:
                 result = self._validated_supervisor_result(
                     response_text, require_evaluation=evaluation_request is not None
                 )
+                if stage == "issue_assessment" and any(
+                    not isinstance(issue.get("evaluation"), dict) for issue in result["reported_issues"]
+                ):
+                    raise ValueError("every supervisor-reported issue must include score and decision")
                 # Manager templates created before agent-result evaluation can
                 # still return an evaluation by default.  A score is invalid
                 # without the SDK's explicit registration, so never retain it.
@@ -4089,6 +4146,7 @@ class ConsoleStore:
                     {
                         "iteration": iteration,
                         "candidate_id": candidate_id,
+                        "stage": stage,
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
