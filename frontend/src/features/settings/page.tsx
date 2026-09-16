@@ -234,7 +234,6 @@ export function SettingsPage({
             </select>
             <button
               className="approve"
-              disabled={!chatProfile}
               onClick={saveChatProfile}
             >
               {p.saveChatProfile}

@@ -9,7 +9,24 @@ import hashlib
 import json
 import re
 
-from orbit_sdk import graph, runner
+from orbit_runner_kit import CallbackCycle
+from orbit_sdk import runner as orbit_runner
+
+
+class _LegacyDeclarations:
+    def connect(self, *_args, **_kwargs):
+        pass
+
+    def step(self, *_args, **_kwargs):
+        return lambda handler: handler
+
+
+class _LegacyRunner:
+    def phase(self, *_args, **_kwargs):
+        return lambda handler: handler
+
+
+graph, runner = _LegacyDeclarations(), _LegacyRunner()
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
 
@@ -297,5 +314,51 @@ def after_all(ctx):
     ctx.log("Restored the native improvement target without committing changes")
 
 
+CallbackCycle(
+    steps=(
+        ("validate-target", "Validate target", "before_all", (), ("evaluation_contract",)),
+        (
+            "prepare-prompt",
+            "Prepare prompt candidate",
+            "before_each",
+            ("evaluation_contract",),
+            ("managed_prompt",),
+        ),
+        ("exercise-target", "Exercise target AI", "execute", ("managed_prompt",), ("target_responses",)),
+        (
+            "assess-candidate",
+            "Assess candidate evidence",
+            "verify",
+            ("target_responses",),
+            ("candidate_verdict",),
+        ),
+        (
+            "retain-iteration",
+            "Retain iteration evidence",
+            "after_each",
+            ("candidate_verdict",),
+            ("iteration_snapshot",),
+        ),
+        ("restore-baseline", "Restore baseline", "after_all", ("iteration_snapshot",), ("restored_target",)),
+    ),
+    edges=(
+        ("validate-target", "prepare-prompt", "execution", None),
+        ("prepare-prompt", "exercise-target", "execution", "managed prompt"),
+        ("exercise-target", "assess-candidate", "data", "responses"),
+        ("assess-candidate", "retain-iteration", "execution", None),
+        ("retain-iteration", "prepare-prompt", "loop", "next evaluation"),
+        ("retain-iteration", "restore-baseline", "condition", "completed"),
+    ),
+).install(
+    {
+        "validate-target": before_all,
+        "prepare-prompt": before_each,
+        "exercise-target": execute,
+        "assess-candidate": verify,
+        "retain-iteration": after_each,
+        "restore-baseline": after_all,
+    }
+)
+
 if __name__ == "__main__":
-    runner.main()
+    orbit_runner.main()

@@ -27,6 +27,32 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_system_readiness_reports_missing_system_ai_and_git(monkeypatch):
+    monkeypatch.setattr(
+        main_module.store,
+        "application_settings",
+        lambda: {"chat_model_profile_name": ""},
+    )
+    monkeypatch.setattr(main_module.store, "profiles", lambda: [])
+    monkeypatch.setattr(main_module.shutil, "which", lambda _: None)
+
+    response = TestClient(app).get("/api/system/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ready": False,
+        "checks": [
+            {
+                "id": "system_ai",
+                "status": "blocked",
+                "detail": "profile_not_selected",
+                "settings_page": "settings",
+            },
+            {"id": "git", "status": "blocked", "detail": "not_installed", "settings_page": None},
+        ],
+    }
+
+
 def test_mcp_server_exposes_openapi_backed_control_room_tools():
     headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
     initialize = {
@@ -1330,10 +1356,9 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     compile(improvement, "native-improvement-cycle.py", "exec")
     compile(json_agent, "json-agent-cycle.py", "exec")
     compile(probe_gate, "evidence-gated-probe-cycle.py", "exec")
-    assert "playwright_journey" in user_journey
+    assert "RecurringBrowserJourney" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
-    assert "previous_supervisor_feedback" in user_journey
-    assert "user-journey-state" in user_journey
+    assert "RecurringBrowserJourney" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" in adapter
     assert "playwright_journey" not in improvement
     assert "complete_model" in improvement
@@ -1354,7 +1379,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "Jgent" not in probe_gate
 
 
-def test_site_exploration_quick_start_uses_the_langgraph_runner():
+def test_site_exploration_quick_start_uses_the_high_level_recipe():
     store = store_module.ConsoleStore()
     quick_start = next(
         item for item in store._built_in_quick_starts() if item["id"] == "openorbit.site-exploration-review"
@@ -1362,8 +1387,11 @@ def test_site_exploration_quick_start_uses_the_langgraph_runner():
     runner = quick_start["assets"]["runner"]
     assert "LangGraph" in quick_start["description"]
     assert runner["template_id"] == "site-exploration"
-    assert "StateGraph" in runner["source"]
-    assert "logout|signout|delete" in runner["source"]
+    assert "SiteExplorationReview" in runner["source"]
+    assert (
+        "logout|signout|delete"
+        in (Path(store_module.__file__).parents[1] / "orbit_runner_kit.py").read_text()
+    )
 
 
 def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch):

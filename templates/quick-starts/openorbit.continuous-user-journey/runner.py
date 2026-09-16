@@ -5,7 +5,24 @@ import re
 from pathlib import Path
 
 import orbit_sdk
-from orbit_sdk import graph, runner
+from orbit_runner_kit import CallbackCycle
+from orbit_sdk import runner as orbit_runner
+
+
+class _LegacyDeclarations:
+    def connect(self, *_args, **_kwargs):
+        pass
+
+    def step(self, *_args, **_kwargs):
+        return lambda handler: handler
+
+
+class _LegacyRunner:
+    def phase(self, *_args, **_kwargs):
+        return lambda handler: handler
+
+
+graph, runner = _LegacyDeclarations(), _LegacyRunner()
 
 BLOCKED = re.compile(
     r"logout|signout|delete|remove|destroy|payment|checkout|purchase|upgrade|unsubscribe", re.I
@@ -286,5 +303,32 @@ def after_all(ctx):
     ctx.log("Finalized the autonomous persona journey")
 
 
+CallbackCycle(
+    steps=(
+        ("validate", "Validate autonomous persona", "before_all", (), ("persona_contract",)),
+        ("observe", "Observe current page", "before_each", ("persona_contract",), ("page_choices",)),
+        ("decide", "Plan next persona action", "execute", ("page_choices",), ("persona_plan",)),
+        ("act", "Take one safe persona action", "verify", ("persona_plan",), ("action_evidence",)),
+        ("reflect", "Reflect persona session", "after_each", ("action_evidence",), ("persona_handoff",)),
+        ("finalize", "Finalize autonomous persona", "after_all", ("persona_handoff",), ("final_status",)),
+    ),
+    edges=(
+        ("validate", "observe", "execution", None),
+        ("observe", "decide", "data", "rendered choices"),
+        ("decide", "act", "data", "one safe action"),
+        ("act", "reflect", "data", "action evidence"),
+        ("reflect", "observe", "loop", "next visit"),
+    ),
+).install(
+    {
+        "validate": before_all,
+        "observe": before_each,
+        "decide": execute,
+        "act": verify,
+        "reflect": after_each,
+        "finalize": after_all,
+    }
+)
+
 if __name__ == "__main__":
-    runner.main()
+    orbit_runner.main()

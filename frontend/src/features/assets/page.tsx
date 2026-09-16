@@ -10,8 +10,9 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { Children, isValidElement, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Build,
   ExecutionEnvironment,
   PromptTemplate,
   RunnerAsset,
@@ -24,6 +25,7 @@ import type {
   WorkflowGraphDefinition,
   WorkflowStep,
 } from "../../domain/models";
+import { buildAssetUsage, type AssetUsage } from "../../domain/asset-usage";
 import {
   localeMessageMap,
   localeMessages,
@@ -95,17 +97,17 @@ function AssetCatalog({
   locale?: Locale;
 }) {
   const [sort, setSort] = useState<{
-    key: "name" | "createdAt";
+    key: "name" | "createdAt" | "usageCount";
     direction: "asc" | "desc";
     }>({ key: "createdAt", direction: "desc" }),
     rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
       const a = String(
-        (left.props as { name?: string; detail?: string; createdAt?: string })[
+        (left.props as { name?: string; detail?: string; createdAt?: string; usageCount?: number })[
           sort.key
         ] ?? "",
       );
       const b = String(
-        (right.props as { name?: string; detail?: string; createdAt?: string })[
+        (right.props as { name?: string; detail?: string; createdAt?: string; usageCount?: number })[
           sort.key
         ] ?? "",
       );
@@ -132,13 +134,11 @@ function AssetCatalog({
       {loading ? <CatalogSkeleton /> : rows.length ? (
         <>
           <div className="catalog-list__header">
-            {(["name", "createdAt"] as const).map((key) => {
+            {(["name", "usageCount", "createdAt"] as const).map((key) => {
               const Icon = icon(key);
               return (
                 <button key={key} type="button" onClick={() => changeSort(key)}>
-                  {key === "createdAt"
-                    ? text[locale].columnCreated
-                    : text[locale].columnName}
+                  {key === "createdAt" ? text[locale].columnCreated : key === "usageCount" ? text[locale].columnUsage : text[locale].columnName}
                   <Icon size={13} />
                 </button>
               );
@@ -164,6 +164,7 @@ function Catalog({
   runners,
   onRefresh,
   onDelete,
+  runnerUsage,
   loading = false,
   locale,
 }: {
@@ -176,14 +177,15 @@ function Catalog({
   runners?: RunnerAsset[];
   onRefresh?: () => Promise<unknown>;
   onDelete?: (kind: "runner", id: string) => void;
+  runnerUsage?: AssetUsage["runners"];
   loading?: boolean;
   locale: Locale;
 }) {
   const isLegacyWorkflowSection = title === text[locale].flows;
   return (
     <>
-      {showRunners && runners && onRefresh && onDelete && (
-        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} onDelete={onDelete} />
+      {showRunners && runners && onRefresh && onDelete && runnerUsage && (
+        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} onDelete={onDelete} usage={runnerUsage} />
       )}{" "}
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
@@ -686,6 +688,7 @@ function AssetRow({
   name,
   detail,
   createdAt,
+  usageCount = 0,
   locale,
   onClick,
   onDelete,
@@ -694,6 +697,7 @@ function AssetRow({
   name: string;
   detail: string;
   createdAt?: string;
+  usageCount?: number;
   locale?: Locale;
   onClick: () => void;
   onDelete: () => void;
@@ -705,6 +709,7 @@ function AssetRow({
         <strong>{name}</strong>
         <span>{detail}</span>
       </button>
+      <span className="catalog-row__usage">{usageCount}</span>
       <time className="catalog-row__created" dateTime={createdAt}>
         {createdAt
           ? new Intl.DateTimeFormat(intlLocales[locale ?? "en"], {
@@ -750,6 +755,7 @@ export function ProfileCatalog({
   tested,
   loading,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   profiles: Settings[];
@@ -760,6 +766,7 @@ export function ProfileCatalog({
   tested: boolean;
   loading: boolean;
   onDelete: (id: string) => void;
+  usage?: AssetUsage["profiles"];
 }) {
   const copy = localeMessages<{
       profiles: ProfileCatalogCopy;
@@ -795,6 +802,7 @@ export function ProfileCatalog({
               name={profile.profile_name}
               detail={`${profile.provider} · ${profile.model || "—"}`}
               createdAt={profile.created_at}
+              usageCount={usage?.get(profile.profile_name) ?? 0}
               locale={locale}
               onClick={() => {
                 setSettings(profile);
@@ -831,12 +839,14 @@ function RunnerCatalog({
   onRefresh,
   loading,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   items: RunnerAsset[];
   onRefresh: () => Promise<unknown>;
   loading: boolean;
   onDelete: (kind: "runner", id: string) => void;
+  usage: AssetUsage["runners"];
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
@@ -868,6 +878,7 @@ function RunnerCatalog({
               name={item.name}
               detail={`${item.id} · v${item.version} · ${item.description}`}
               createdAt={item.created_at}
+              usageCount={usage.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setEditing(item);
@@ -1050,6 +1061,7 @@ function LegacyAssetsPage({
   onCreateWorkflow,
   onUpdateWorkflow,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   workflows: Workflow[];
@@ -1061,6 +1073,7 @@ function LegacyAssetsPage({
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
   onDelete: (kind: "template" | "test-set" | "runner" | "workflow", id: string) => void;
+  usage: AssetUsage;
 }) {
   const createLabel = locales[locale].ui.create,
     l: Record<string, string> = {
@@ -1133,6 +1146,7 @@ function LegacyAssetsPage({
             name={item.name}
             detail={`${item.id} · v${item.version}`}
             createdAt={item.created_at}
+            usageCount={usage.promptTemplates.get(item.id) ?? 0}
             locale={locale}
             onClick={() => setTemplate(item)}
             onDelete={() => onDelete("template", item.id)}
@@ -1158,6 +1172,7 @@ function LegacyAssetsPage({
             name={item.name}
             detail={`${item.id} · ${item.cases.length}`}
             createdAt={item.created_at}
+            usageCount={usage.testCaseSets.get(item.id) ?? 0}
             locale={locale}
             onClick={() => setTestSet(item)}
             onDelete={() => onDelete("test-set", item.id)}
@@ -1169,6 +1184,7 @@ function LegacyAssetsPage({
         loading={loading}
         showRunners
         runners={runners}
+        runnerUsage={usage.runners}
         onRefresh={onRefresh}
         onDelete={onDelete}
         emptyHint={l.emptyFlows}
@@ -1192,6 +1208,7 @@ function LegacyAssetsPage({
             key={`${item.id}-${index}`}
             name={item.name}
             detail={`${item.id} · ${item.description}`}
+            usageCount={0}
             onClick={() => {
               setEditingWorkflow(item);
               setFlowOpen(true);
@@ -1632,6 +1649,7 @@ function EnvironmentCatalog({
   loading,
   onRefresh,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   executionEnvironments: ExecutionEnvironment[];
@@ -1642,6 +1660,7 @@ function EnvironmentCatalog({
     kind: "execution-environment" | "target-environment",
     id: string,
   ) => void;
+  usage: Pick<AssetUsage, "executionEnvironments" | "targetEnvironments">;
 }) {
   const t = environmentText[locale],
     { pushToast } = useToast();
@@ -1730,6 +1749,7 @@ function EnvironmentCatalog({
               name={item.name}
               detail={`${item.id} · ${item.executor.type}`}
               createdAt={item.created_at}
+              usageCount={usage.executionEnvironments.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setExecution({
@@ -1783,6 +1803,7 @@ function EnvironmentCatalog({
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
               createdAt={item.created_at}
+              usageCount={usage.targetEnvironments.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setTarget({
@@ -1897,6 +1918,7 @@ function EnvironmentCatalog({
 
 export function AssetsPage({
   locale,
+  builds,
   executionEnvironments,
   targetEnvironments,
   profiles,
@@ -1910,6 +1932,7 @@ export function AssetsPage({
   ...legacy
 }: {
   locale: Locale;
+  builds: Build[];
   workflows: Workflow[];
   runners: RunnerAsset[];
   promptTemplates: PromptTemplate[];
@@ -1938,6 +1961,7 @@ export function AssetsPage({
     id: string,
   ) => void;
 }) {
+  const usage = useMemo(() => buildAssetUsage(builds), [builds]);
   if (loading) return <>
     <SectionSkeleton rows={3} />
     <SectionSkeleton rows={3} />
@@ -1957,6 +1981,7 @@ export function AssetsPage({
         save={save}
         tested={tested}
         loading={loading}
+        usage={usage.profiles}
         onDelete={(id) => onDelete("profile", id)}
       />
       <EnvironmentCatalog
@@ -1966,8 +1991,9 @@ export function AssetsPage({
         loading={loading}
         onRefresh={legacy.onRefresh}
         onDelete={onDelete}
+        usage={usage}
       />
-      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} />
     </>
   );
 }
