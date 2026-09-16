@@ -1595,8 +1595,19 @@ class RunnerContext:
             if not isinstance(response, dict):
                 continue
             issues = response.get("reported_issues")
-            if isinstance(issues, list):
-                candidates = [dict(issue) for issue in issues if isinstance(issue, dict)]
+            improvements = response.get("improvements")
+            candidates = [
+                dict(issue) for issue in issues if isinstance(issues, list) and isinstance(issue, dict)
+            ]
+            # Manager templates commonly express a discovered product problem
+            # as an improvement proposal.  It is still an Issue for this
+            # lifecycle once the supervisor has scored and decided it.
+            candidates.extend(
+                dict(improvement)
+                for improvement in improvements
+                if isinstance(improvements, list) and isinstance(improvement, dict)
+            )
+            if candidates:
                 for issue in candidates:
                     assessment = issue.get("evaluation")
                     if not isinstance(assessment, dict) or assessment.get("approval") != "rejected":

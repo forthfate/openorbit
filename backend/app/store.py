@@ -4066,7 +4066,7 @@ class ConsoleStore:
         if stage == "issue_assessment":
             supervisor_prompt += (
                 "\n\n# Issue assessment required\n"
-                "Assess every reported_issues item independently. Each issue must include "
+                "Assess every reported_issues and improvements item independently. Each discovered item must include "
                 "evaluation: {score, approval, summary}; approval is approved, pending, or rejected. "
                 "This is the score/decision for the discovered issue, not for the iteration. "
                 "Do not include a top-level evaluation. An agent may only create a proposal for an issue "
@@ -4110,9 +4110,10 @@ class ConsoleStore:
                     response_text, require_evaluation=evaluation_request is not None
                 )
                 if stage == "issue_assessment" and any(
-                    not isinstance(issue.get("evaluation"), dict) for issue in result["reported_issues"]
+                    not isinstance(item.get("evaluation"), dict)
+                    for item in [*result["reported_issues"], *result["improvements"]]
                 ):
-                    raise ValueError("every supervisor-reported issue must include score and decision")
+                    raise ValueError("every supervisor-discovered issue must include score and decision")
                 # Manager templates created before agent-result evaluation can
                 # still return an evaluation by default.  A score is invalid
                 # without the SDK's explicit registration, so never retain it.
