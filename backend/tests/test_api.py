@@ -2046,6 +2046,7 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
 
 def test_issue_management_excludes_agent_assessment_feedback_from_issue_rationales(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
     store = store_module.ConsoleStore()
     timestamp = store_module.now()
     issue = {
@@ -2109,12 +2110,15 @@ def test_issue_management_excludes_agent_assessment_feedback_from_issue_rational
 
     lifecycle = store.proposal_lifecycles()
 
-    assert [item["title"] for item in lifecycle] == [
-        "Issue proposal",
-        "Agent change: Added a policy guardrail.",
-    ]
+    assert [item["title"] for item in lifecycle] == ["Issue proposal"]
+    assessed_issue = lifecycle[0]
+    assert assessed_issue["proposal"]["agent_change"]["feedback"] == "Added a policy guardrail."
+    assert assessed_issue["proposal"]["agent_change"]["review"]["summary"] == "Agent review summary."
     assert lifecycle[0]["decision_rationale"] == "Issue reason."
-    assert lifecycle[1]["decision_rationale"] == ""
+    assert all(item["category"] == "other" for item in lifecycle)
+    managed_issue = next(item for item in store.issue_management_items() if item["title"] == "Issue proposal")
+    assert managed_issue["comments"][0]["body"] == "Agent review summary."
+    assert managed_issue["comments"][0]["assigner"] == "AI supervisor"
 
 
 def test_hello_accepts_unsaved_profile_settings():

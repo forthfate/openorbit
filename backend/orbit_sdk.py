@@ -159,7 +159,7 @@ class Graph:
                     "inputs": list(node.inputs),
                     "outputs": list(node.outputs),
                     "description": node.description,
-                    "after_supervision": node.after_supervision,
+                    **({"after_supervision": True} if node.after_supervision else {}),
                 }
                 for node in self._nodes.values()
             ],
@@ -1600,16 +1600,20 @@ class RunnerContext:
                 continue
             issues = response.get("reported_issues")
             improvements = response.get("improvements")
-            candidates = [
-                dict(issue) for issue in issues if isinstance(issues, list) and isinstance(issue, dict)
-            ]
             # Manager templates commonly express a discovered product problem
             # as an improvement proposal.  It is still an Issue for this
-            # lifecycle once the supervisor has scored and decided it.
-            candidates.extend(
-                dict(improvement)
-                for improvement in improvements
+            # lifecycle once the supervisor has scored and decided it. Prefer
+            # that user-facing proposal so the agent changes the same Issue
+            # shown in Issue Management rather than creating a parallel row.
+            candidates = [
+                {**improvement, "_orbit_issue_id": f"{run_id}:{self.loop_index}:{index}"}
+                for index, improvement in enumerate(improvements)
                 if isinstance(improvements, list) and isinstance(improvement, dict)
+            ]
+            candidates.extend(
+                {**issue, "_orbit_issue_id": f"{run_id}:{self.loop_index}:issue:{index}"}
+                for index, issue in enumerate(issues)
+                if isinstance(issues, list) and isinstance(issue, dict)
             )
             if candidates:
                 for issue in candidates:

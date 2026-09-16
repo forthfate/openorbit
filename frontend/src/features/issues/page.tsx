@@ -46,6 +46,11 @@ type Copy = {
   saved: string;
   build: string;
   proposal: string;
+  accuracyGrounding: string;
+  safetyPrivacy: string;
+  taskCompletion: string;
+  userExperience: string;
+  other: string;
   details: string;
   statusHint: string;
   managementStatusHint: string;
@@ -139,7 +144,7 @@ export function IssuesPage({
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
   }, []);
   useEffect(() => {
-    if (!selected || selected.proposal.kind !== "agent_change") return;
+    if (!selected || !selected.proposal.agent_change) return;
     api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
       .then((result) => setAgentDiff({ proposalId: selected.proposal_id, value: result.diff }))
       .catch(() => setAgentDiff({ proposalId: selected.proposal_id, value: "" }));
@@ -171,6 +176,14 @@ export function IssuesPage({
         accepted: t.accepted,
         rejected: t.rejected,
       })[v] ?? v,
+    categoryLabel = (v: string) =>
+      ({
+        accuracy_grounding: t.accuracyGrounding,
+        safety_privacy: t.safetyPrivacy,
+        task_completion: t.taskCompletion,
+        user_experience: t.userExperience,
+        other: t.other,
+      })[v] ?? t.other,
     sortedBuilds = useMemo(
       () =>
         [...builds].sort(
@@ -311,6 +324,9 @@ export function IssuesPage({
       header: t.proposal,
       render: (x) => (
         <span className="issue-proposal">
+          <em className={`issue-category issue-category--${x.category}`}>
+            {categoryLabel(x.category)}
+          </em>
           <strong>{x.title}</strong>
         </span>
       ),
@@ -475,21 +491,23 @@ export function IssuesPage({
             <Trash2 size={15} />
           </button>
         </div>
-        <DataTable
-          columns={columns}
-          rows={pagedRows}
-          empty={t.empty}
-          onRowClick={(item) => {
-            setSelected(item);
-            setModalTab("details");
-            setComment("");
-            setAssigner("");
-            setManagementStatus(item.management_status);
-            setRun("");
-          }}
-          className="issue-management-table"
-          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) 82px 110px 110px"
-        />
+        <div className="issue-management-table-scroll">
+          <DataTable
+            columns={columns}
+            rows={pagedRows}
+            empty={t.empty}
+            onRowClick={(item) => {
+              setSelected(item);
+              setModalTab("details");
+              setComment("");
+              setAssigner("");
+              setManagementStatus(item.management_status);
+              setRun("");
+            }}
+            className="issue-management-table"
+            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px 110px"
+          />
+        </div>
         <Pagination
           locale={locale}
           page={currentPage}
@@ -552,13 +570,13 @@ export function IssuesPage({
                     <p>{selected.decision_rationale}</p>
                   </section>
                 )}
-                {selected.proposal.kind === "agent_change" && (
+                {selected.proposal.agent_change && (
                   <section className="issue-management-diff">
                     <h3>{t.agentProposalDiff}</h3>
                     {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
                   </section>
                 )}
-                {selected.proposal.kind === "agent_change" && (
+                {selected.proposal.agent_change && (
                   <section className="issue-management-proposal-action">
                     <h3>{t.agentProposalBranch}</h3>
                     <p>{selected.proposal_branch || "—"}</p>

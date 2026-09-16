@@ -54,6 +54,16 @@ def test_graph_step_inherits_its_zone_from_runner_phase():
     assert graph.definition()["nodes"][0]["phase"] == "before_each"
 
 
+def test_graph_exports_after_supervision_only_when_enabled():
+    graph = sdk.Graph()
+
+    @graph.step("propose", phase="after_each", after_supervision=True)
+    def propose() -> None:
+        pass
+
+    assert graph.definition()["nodes"][0]["after_supervision"] is True
+
+
 def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
     ctx = context(tmp_path, iteration=1)
 

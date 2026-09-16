@@ -96,8 +96,8 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"current_action\":\"string\",\"decision\":\"string\",\"next_action\":\"string\",\"evidence\":\"string\"}},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
-  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+  \"improvements\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning. Keep the visible journey concise and written from the persona's perspective: persona_goal is the persona's stable wish; current_action is the one meaningful action taken in this iteration; decision is the resulting judgment or choice; next_action is the one specific, safe next action. Write each field as one to three natural sentences in the selected output language. Follow that language's normal grammar, ellipsis, and point of view; do not mechanically repeat a subject or pronoun across fields. Do not describe navigation, waits, screenshots, generic control inspection, or other repeated mechanics in any visible journey field. evidence is a concise source-backed factual record for the evidence drawer, not a visible journey item. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
 LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
@@ -110,8 +110,8 @@ __ORBIT_MANAGER_AI_PROMPT__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
-  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+  \"improvements\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
 PROPOSAL_DECISION_POLICY = """# Improvement decision policy
@@ -2164,6 +2164,12 @@ class ConsoleStore:
         path = CONFIG / "improvements.yaml"
         return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
 
+    @staticmethod
+    def _issue_category(value: Any) -> str:
+        """Normalize persisted categories; legacy implementation targets are never categories."""
+        categories = {"accuracy_grounding", "safety_privacy", "task_completion", "user_experience", "other"}
+        return str(value) if str(value) in categories else "other"
+
     def cycle_interventions(self) -> list[dict[str, Any]]:
         return (
             yaml.safe_load(CYCLE_INTERVENTIONS.read_text(encoding="utf-8"))
@@ -2233,18 +2239,35 @@ class ConsoleStore:
                         if isinstance(persona, str) and persona not in personas:
                             personas.append(persona)
                 improvements = response.get("improvements", [])
+                reported_issues = response.get("reported_issues", [])
                 evaluation = response.get("evaluation")
                 score = evaluation.get("score") if isinstance(evaluation, dict) else None
                 if isinstance(score, bool) or not isinstance(score, (int, float)):
                     score = None
-                if not isinstance(improvements, list):
+                if not isinstance(improvements, list) or not isinstance(reported_issues, list):
                     continue
                 # The first supervision pass produces Issue proposals and their
                 # operator-facing rationale. A later agent-proposal assessment
                 # evaluates a worktree diff; its generated improvements are
                 # review feedback, not new persona/Issue proposals.
-                issue_proposals = improvements if record.get("stage") != "agent_proposal_assessment" else []
-                for index, proposal in enumerate(issue_proposals):
+                # Improvements are the operator-facing Issue proposals. A
+                # reported issue is used only when no improvement was made,
+                # preventing one supervisor observation from becoming two
+                # indistinguishable Issue Management rows.
+                issue_proposals = []
+                if record.get("stage") != "agent_proposal_assessment":
+                    issue_proposals = (
+                        [
+                            (f"{run.id}:{record.get('iteration', 0)}:{index}", proposal)
+                            for index, proposal in enumerate(improvements)
+                        ]
+                        if improvements
+                        else [
+                            (f"{run.id}:{record.get('iteration', 0)}:issue:{index}", proposal)
+                            for index, proposal in enumerate(reported_issues)
+                        ]
+                    )
+                for proposal_id, proposal in issue_proposals:
                     if not isinstance(proposal, dict):
                         continue
                     source_status = str(proposal.get("status") or "proposed").lower()
@@ -2259,9 +2282,11 @@ class ConsoleStore:
                     )
                     values.append(
                         {
-                            "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                            "proposal_id": proposal_id,
                             "title": str(proposal.get("title") or "Untitled proposal"),
-                            "target": str(proposal.get("target") or "prompt"),
+                            "category": self._issue_category(proposal.get("category")),
+                            # target is legacy execution metadata. Do not expose it as an Issue category.
+                            "target": str(proposal.get("target") or ""),
                             "proposal": proposal,
                             "decision": decision,
                             "score": score,
@@ -2279,9 +2304,9 @@ class ConsoleStore:
                             "prompt_version": None,
                             "events": [
                                 {
-                                    "id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "id": proposal_id,
                                     "event_type": "decision",
-                                    "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "proposal_id": proposal_id,
                                     "decision": decision,
                                     "rationale": str(proposal.get("rationale") or ""),
                                     "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
@@ -2325,56 +2350,57 @@ class ConsoleStore:
                         if approval == "rejected"
                         else "pending"
                     )
-                    proposal_id = f"{run.id}:agent:{fingerprint[:16]}"
-                    values.append(
-                        {
-                            "proposal_id": proposal_id,
-                            "title": f"Agent change: {str(agent.get('feedback')).strip()}",
-                            "target": "agent_worktree",
-                            "proposal": {
-                                "kind": "agent_change",
-                                "feedback": str(agent.get("feedback")).strip(),
-                                "changed_files": agent.get("changed_files", []),
-                                "diff": proposal_data.get("diff", ""),
-                                "diff_artifact": proposal_data.get("diff_artifact"),
-                                "base_revision": proposal_data.get("base_revision"),
-                                "branch": proposal_data.get("branch", ""),
-                                "worktree_path": proposal_data.get("worktree_path", ""),
-                                "fingerprint": fingerprint,
-                                "issue": linked_issue,
-                            },
+                    parent_id = (
+                        str(linked_issue.get("_orbit_issue_id") or "")
+                        if isinstance(linked_issue, dict)
+                        else ""
+                    )
+                    parent = next(
+                        (item for item in reversed(values) if item["proposal_id"] == parent_id), None
+                    )
+                    # Backward-compatible attachment for evidence retained before stable IDs existed.
+                    if parent is None and isinstance(linked_issue, dict):
+                        linked_title = str(linked_issue.get("title") or "")
+                        parent = next(
+                            (
+                                item
+                                for item in reversed(values)
+                                if item.get("run_id") == run.id
+                                and item.get("iteration") == iteration
+                                and item.get("title") == linked_title
+                            ),
+                            None,
+                        )
+                    if parent is None:
+                        candidates = [
+                            item
+                            for item in values
+                            if item.get("run_id") == run.id and item.get("iteration") == iteration
+                        ]
+                        if len(candidates) == 1:
+                            parent = candidates[0]
+                    if parent is None:
+                        continue
+                    parent_proposal = parent.get("proposal")
+                    if not isinstance(parent_proposal, dict):
+                        continue
+                    parent_proposal["agent_change"] = {
+                        "feedback": str(agent.get("feedback")).strip(),
+                        "changed_files": agent.get("changed_files", []),
+                        "diff": proposal_data.get("diff", ""),
+                        "diff_artifact": proposal_data.get("diff_artifact"),
+                        "base_revision": proposal_data.get("base_revision"),
+                        "branch": proposal_data.get("branch", ""),
+                        "worktree_path": proposal_data.get("worktree_path", ""),
+                        "fingerprint": fingerprint,
+                        "review": {
                             "decision": decision,
                             "score": score,
-                            # This evaluation is intentionally retained with
-                            # the Run, but is not an Issue decision rationale.
-                            "decision_rationale": "",
-                            "issue_evaluation": linked_issue.get("evaluation")
-                            if isinstance(linked_issue, dict)
-                            else None,
-                            "status": "proposed" if decision == "pending" else decision,
-                            "build_id": run.build_id,
-                            "build_name": run.build_name,
-                            "run_id": run.id,
-                            "iteration": iteration,
-                            "personas": personas,
-                            "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
-                            "data_files": data_files,
-                            "prompt_version": None,
-                            "events": [
-                                {
-                                    "id": proposal_id,
-                                    "event_type": "decision",
-                                    "proposal_id": proposal_id,
-                                    "decision": decision,
-                                    "rationale": "",
-                                    "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
-                                    "iteration": iteration,
-                                    "phase": "supervisor",
-                                    "run_id": run.id,
-                                }
-                            ],
-                        }
-                    )
+                            "summary": (evaluation or {}).get("summary", "")
+                            if isinstance(evaluation, dict)
+                            else "",
+                        },
+                    }
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
@@ -2410,16 +2436,31 @@ class ConsoleStore:
             # management-level tombstone, not deletion of the underlying run.
             if record.get("status") == "deleted":
                 continue
+            agent_change = (proposal.get("proposal") or {}).get("agent_change") or {}
+            review = agent_change.get("review") if isinstance(agent_change, dict) else None
+            review_comment = []
+            if isinstance(review, dict) and str(review.get("summary") or "").strip():
+                review_comment = [
+                    {
+                        "body": str(review["summary"]).strip(),
+                        "assigner": "AI supervisor",
+                        "recorded_at": proposal.get("recorded_at", ""),
+                        "kind": "agent_change_review",
+                        "decision": review.get("decision"),
+                    }
+                ]
             values.append(
                 {
                     **proposal,
                     "management_status": record.get("status", "unreviewed"),
                     "proposal_action": record.get("proposal_action", "pending"),
-                    "proposal_branch": str((proposal.get("proposal") or {}).get("branch") or ""),
+                    "proposal_branch": str(
+                        ((proposal.get("proposal") or {}).get("agent_change") or {}).get("branch") or ""
+                    ),
                     "proposal_commit": str(record.get("proposal_commit") or ""),
                     "assigner": record.get("assigner", ""),
-                    "comments": record.get("comments", []),
-                    "management_events": record.get("events", []),
+                    "comments": [*review_comment, *record.get("comments", [])],
+                    "management_events": [*review_comment, *record.get("events", [])],
                 }
             )
         return values
@@ -2490,13 +2531,16 @@ class ConsoleStore:
         if item is None:
             raise KeyError(proposal_id)
         proposal = item.get("proposal")
-        if not isinstance(proposal, dict) or proposal.get("kind") != "agent_change":
+        agent_change = proposal.get("agent_change") if isinstance(proposal, dict) else None
+        if agent_change is None and isinstance(proposal, dict) and proposal.get("kind") == "agent_change":
+            agent_change = proposal
+        if not isinstance(agent_change, dict):
             return {"diff": "", "changed_files": []}
-        changed_files = proposal.get("changed_files")
+        changed_files = agent_change.get("changed_files")
         return {
-            "diff": str(proposal.get("diff") or ""),
+            "diff": str(agent_change.get("diff") or ""),
             "changed_files": changed_files if isinstance(changed_files, list) else [],
-            "base_revision": proposal.get("base_revision"),
+            "base_revision": agent_change.get("base_revision"),
         }
 
     def decide_agent_issue(self, proposal_id: str, decision: str) -> dict[str, Any]:
@@ -2509,10 +2553,13 @@ class ConsoleStore:
         if item is None:
             raise KeyError(proposal_id)
         proposal = item.get("proposal")
-        if not isinstance(proposal, dict) or proposal.get("kind") != "agent_change":
+        agent_change = proposal.get("agent_change") if isinstance(proposal, dict) else None
+        if agent_change is None and isinstance(proposal, dict) and proposal.get("kind") == "agent_change":
+            agent_change = proposal
+        if not isinstance(agent_change, dict):
             raise ValueError("only agent worktree proposals can be decided from an Issue")
-        branch = str(proposal.get("branch") or "").strip()
-        worktree_value = str(proposal.get("worktree_path") or "").strip()
+        branch = str(agent_change.get("branch") or "").strip()
+        worktree_value = str(agent_change.get("worktree_path") or "").strip()
         if not branch or not worktree_value:
             raise ValueError("this agent proposal was created before worktree review was enabled")
         worktree = Path(worktree_value).resolve()
@@ -2549,7 +2596,7 @@ class ConsoleStore:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             )
-            message = f"Orbit agent proposal: {str(proposal.get('feedback') or 'approved change')[:160]}"
+            message = f"Orbit agent proposal: {str(agent_change.get('feedback') or 'approved change')[:160]}"
             subprocess.run(
                 ["git", "commit", "-m", message],
                 cwd=worktree,
@@ -3894,6 +3941,8 @@ class ConsoleStore:
             issue_evaluation = issue.get("evaluation")
             if issue_evaluation is not None:
                 ConsoleStore._validate_evaluation(issue_evaluation)
+        for issue in [*result["reported_issues"], *result["improvements"]]:
+            issue["category"] = ConsoleStore._issue_category(issue.get("category"))
         return result
 
     @staticmethod
