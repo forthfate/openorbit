@@ -97,7 +97,7 @@ export default function App() {
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
   const [quickStartOpen, setQuickStartOpen] = useState(false);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
-  const room = useControlRoom();
+  const room = useControlRoom(page);
   const ui = locales[locale].ui;
   useEffect(() => {
     const sync = () => setPageState(pageFromLocation());
@@ -122,6 +122,7 @@ export default function App() {
     setThemeState(value);
   };
   const openQuickStart = (id?: string) => {
+    void room.loadProfiles();
     setQuickStartSelection(id);
     setQuickStartOpen(true);
   };
