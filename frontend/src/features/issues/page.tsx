@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Build, IssueManagementItem, Run } from "../../domain/models";
+import type { IssueManagementItem, Run } from "../../domain/models";
 import { api } from "../../services/api";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Modal } from "../../components/ui/modal";
@@ -93,21 +93,19 @@ const compactTimestamp = (locale: Locale, value?: string) =>
         minute: "2-digit",
       }).format(new Date(value))
     : "—";
-const lastRunTimestamp = (build: Build) =>
-  build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
-export function IssuesPage({
+export function IssueManagementSection({
   locale,
   onNotice,
+  buildId,
 }: {
   locale: Locale;
   onNotice: (message: string, tone?: "success" | "warning") => void;
+  buildId: string;
 }) {
   const t = localeMessages<Copy>(locale, "issueManagementPage"),
     evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations"),
     [items, setItems] = useState<IssueManagementItem[]>([]),
-    [builds, setBuilds] = useState<Build[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
-    [build, setBuild] = useState(""),
     [managedStatuses, setManagedStatuses] = useState<Set<string>>(new Set()),
     [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -129,20 +127,8 @@ export function IssuesPage({
       .catch(() => setItems([]));
   useEffect(() => {
     load();
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        const sorted = [...next].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        );
-        setBuilds(next);
-        setBuild((current) => current || sorted[0]?.id || "");
-      })
-      .catch(() => setBuilds([]));
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
-  }, []);
+  }, [buildId]);
   useEffect(() => {
     if (!selected || !selected.proposal.agent_change) return;
     api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
@@ -184,16 +170,6 @@ export function IssuesPage({
         user_experience: t.userExperience,
         other: t.other,
       })[v] ?? t.other,
-    sortedBuilds = useMemo(
-      () =>
-        [...builds].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        ),
-      [builds],
-    ),
     verificationRuns = useMemo(
       () =>
         runs
@@ -208,7 +184,7 @@ export function IssuesPage({
     rows: IssueRow[] = items
       .filter(
         (x) =>
-          (!build || x.build_id === build) &&
+          x.build_id === buildId &&
           (!managedStatuses.size || managedStatuses.has(x.management_status)) &&
           (!decisions.size || decisions.has(x.status)),
       )
@@ -379,25 +355,6 @@ export function IssuesPage({
   const filterCount = managedStatuses.size + decisions.size;
   return (
     <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.build}
-          <select
-            value={build}
-            onChange={(event) => {
-              setBuild(event.target.value);
-              setPage(1);
-            }}
-          >
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}
-                {item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
       <section className="panel active-evaluation-panel issue-management">
         <div className="panel-title-action">
           <div className="panel-title-action__copy">

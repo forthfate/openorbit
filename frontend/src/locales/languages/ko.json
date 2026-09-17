@@ -109,7 +109,6 @@
       "builds": "재사용 자산을 태스크로 조합한 뒤 실행하거나 테스트합니다.",
       "runs": "진행 중이거나 완료된 실행, 근거, 승인 결정을 확인합니다.",
       "improvements": "실행 피드백, 개선 제안, 시간에 따른 결과를 검토합니다.",
-      "issues": "빌드별 제안을 검토하고 개발 조치와 검증 이력을 관리합니다.",
       "settings": "콘솔 기본 설정, AI 연결 프로필, 운영 관리자 지시문을 관리합니다."
     },
     "settingsPage": {
@@ -360,7 +359,6 @@
       "trend": "시간대별 감독관 피드백과 같은 기간에 수용 가능한 개선을 비교합니다."
     },
     "settings": "설정",
-    "issues": "문제관리",
     "issueManagementPage": {
       "title": "문제관리",
       "description": "빌드별 제안을 검토하고 조치 이력을 남깁니다.",
@@ -719,20 +717,9 @@
       "runHealth": "실행 상태",
       "accepted": "수용됨",
       "score": "점수",
-      "history": "제안 결정 히스토리",
-      "historyHint": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",
-      "allBuilds": "전체 빌드",
-      "allStates": "전체 상태",
       "acceptable": "수용 가능",
       "rejected": "기각됨",
       "proposed": "제안됨",
-      "decisionReason": "결정 사유",
-      "timeline": "타임라인",
-      "noProposals": "제안 이력이 없습니다.",
-      "savedDataFiles": "저장된 데이터 파일",
-      "fileName": "파일 이름",
-      "copyFileName": "파일 이름 복사",
-      "copyPath": "경로 복사",
       "iteration": "반복",
       "run": "실행",
       "feedbackCount": "피드백 수",

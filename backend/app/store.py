@@ -2631,53 +2631,6 @@ class ConsoleStore:
         self._save_issue_management_records(records)
         return next(value for value in self.issue_management_items() if value["proposal_id"] == proposal_id)
 
-    def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
-        """List SDK-saved data files by persisted evaluation run and iteration.
-
-        These entries intentionally exist even when a supervisor did not make a
-        proposal. The proposal-decision history uses them to expose the full
-        iteration record rather than hiding developer-retained evidence behind
-        a proposal requirement.
-        """
-        values: list[dict[str, Any]] = []
-        for run in self.runs():
-            if build_id and run.build_id != build_id:
-                continue
-            grouped: dict[int, list[dict[str, Any]]] = {}
-            timestamps: dict[int, str] = {}
-            for step in run.step_results:
-                if not isinstance(step, dict) or not isinstance(step.get("loop_index"), int):
-                    continue
-                iteration = step["loop_index"]
-                for data_file in step.get("data_files", []):
-                    if not isinstance(data_file, dict):
-                        continue
-                    path, filename = data_file.get("path"), data_file.get("filename")
-                    if not isinstance(path, str) or not isinstance(filename, str):
-                        continue
-                    grouped.setdefault(iteration, []).append(
-                        {
-                            "label": str(data_file.get("label") or "")[:256],
-                            "filename": filename,
-                            "path": path,
-                            "relative_path": str(data_file.get("relative_path") or ""),
-                            "content_type": str(data_file.get("content_type") or ""),
-                        }
-                    )
-                    timestamps.setdefault(iteration, str(step.get("ended_at") or run.updated_at.isoformat()))
-            for iteration, data_files in grouped.items():
-                values.append(
-                    {
-                        "build_id": run.build_id,
-                        "build_name": run.build_name,
-                        "run_id": run.id,
-                        "iteration": iteration,
-                        "recorded_at": timestamps[iteration],
-                        "data_files": data_files,
-                    }
-                )
-        return sorted(values, key=lambda item: str(item["recorded_at"]), reverse=True)
-
     def _save_cycle_interventions(self, values: list[dict[str, Any]]) -> None:
         temporary = CYCLE_INTERVENTIONS.with_suffix(".tmp")
         temporary.write_text(yaml.safe_dump(values, allow_unicode=True, sort_keys=False), encoding="utf-8")

@@ -31,7 +31,6 @@ const ImprovementsPage = lazy(() =>
     default: module.ImprovementsPage,
   })),
 );
-const IssuesPage = lazy(() => import("./features/issues/page").then((module) => ({ default: module.IssuesPage })));
 
 const SettingsPage = lazy(() =>
   import("./features/settings/page").then((module) => ({
@@ -58,16 +57,17 @@ const pages: Page[] = [
   "builds",
   "runs",
   "improvements",
-  "issues",
   "settings",
 ];
 const pageFromLocation = (): Page => {
   const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  if (path === "issues") return "improvements";
   if (pages.includes(path as Page)) return path as Page;
 
   // Preserve links saved before the browser-path migration, then normalize
   // them on first render below.
   const legacyHash = window.location.hash.slice(1);
+  if (legacyHash === "issues") return "improvements";
   return pages.includes(legacyHash as Page) ? (legacyHash as Page) : "dashboard";
 };
 type ConfirmCopy = {
@@ -97,7 +97,7 @@ export default function App() {
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
   const [quickStartOpen, setQuickStartOpen] = useState(false);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
-  const room = useControlRoom();
+  const room = useControlRoom(page);
   const ui = locales[locale].ui;
   useEffect(() => {
     const sync = () => setPageState(pageFromLocation());
@@ -122,6 +122,7 @@ export default function App() {
     setThemeState(value);
   };
   const openQuickStart = (id?: string) => {
+    void room.loadProfiles();
     setQuickStartSelection(id);
     setQuickStartOpen(true);
   };
@@ -354,8 +355,8 @@ export default function App() {
       onRetry={retryRun}
       onApprove={approveRun}
       onReject={rejectRun}
+      onNotice={(message, tone) => room.setNotice(message, tone)}
     />,
-    issues: <IssuesPage locale={locale} onNotice={(message, tone) => room.setNotice(message, tone)} />,
     settings: (
       room.loading ? <>
         <SectionSkeleton rows={2} />

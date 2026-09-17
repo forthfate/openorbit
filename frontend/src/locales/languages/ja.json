@@ -104,7 +104,6 @@
       "builds": "再利用可能なアセットをタスクとして組み合わせ、実行またはテストします。",
       "runs": "進行中・完了済みの実行、証跡、承認判断を確認します。",
       "improvements": "実行フィードバック、改善提案、時間に応じた成果を確認します。",
-      "issues": "ビルドごとの提案を確認し、開発対応と検証履歴を管理します。",
       "settings": "コンソール設定、AI 接続プロファイル、運用管理者向け指示を管理します。"
     },
     "settingsPage": {
@@ -355,7 +354,6 @@
       "trend": "時間帯ごとの監督者フィードバックと、同じ期間の採用可能な改善を比較します。"
     },
     "settings": "設定",
-    "issues": "課題管理",
     "issueManagementPage": {
       "title": "課題管理",
       "description": "ビルドごとの提案を確認し、対応履歴を残します。",
@@ -714,20 +712,9 @@
       "runHealth": "実行状態",
       "accepted": "受容",
       "score": "スコア",
-      "history": "提案決定の履歴",
-      "historyHint": "提案・受容・却下・適用された改善の監査履歴を確認します。",
-      "allBuilds": "すべてのビルド",
-      "allStates": "すべての状態",
       "acceptable": "採用可能",
       "rejected": "却下",
       "proposed": "提案",
-      "decisionReason": "決定理由",
-      "timeline": "タイムライン",
-      "noProposals": "提案履歴はありません。",
-      "savedDataFiles": "保存済みデータファイル",
-      "fileName": "ファイル名",
-      "copyFileName": "ファイル名をコピー",
-      "copyPath": "パスをコピー",
       "iteration": "反復",
       "run": "実行",
       "feedbackCount": "フィードバック数",

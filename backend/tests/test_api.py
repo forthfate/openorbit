@@ -1045,8 +1045,6 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
         "/api/v1/dashboard",
         "/api/v1/logs",
         "/api/v1/improvements/analytics",
-        "/api/v1/improvements/iterations",
-        "/api/v1/improvements/proposals",
         "/api/v1/template-translations",
     }
     assert expected <= paths.keys()
@@ -1160,7 +1158,6 @@ def test_v1_read_only_control_room_resources_are_available():
         "/api/v1/telemetry",
         "/api/v1/logs",
         "/api/v1/improvements",
-        "/api/v1/improvements/proposals",
         "/api/v1/reported-issues",
     ):
         assert client.get(path).status_code == 200
@@ -2022,24 +2019,6 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
             "filename": "evidence.json",
             "path": "/tmp/orbit/evidence.json",
             "relative_path": "evidence.json",
-        }
-    ]
-    assert store.improvement_iteration_data("build-1") == [
-        {
-            "build_id": "build-1",
-            "build_name": "Build 1",
-            "run_id": "run-1",
-            "iteration": 2,
-            "recorded_at": timestamp.isoformat(),
-            "data_files": [
-                {
-                    "label": "Iteration evidence",
-                    "filename": "evidence.json",
-                    "path": "/tmp/orbit/evidence.json",
-                    "relative_path": "evidence.json",
-                    "content_type": "",
-                }
-            ],
         }
     ]
 
