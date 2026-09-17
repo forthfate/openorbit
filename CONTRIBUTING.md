@@ -57,8 +57,9 @@ list. Backend checks match what CI runs exactly (see
 pre-commit hook, but CI's frontend job only runs the production build, and
 the Playwright specs are not run in CI at all.
 
-**Documentation-only change** (`*.md`, `docs/`): no command is required.
-Proofread the rendered file and confirm any command or path you referenced
+**Documentation-only change** (`*.md`, `docs/`): run `pnpm run docs:build`
+(the same strict mkdocs build CI's frontend job runs for every PR) and
+proofread the rendered file. Confirm any command or path you referenced
 still matches the repository.
 
 **Backend change** (`backend/`, `orbit/`, `tests/`):
