@@ -1,4 +1,4 @@
-export type Page = 'dashboard' | 'assets' | 'builds' | 'runs' | 'improvements' | 'issues' | 'settings'
+export type Page = 'dashboard' | 'assets' | 'builds' | 'runs' | 'improvements' | 'settings'
 export type TestCase = { id:string; name:string; prompt:string; acceptance:string; path?:string; expected_text?:string }
 export type TargetTestCaseSet = { id:string; name:string; description:string; cases:TestCase[]; created_at?:string }
 export type ExecutionEnvironment = {id:string;name:string;executor:{type:'local'|'remote-http';endpoint?:string;method?:'GET'|'POST'|'PUT';timeout_seconds?:number;headers?:Record<string,string>};browser_executable_path?:string;browser_library_path?:string;environment_variables?:Record<string,string>;created_at?:string}

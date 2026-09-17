@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Build, IssueManagementItem, Run } from "../../domain/models";
+import type { IssueManagementItem, Run } from "../../domain/models";
 import { api } from "../../services/api";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Modal } from "../../components/ui/modal";
@@ -14,7 +14,6 @@ import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
-import { preferredBuildId, savePreferredBuildId } from "../../services/build-selection";
 
 type Copy = {
   title: string;
@@ -94,9 +93,7 @@ const compactTimestamp = (locale: Locale, value?: string) =>
         minute: "2-digit",
       }).format(new Date(value))
     : "—";
-const lastRunTimestamp = (build: Build) =>
-  build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
-function IssuesBuildContent({
+export function IssueManagementSection({
   locale,
   onNotice,
   buildId,
@@ -637,58 +634,6 @@ function IssuesBuildContent({
           </div>
         )}
       </Modal>
-    </>
-  );
-}
-
-export function IssuesPage({
-  locale,
-  onNotice,
-}: {
-  locale: Locale;
-  onNotice: (message: string, tone?: "success" | "warning") => void;
-}) {
-  const t = localeMessages<Copy>(locale, "issueManagementPage"),
-    [builds, setBuilds] = useState<Build[]>([]),
-    [buildId, setBuildId] = useState("");
-  const sortedBuilds = useMemo(
-    () =>
-      [...builds].sort(
-        (left, right) =>
-          Number(right.starred) - Number(left.starred) ||
-          lastRunTimestamp(right) - lastRunTimestamp(left) ||
-          left.name.localeCompare(right.name),
-      ),
-    [builds],
-  );
-  useEffect(() => {
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        setBuilds(next);
-        const fallback = [...next].sort(
-          (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
-        )[0]?.id || "";
-        setBuildId((current) => current || preferredBuildId("issues", next, fallback));
-      })
-      .catch(() => setBuilds([]));
-  }, []);
-  useEffect(() => savePreferredBuildId("issues", buildId), [buildId]);
-  return (
-    <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.build}
-          <select value={buildId} onChange={(event) => setBuildId(event.target.value)}>
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}
-                {item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
-      {buildId && <IssuesBuildContent key={buildId} locale={locale} onNotice={onNotice} buildId={buildId} />}
     </>
   );
 }

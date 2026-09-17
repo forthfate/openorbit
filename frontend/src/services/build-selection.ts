@@ -1,9 +1,9 @@
 import type { Build } from "../domain/models";
 
-const storageKey = (scope: "improvements" | "issues") => `orbit.last-build.${scope}`;
+const storageKey = (scope: "improvements") => `orbit.last-build.${scope}`;
 
 export function preferredBuildId(
-  scope: "improvements" | "issues",
+  scope: "improvements",
   builds: Build[],
   fallback: string,
 ): string {
@@ -15,7 +15,7 @@ export function preferredBuildId(
   }
 }
 
-export function savePreferredBuildId(scope: "improvements" | "issues", buildId: string) {
+export function savePreferredBuildId(scope: "improvements", buildId: string) {
   try {
     if (buildId) localStorage.setItem(storageKey(scope), buildId);
   } catch {

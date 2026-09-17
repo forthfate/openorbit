@@ -40,6 +40,7 @@ import { SectionSkeleton } from "../../components/ui/section-skeleton";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { CircleStop, RotateCcw } from "lucide-react";
 import { EvaluationsPage } from "../evaluations/page";
+import { IssueManagementSection } from "../issues/page";
 
 type ImprovementCopy = {
   improvement: string;
@@ -714,6 +715,7 @@ function ImprovementBuildContent({
   buildId,
   hours,
   onHoursChange,
+  onNotice,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
@@ -723,6 +725,7 @@ function ImprovementBuildContent({
   buildId: string;
   hours: number;
   onHoursChange: (hours: number) => void;
+  onNotice: (message: string, tone?: "success" | "warning") => void;
 }) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
@@ -744,6 +747,7 @@ function ImprovementBuildContent({
         onSelect={setSelectedRun}
       />
       <PersonaJourneyTimeline key={`${buildId}:${hours}`} buildId={buildId} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />
+      <IssueManagementSection key={buildId} buildId={buildId} locale={locale} onNotice={onNotice} />
       <StoredState buildId={buildId} locale={locale} t={t} />
       {selectedRun && <EvaluationsPage
         detailOnly
@@ -777,12 +781,14 @@ export function ImprovementsPage({
   onRetry,
   onApprove,
   onReject,
+  onNotice,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
   onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onNotice: (message: string, tone?: "success" | "warning") => void;
 }) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
@@ -855,6 +861,7 @@ export function ImprovementsPage({
         buildId={buildId}
         hours={hours}
         onHoursChange={setHours}
+        onNotice={onNotice}
       />}
     </>
   );
