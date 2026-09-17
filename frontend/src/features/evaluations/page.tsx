@@ -5,7 +5,6 @@ import type {
   Run,
   WorkflowGraphNode,
   CommitChange,
-  PromptRevision,
   RunTelemetry,
   SupervisorRecord,
 } from "../../domain/models";
@@ -28,7 +27,6 @@ import {
 } from "./run-detail-tabs";
 import {
   CommitChangesPanel,
-  PromptChangesPanel,
 } from "./run-detail-change-panels";
 import {
   CombinedLogPanel,
@@ -140,7 +138,6 @@ export function EvaluationsPage({
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
-    [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
     [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
@@ -283,12 +280,6 @@ export function EvaluationsPage({
     api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
       .then(setCommitChanges)
       .catch(() => setCommitChanges([]));
-  }, [selected]);
-  useEffect(() => {
-    if (!selected) return;
-    api<PromptRevision[]>(`/api/runs/${selected.id}/prompt-revisions`)
-      .then(setPromptRevisions)
-      .catch(() => setPromptRevisions([]));
   }, [selected]);
   const label = (status: string) =>
     ({
@@ -793,7 +784,7 @@ export function EvaluationsPage({
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
   const iterationNavigator =
-    tab !== "result" && tab !== "prompt" && iterations.length > 0 ? (
+    tab !== "result" && iterations.length > 0 ? (
       <div className="iteration-navigator" aria-label={l.iteration}>
         <button className="ghost icon-button" type="button" aria-label={ui.previousIteration} title={ui.previousIteration} disabled={previousIteration === undefined} onClick={() => {
           if (previousIteration !== undefined) {
@@ -1045,13 +1036,12 @@ export function EvaluationsPage({
             onSelect={setTab}
             tabs={[
               { id: "result", label: l.result },
-              { id: "prompt", label: l.promptChanges },
               { id: "commits", label: l.commitChanges },
               { id: "supervisor", label: l.supervisor },
               { id: "logs", label: l.logs },
             ]}
           />
-          {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
+          {tab !== "result" && iterations.length > 0 && (
             <>
             {selected.iteration_strategy === "score_select" && (
               <div className="iteration-candidates">
@@ -1076,16 +1066,6 @@ export function EvaluationsPage({
                 openTelemetryTrace={l.openTelemetryTrace}
                 loadingOpenTelemetryTrace={l.loadingOpenTelemetryTrace}
                 noOpenTelemetrySpans={l.noOpenTelemetrySpans}
-              />
-            </RunDetailTabPanel>
-          )}
-          {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
-              <PromptChangesPanel
-                key={selected.id}
-                revisions={promptRevisions}
-                l={l}
-                renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
             </RunDetailTabPanel>
           )}

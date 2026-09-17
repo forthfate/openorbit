@@ -266,11 +266,6 @@ def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
 
 
-@app.get("/api/runs/{run_id}/prompt-revisions")
-def prompt_revisions(run_id: str):
-    return safely(lambda: store.prompt_revisions(run_id))
-
-
 @app.get("/api/runs/{run_id}/commit-changes")
 def commit_changes(run_id: str):
     return safely(lambda: store.commit_changes(run_id))

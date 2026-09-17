@@ -4,7 +4,6 @@ import { TooltipBox } from "../../components/ui/tooltip-box";
 export type RunDetailTab =
   | "logs"
   | "supervisor"
-  | "prompt"
   | "commits"
   | "result";
 
