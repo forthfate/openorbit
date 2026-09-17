@@ -10,6 +10,7 @@ import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
+import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
@@ -38,7 +39,6 @@ type Copy = {
   aiDecision: string;
   decisionRationale: string;
   persona: string;
-  score: string;
   taskId: string;
   iteration: string;
   run: string;
@@ -46,6 +46,11 @@ type Copy = {
   saved: string;
   build: string;
   proposal: string;
+  accuracyGrounding: string;
+  safetyPrivacy: string;
+  taskCompletion: string;
+  userExperience: string;
+  other: string;
   details: string;
   statusHint: string;
   managementStatusHint: string;
@@ -62,6 +67,14 @@ type Copy = {
   acceptable: string;
   accepted: string;
   rejected: string;
+  agentProposalDiff: string;
+  noAgentProposalChanges: string;
+  agentProposalBranch: string;
+  committed: string;
+  approveAndCommit: string;
+  rejectAndRemove: string;
+  agentProposalCommitted: string;
+  agentProposalRemoved: string;
 };
 const statuses = [
   "unreviewed",
@@ -99,6 +112,7 @@ export function IssuesPage({
     [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
+    [agentDiff, setAgentDiff] = useState<{ proposalId: string; value: string } | null>(null),
     [modalTab, setModalTab] = useState<"details" | "history">("details"),
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
@@ -130,6 +144,12 @@ export function IssuesPage({
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
   }, []);
   useEffect(() => {
+    if (!selected || !selected.proposal.agent_change) return;
+    api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
+      .then((result) => setAgentDiff({ proposalId: selected.proposal_id, value: result.diff }))
+      .catch(() => setAgentDiff({ proposalId: selected.proposal_id, value: "" }));
+  }, [selected]);
+  useEffect(() => {
     if (!filtersOpen) return;
     const close = (event: PointerEvent) => {
       if (
@@ -156,6 +176,14 @@ export function IssuesPage({
         accepted: t.accepted,
         rejected: t.rejected,
       })[v] ?? v,
+    categoryLabel = (v: string) =>
+      ({
+        accuracy_grounding: t.accuracyGrounding,
+        safety_privacy: t.safetyPrivacy,
+        task_completion: t.taskCompletion,
+        user_experience: t.userExperience,
+        other: t.other,
+      })[v] ?? t.other,
     sortedBuilds = useMemo(
       () =>
         [...builds].sort(
@@ -205,6 +233,20 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
+  const decideAgentProposal = (decision: "approve" | "reject") =>
+    selected &&
+    api<IssueManagementItem>(
+      `/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/decision`,
+      "POST",
+      { decision },
+    )
+      .then((item) => {
+        setSelected(item);
+        setManagementStatus(item.management_status);
+        load();
+        onNotice(decision === "approve" ? t.agentProposalCommitted : t.agentProposalRemoved, "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
   const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
   const toggleIssue = (proposalId: string) =>
     setSelectedIssueIds((current) => {
@@ -282,6 +324,9 @@ export function IssuesPage({
       header: t.proposal,
       render: (x) => (
         <span className="issue-proposal">
+          <em className={`issue-category issue-category--${x.category}`}>
+            {categoryLabel(x.category)}
+          </em>
           <strong>{x.title}</strong>
         </span>
       ),
@@ -310,12 +355,6 @@ export function IssuesPage({
       header: t.assigner,
       render: (x) => x.assigner || "—",
       sortValue: (x) => x.assigner,
-    },
-    {
-      id: "score",
-      header: t.score,
-      render: (x) => (x.score == null ? "—" : `${x.score}/10`),
-      sortValue: (x) => x.score,
     },
     {
       id: "decision",
@@ -452,21 +491,23 @@ export function IssuesPage({
             <Trash2 size={15} />
           </button>
         </div>
-        <DataTable
-          columns={columns}
-          rows={pagedRows}
-          empty={t.empty}
-          onRowClick={(item) => {
-            setSelected(item);
-            setModalTab("details");
-            setComment("");
-            setAssigner("");
-            setManagementStatus(item.management_status);
-            setRun("");
-          }}
-          className="issue-management-table"
-          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
-        />
+        <div className="issue-management-table-scroll">
+          <DataTable
+            columns={columns}
+            rows={pagedRows}
+            empty={t.empty}
+            onRowClick={(item) => {
+              setSelected(item);
+              setModalTab("details");
+              setComment("");
+              setAssigner("");
+              setManagementStatus(item.management_status);
+              setRun("");
+            }}
+            className="issue-management-table"
+            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px 110px"
+          />
+        </div>
         <Pagination
           locale={locale}
           page={currentPage}
@@ -527,6 +568,25 @@ export function IssuesPage({
                   <section className="issue-management-rationale">
                     <h3>{t.decisionRationale}</h3>
                     <p>{selected.decision_rationale}</p>
+                  </section>
+                )}
+                {selected.proposal.agent_change && (
+                  <section className="issue-management-diff">
+                    <h3>{t.agentProposalDiff}</h3>
+                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
+                  </section>
+                )}
+                {selected.proposal.agent_change && (
+                  <section className="issue-management-proposal-action">
+                    <h3>{t.agentProposalBranch}</h3>
+                    <p>{selected.proposal_branch || "—"}</p>
+                    {selected.proposal_commit && <p>{t.committed}: {selected.proposal_commit}</p>}
+                    {selected.proposal_action === "pending" && (
+                      <div className="modal-actions">
+                        <button className="approve" onClick={() => decideAgentProposal("approve")}>{t.approveAndCommit}</button>
+                        <button className="danger" onClick={() => decideAgentProposal("reject")}>{t.rejectAndRemove}</button>
+                      </div>
+                    )}
                   </section>
                 )}
                 <label className="modal-setting-row">

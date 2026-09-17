@@ -88,7 +88,10 @@ function unifiedDiffRows(value: string): UnifiedDiffRow[] {
 }
 function CommitPatch({ patch, relativePath, l }: { patch?: string | null; relativePath: string; l: Messages }) {
   if (patch == null) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
-  return <div className="prompt-diff commit-diff" aria-label={l.diffArtifact}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;
+  return <UnifiedDiff patch={patch} label={l.diffArtifact ?? "Diff"} />;
+}
+export function UnifiedDiff({ patch, label = "Diff" }: { patch: string; label?: string }) {
+  return <div className="prompt-diff commit-diff" aria-label={label}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;
 }
 function PromptDiff({ before, after }: { before: string; after: string }) {
   const beforeLines = before.split("\n"), afterLines = after.split("\n");

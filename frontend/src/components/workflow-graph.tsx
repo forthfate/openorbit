@@ -8,7 +8,7 @@ type GraphNodeData = WorkflowGraphNode;
 type GraphZoneData = { title: string; annotation: string };
 type NodeSize = { width: number; height: number };
 type Measurements = { key: string; sizes: Record<string, NodeSize> };
-const lifecyclePhases = ["before_all", "before_each", "execute", "verify", "after_each", "after_all"];
+const lifecyclePhases = ["before_all", "before_each", "execute", "verify", "after_supervision", "after_each", "after_all"];
 const NodeMeasurementContext = createContext<(id: string, size: NodeSize) => void>(() => undefined);
 function LoopEdge({ sourceX, sourceY, targetX, targetY, label, labelStyle, markerEnd, style }: EdgeProps) {
   const routeY = Math.min(sourceY, targetY) - 160;

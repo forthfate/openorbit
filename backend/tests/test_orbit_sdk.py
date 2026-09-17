@@ -54,6 +54,16 @@ def test_graph_step_inherits_its_zone_from_runner_phase():
     assert graph.definition()["nodes"][0]["phase"] == "before_each"
 
 
+def test_graph_exports_after_supervision_only_when_enabled():
+    graph = sdk.Graph()
+
+    @graph.step("propose", phase="after_each", after_supervision=True)
+    def propose() -> None:
+        pass
+
+    assert graph.definition()["nodes"][0]["after_supervision"] is True
+
+
 def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
     ctx = context(tmp_path, iteration=1)
 
@@ -61,6 +71,77 @@ def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
         pass
 
     assert "collect-source-evidence" in capsys.readouterr().out
+
+
+def test_register_evaluation_emits_an_agent_change_request(tmp_path, capsys):
+    result = context(tmp_path, iteration=2).register_evaluation(
+        "Updated the retry behavior after reproducing the timeout.",
+        changed_files=["src/retry.py", "src/retry.py", "tests/test_retry.py"],
+        validation="pytest tests/test_retry.py",
+    )
+
+    emitted = [
+        json.loads(line.removeprefix("__ORBIT_RESULT__"))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("__ORBIT_RESULT__")
+    ]
+    assert result["subject"] == "agent_change"
+    assert result["changed_files"] == ["src/retry.py", "tests/test_retry.py"]
+    assert emitted[-1]["evaluation_request"] == result
+
+
+def test_register_evaluation_requires_actionable_feedback(tmp_path):
+    with pytest.raises(ValueError, match="feedback"):
+        context(tmp_path, iteration=1).register_evaluation("   ")
+
+
+def test_run_ai_agent_uses_the_selected_cli_and_only_marker_feedback(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.name", "Orbit Test"], cwd=project, check=True)
+    (project / "README.md").write_text("test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project, check=True, capture_output=True)
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    ctx = context(project, iteration=1)
+    commands: list[list[str]] = []
+
+    def fake_exec(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "codex":
+            return "completed work\nORBIT_AGENT_FEEDBACK: Updated retry behavior\n"
+        if command[:3] == ["git", "diff", "--name-only"]:
+            return "src/retry.py\n"
+        if command[:3] == ["git", "diff", "--binary"]:
+            return "diff --git a/src/retry.py b/src/retry.py\n"
+        return ""
+
+    monkeypatch.setattr(ctx, "exec", fake_exec)
+
+    result = ctx.run_ai_agent("Fix the retry behavior", provider="codex", options="--model gpt-5")
+
+    assert commands[0][:4] == ["git", "worktree", "add", "-b"]
+    assert commands[0][5].startswith(str(tmp_path / "orbit-data" / "agent-worktrees"))
+    assert commands[1:] == [
+        [
+            "codex",
+            "exec",
+            "--approve-for-me",
+            "--model",
+            "gpt-5",
+            "Fix the retry behavior",
+        ],
+        ["git", "add", "--intent-to-add", "--all"],
+        ["git", "diff", "--name-only", "--"],
+        ["git", "diff", "--binary", "--"],
+    ]
+    assert result["feedback"] == "Updated retry behavior"
+    assert result["changed_files"] == ["src/retry.py"]
+    assert result["proposal"]["diff"] == "diff --git a/src/retry.py b/src/retry.py\n"
+    assert result["proposal"]["base_revision"]
+    assert result["proposal"]["branch"].startswith("orbit/agent-proposal/run-123/")
 
 
 def test_graph_step_automatically_traces_its_execution(tmp_path, capsys):

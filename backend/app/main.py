@@ -538,6 +538,10 @@ class IssueManagementDelete(BaseModel):
     proposal_ids: list[str] = Field(min_length=1, max_length=200)
 
 
+class AgentIssueDecision(BaseModel):
+    decision: Literal["approve", "reject"]
+
+
 class RunnerAssetUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(min_length=1, max_length=500)
@@ -1456,6 +1460,24 @@ def list_improvement_iteration_data_v1(build_id: str | None = None):
 @app.get("/api/v1/issue-management", tags=["Improvements"], operation_id="listIssueManagementItems")
 def list_issue_management_items_v1():
     return store.issue_management_items()
+
+
+@app.get(
+    "/api/v1/issue-management/{proposal_id}/diff",
+    tags=["Improvements"],
+    operation_id="getIssueManagementDiff",
+)
+def issue_management_diff_v1(proposal_id: str):
+    return safely(lambda: store.issue_management_diff(proposal_id))
+
+
+@app.post(
+    "/api/v1/issue-management/{proposal_id}/decision",
+    tags=["Improvements"],
+    operation_id="decideAgentIssue",
+)
+def decide_agent_issue_v1(proposal_id: str, values: AgentIssueDecision):
+    return safely(lambda: store.decide_agent_issue(proposal_id, values.decision))
 
 
 @app.patch(
