@@ -3471,6 +3471,7 @@ class ConsoleStore:
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "coding_agent_provider": "none",
                 "assistant_tools": normalize_assistant_tools(None),
             }
         stored = json.loads(SETTINGS.read_text(encoding="utf-8"))
@@ -3480,6 +3481,7 @@ class ConsoleStore:
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "coding_agent_provider": "none",
                 "assistant_tools": normalize_assistant_tools(None),
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
@@ -3492,6 +3494,12 @@ class ConsoleStore:
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
             "manager_output_locale": output_locale,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),
+            "coding_agent_provider": (
+                str(values.get("coding_agent_provider", "none")).strip()
+                if str(values.get("coding_agent_provider", "none")).strip()
+                in {"kiro", "claude-code", "codex"}
+                else "none"
+            ),
             "assistant_tools": normalize_assistant_tools(values.get("assistant_tools")),
         }
 
@@ -3516,6 +3524,12 @@ class ConsoleStore:
             ).strip(),
             "manager_output_locale": output_locale,
             "chat_model_profile_name": chat_profile_name,
+            "coding_agent_provider": (
+                str(values.get("coding_agent_provider", current["coding_agent_provider"])).strip()
+                if str(values.get("coding_agent_provider", current["coding_agent_provider"])).strip()
+                in {"none", "kiro", "claude-code", "codex"}
+                else "none"
+            ),
             "assistant_tools": normalize_assistant_tools(
                 values.get("assistant_tools", current["assistant_tools"])
             ),
