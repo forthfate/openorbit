@@ -1434,29 +1434,6 @@ def list_improvements_v1():
     return store.improvements()
 
 
-@app.get(
-    "/api/v1/improvements/proposals",
-    tags=["Improvements"],
-    operation_id="listProposalLifecycles",
-    summary="List proposals and decisions from evaluation-run results",
-)
-def list_proposal_lifecycles_v1(
-    build_id: str | None = None,
-    status: Literal["proposed", "acceptable", "accepted", "rejected", "applied"] | None = None,
-):
-    return store.proposal_lifecycles(build_id, status)
-
-
-@app.get(
-    "/api/v1/improvements/iterations",
-    tags=["Improvements"],
-    operation_id="listImprovementIterationData",
-    summary="List SDK-saved data files by evaluation iteration",
-)
-def list_improvement_iteration_data_v1(build_id: str | None = None):
-    return store.improvement_iteration_data(build_id)
-
-
 @app.get("/api/v1/issue-management", tags=["Improvements"], operation_id="listIssueManagementItems")
 def list_issue_management_items_v1():
     return store.issue_management_items()
