@@ -32,7 +32,6 @@ import {
 } from "./run-detail-change-panels";
 import {
   CombinedLogPanel,
-  WorkflowLogPanel,
 } from "./run-detail-log-panels";
 import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
@@ -138,7 +137,6 @@ export function EvaluationsPage({
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<RunDetailTab>("result"),
-    [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("before_all"),
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
@@ -962,7 +960,6 @@ export function EvaluationsPage({
           );
           setSelected(r);
           setTab("result");
-          setPhaseTab("before_all");
           setIterationTab(latest);
           setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
@@ -1051,7 +1048,6 @@ export function EvaluationsPage({
               { id: "prompt", label: l.promptChanges },
               { id: "commits", label: l.commitChanges },
               { id: "supervisor", label: l.supervisor },
-              { id: "workflow", label: l.workflow },
               { id: "logs", label: l.logs },
             ]}
           />
@@ -1067,28 +1063,6 @@ export function EvaluationsPage({
               </div>
             )}
             </>
-          )}
-          {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint} action={iterationNavigator}>
-              <div className="run-tabs phase-tabs">
-                {phases.map((phase) => (
-                  <button
-                    key={phase}
-                    className={phaseTab === phase ? "active" : ""}
-                    onClick={() => setPhaseTab(phase)}
-                  >
-                    {phaseLabel(phase)}
-                  </button>
-                ))}
-              </div>
-              <WorkflowLogPanel
-                locale={locale}
-                steps={selectedSteps.filter(
-                  (step) => (step.phase ?? step.step_id) === phaseTab,
-                )}
-                empty={l.noCommandsForPhase}
-              />
-            </RunDetailTabPanel>
           )}
           {tab === "logs" && (
             <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint} action={iterationNavigator}>

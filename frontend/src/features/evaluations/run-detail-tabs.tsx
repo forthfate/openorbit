@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { TooltipBox } from "../../components/ui/tooltip-box";
 
 export type RunDetailTab =
-  | "workflow"
   | "logs"
   | "supervisor"
   | "prompt"
