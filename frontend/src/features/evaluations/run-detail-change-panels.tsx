@@ -1,29 +1,19 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useState } from "react";
-import type { CommitChange } from "../../domain/models";
+import { useEffect, useMemo, useState } from "react";
+import type { IssueManagementItem } from "../../domain/models";
+import { api } from "../../services/api";
 
-type Messages = Record<string, string | undefined>;
-
-export function CommitChangesPanel({ changes, l }: { changes: CommitChange[]; l: Messages }) {
-  const items = [...changes].reverse();
-  const [changeIndex, setChangeIndex] = useState(0);
-  if (!changes.length) return <p className="hint">{l.noCommitChanges}</p>;
-  const index = Math.min(changeIndex, items.length - 1), change = items[index];
-  return (
-    <div className="commit-changes">
-      <div className="prompt-version-navigator">
-        <button className="ghost icon-button" type="button" disabled={index >= items.length - 1} onClick={() => setChangeIndex(index + 1)} aria-label={l.previousCommitChange} title={l.previousCommitChange}><ChevronLeft size={16} /></button>
-        <span>{l.commitVersion?.replace("{0}", String(items.length - index)).replace("{1}", String(items.length))}</span>
-        <button className="ghost icon-button" type="button" disabled={index === 0} onClick={() => setChangeIndex(index - 1)} aria-label={l.nextCommitChange} title={l.nextCommitChange}><ChevronRight size={16} /></button>
-      </div>
-      <section>
-        <div className="commit-changes__head"><strong>{change.before.slice(0, 12)} → {change.after.slice(0, 12)}</strong><small>{l.iteration} #{change.iteration ?? "—"} · {change.phase ?? "—"}</small></div>
-        {change.commits.length > 0 && <div className="commit-changes__group"><small>{l.commits}</small><ul>{change.commits.map((commit) => <li key={commit.sha}><code>{commit.sha.slice(0, 12)}</code><span>{commit.subject}</span></li>)}</ul></div>}
-        <div className="commit-changes__group"><small>{l.changedFiles}</small>{change.changed_paths.length > 0 ? <ul>{change.changed_paths.map((path) => <li key={path}><code>{path}</code></li>)}</ul> : <p className="hint">{l.noChangedFiles}</p>}</div>
-        {change.diff_artifact?.relative_path && <CommitPatch patch={change.diff} relativePath={change.diff_artifact.relative_path} l={l} />}
-      </section>
-    </div>
-  );
+export function WorktreePanel({ items, empty, branch, path, diffLabel }: { items: IssueManagementItem[]; empty: string; branch: string; path: string; diffLabel: string }) {
+  const worktrees = useMemo(() => items.filter((item) => {
+    const change = item.proposal.agent_change as Record<string, unknown> | undefined;
+    return typeof change?.worktree_path === "string" && Boolean(change.worktree_path);
+  }), [items]);
+  const [selectedId, setSelectedId] = useState<string | null>(null), [diff, setDiff] = useState("");
+  const activeId = worktrees.some((item) => item.proposal_id === selectedId) ? selectedId : worktrees[0]?.proposal_id;
+  useEffect(() => { if (!activeId) return; api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(activeId)}/diff`).then((result) => setDiff(result.diff)).catch(() => setDiff("")); }, [activeId]);
+  if (!worktrees.length) return <p className="hint">{empty}</p>;
+  const selected = worktrees.find((item) => item.proposal_id === activeId);
+  const change = selected?.proposal.agent_change as Record<string, unknown> | undefined;
+  return <div className="worktree-panel"><div className="worktree-panel__list" role="list">{worktrees.map((item) => { const proposal = item.proposal.agent_change as Record<string, unknown>; return <button type="button" role="listitem" className={item.proposal_id === activeId ? "selected" : ""} onClick={() => setSelectedId(item.proposal_id)} key={item.proposal_id}><strong>{item.title}</strong><small>{String(proposal.branch || "—")}</small></button>; })}</div>{selected && <section><p><small>{branch}</small> {String(change?.branch || "—")}</p><p><small>{path}</small> {String(change?.worktree_path || "—")}</p>{diff ? <UnifiedDiff patch={diff} label={diffLabel} /> : <p className="hint">{empty}</p>}</section>}</div>;
 }
 
 type UnifiedDiffRow = { kind: "added" | "removed" | "unchanged"; before?: number; after?: number; line: string } | { kind: "meta"; line: string };
@@ -37,10 +27,6 @@ function unifiedDiffRows(value: string): UnifiedDiffRow[] {
     if (line.startsWith(" ")) { const row = { kind: "unchanged" as const, before, after, line }; before = (before ?? 0) + 1; after = (after ?? 0) + 1; return row; }
     return { kind: "meta", line };
   });
-}
-function CommitPatch({ patch, relativePath, l }: { patch?: string | null; relativePath: string; l: Messages }) {
-  if (patch == null) return <p className="commit-changes__artifact">{l.diffArtifact}: <code>{relativePath}</code></p>;
-  return <UnifiedDiff patch={patch} label={l.diffArtifact ?? "Diff"} />;
 }
 export function UnifiedDiff({ patch, label = "Diff" }: { patch: string; label?: string }) {
   return <div className="prompt-diff commit-diff" aria-label={label}>{unifiedDiffRows(patch).map((row, index) => row.kind === "meta" ? <div className="commit-diff__meta" key={index}><code>{row.line || " "}</code></div> : <div className={`prompt-diff__row prompt-diff__row--${row.kind}`} key={index}><span className="prompt-diff__line-number">{row.before ?? ""}</span><span className="prompt-diff__line-number">{row.after ?? ""}</span><span className="prompt-diff__marker">{row.kind === "added" ? "+" : row.kind === "removed" ? "−" : " "}</span><code>{row.line || " "}</code></div>)}</div>;

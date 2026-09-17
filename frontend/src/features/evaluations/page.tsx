@@ -4,7 +4,7 @@ import type {
   Build,
   Run,
   WorkflowGraphNode,
-  CommitChange,
+  IssueManagementItem,
   RunTelemetry,
   SupervisorRecord,
 } from "../../domain/models";
@@ -26,7 +26,7 @@ import {
   type RunDetailTab,
 } from "./run-detail-tabs";
 import {
-  CommitChangesPanel,
+  WorktreePanel,
 } from "./run-detail-change-panels";
 import {
   CombinedLogPanel,
@@ -138,7 +138,7 @@ export function EvaluationsPage({
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
-    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
+    [worktrees, setWorktrees] = useState<IssueManagementItem[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -277,9 +277,9 @@ export function EvaluationsPage({
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
-    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
-      .then(setCommitChanges)
-      .catch(() => setCommitChanges([]));
+    api<IssueManagementItem[]>("/api/v1/issue-management")
+      .then((items) => setWorktrees(items.filter((item) => item.run_id === selected.id)))
+      .catch(() => setWorktrees([]));
   }, [selected]);
   const label = (status: string) =>
     ({
@@ -1036,7 +1036,7 @@ export function EvaluationsPage({
             onSelect={setTab}
             tabs={[
               { id: "result", label: l.result },
-              { id: "commits", label: l.commitChanges },
+              { id: "commits", label: l.worktrees },
               { id: "supervisor", label: l.supervisor },
               { id: "logs", label: l.logs },
             ]}
@@ -1070,8 +1070,8 @@ export function EvaluationsPage({
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint} action={iterationNavigator}>
-              <CommitChangesPanel changes={commitChanges} l={l} />
+            <RunDetailTabPanel description={l.worktreesDescription} hint={l.worktreesDataHint}>
+              <WorktreePanel items={worktrees} empty={l.noWorktrees} branch={l.worktreeBranch} path={l.worktreePath} diffLabel={l.worktreeDiff} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
