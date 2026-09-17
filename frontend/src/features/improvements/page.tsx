@@ -1002,93 +1002,36 @@ function StoredState({
     </section>
   );
 }
-export function ImprovementsPage({
+function ImprovementBuildContent({
   runs,
   onStop,
   onRetry,
   onApprove,
   onReject,
+  buildId,
+  hours,
+  onHoursChange,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
   onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  buildId: string;
+  hours: number;
+  onHoursChange: (hours: number) => void;
 }) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
-    [build, setBuild] = useState(""),
-    [builds, setBuilds] = useState<Build[]>([]),
-    [initialLoading, setInitialLoading] = useState(true),
     [selectedRun, setSelectedRun] = useState<Run | null>(null),
-    [retryingRun, setRetryingRun] = useState<Run | null>(null),
-    [hours, setHours] = useState(24);
-  useEffect(() => {
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        setBuilds(next);
-        setBuild((current) =>
-          current ||
-          [...next].sort(
-            (left, right) =>
-              Number(right.starred) - Number(left.starred) ||
-              lastRunTimestamp(right) - lastRunTimestamp(left) ||
-              left.name.localeCompare(right.name),
-          )[0]?.id ||
-          "",
-        );
-      })
-      .catch(() => setBuilds([]))
-      .finally(() => setInitialLoading(false));
-  }, []);
-  const sortedBuilds = useMemo(
-    () =>
-      [...builds].sort((left, right) => {
-        const starOrder = Number(right.starred) - Number(left.starred);
-        if (starOrder) return starOrder;
-        const leftRun = lastRunTimestamp(left);
-        const rightRun = lastRunTimestamp(right);
-        return rightRun - leftRun || left.name.localeCompare(right.name);
-      }),
-    [builds],
-  );
-  if (initialLoading) return <>
-    <SectionSkeleton rows={1} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={4} />
-    <SectionSkeleton rows={4} />
-    <SectionSkeleton rows={3} />
-  </>;
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
   return (
     <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.selectBuild}
-          <select value={build} onChange={(event) => setBuild(event.target.value)}>
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}{item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t.range}
-          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-            <option value={24}>24h</option>
-            <option value={72}>3d</option>
-            <option value={168}>7d</option>
-            <option value={720}>30d</option>
-            <option value={0}>{t.unlimited}</option>
-          </select>
-        </label>
-      </section>
-      <CycleImprovementAI locale={locale} build={build} hours={hours} />
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
-      {build && <RelatedRuns
-        key={`${build}:${hours}`}
-        buildId={build}
+      <CycleImprovementAI locale={locale} build={buildId} hours={hours} />
+      <FeedbackTrends locale={locale} buildId={buildId} scope="improvements" hours={hours} onHoursChange={onHoursChange} />
+      <RelatedRuns
+        key={`${buildId}:${hours}`}
+        buildId={buildId}
         runs={runs}
         locale={locale}
         t={t}
@@ -1096,10 +1039,10 @@ export function ImprovementsPage({
         onStop={onStop}
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
-      />}
-      {build && <PersonaJourneyTimeline key={`${build}:${hours}`} buildId={build} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />}
-      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
-      {build && <StoredState buildId={build} locale={locale} t={t} />}
+      />
+      <PersonaJourneyTimeline key={`${buildId}:${hours}`} buildId={buildId} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />
+      <ProposalHistory key={`${buildId}:${hours}`} t={t} locale={locale} buildId={buildId} hours={hours} />
+      <StoredState buildId={buildId} locale={locale} t={t} />
       {selectedRun && <EvaluationsPage
         detailOnly
         locale={locale}
@@ -1122,6 +1065,93 @@ export function ImprovementsPage({
           </div>
         </div>
       </Modal>
+    </>
+  );
+}
+
+export function ImprovementsPage({
+  runs,
+  onStop,
+  onRetry,
+  onApprove,
+  onReject,
+}: {
+  runs: Run[];
+  onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
+  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
+    t = copy[locale],
+    [builds, setBuilds] = useState<Build[]>([]),
+    [buildId, setBuildId] = useState(""),
+    [hours, setHours] = useState(24),
+    [initialLoading, setInitialLoading] = useState(true);
+  const sortedBuilds = useMemo(
+    () =>
+      [...builds].sort(
+        (left, right) =>
+          Number(right.starred) - Number(left.starred) ||
+          lastRunTimestamp(right) - lastRunTimestamp(left) ||
+          left.name.localeCompare(right.name),
+      ),
+    [builds],
+  );
+  useEffect(() => {
+    api<Build[]>("/api/builds")
+      .then((next) => {
+        setBuilds(next);
+        setBuildId((current) => current || [...next].sort(
+          (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
+        )[0]?.id || "");
+      })
+      .catch(() => setBuilds([]))
+      .finally(() => setInitialLoading(false));
+  }, []);
+  if (initialLoading) return <>
+    <SectionSkeleton rows={1} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={3} />
+  </>;
+  return (
+    <>
+      <section className="improvements-build-selector">
+        <label>
+          {t.selectBuild}
+          <select value={buildId} onChange={(event) => setBuildId(event.target.value)}>
+            {sortedBuilds.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.starred ? "★ " : ""}{item.name} ({compactTimestamp(locale, item.last_run_at)})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+            <option value={0}>{t.unlimited}</option>
+          </select>
+        </label>
+      </section>
+      {buildId && <ImprovementBuildContent
+        key={buildId}
+        runs={runs}
+        onStop={onStop}
+        onRetry={onRetry}
+        onApprove={onApprove}
+        onReject={onReject}
+        buildId={buildId}
+        hours={hours}
+        onHoursChange={setHours}
+      />}
     </>
   );
 }

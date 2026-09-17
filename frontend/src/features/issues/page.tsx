@@ -95,19 +95,19 @@ const compactTimestamp = (locale: Locale, value?: string) =>
     : "—";
 const lastRunTimestamp = (build: Build) =>
   build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
-export function IssuesPage({
+function IssuesBuildContent({
   locale,
   onNotice,
+  buildId,
 }: {
   locale: Locale;
   onNotice: (message: string, tone?: "success" | "warning") => void;
+  buildId: string;
 }) {
   const t = localeMessages<Copy>(locale, "issueManagementPage"),
     evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations"),
     [items, setItems] = useState<IssueManagementItem[]>([]),
-    [builds, setBuilds] = useState<Build[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
-    [build, setBuild] = useState(""),
     [managedStatuses, setManagedStatuses] = useState<Set<string>>(new Set()),
     [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
@@ -129,20 +129,8 @@ export function IssuesPage({
       .catch(() => setItems([]));
   useEffect(() => {
     load();
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        const sorted = [...next].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        );
-        setBuilds(next);
-        setBuild((current) => current || sorted[0]?.id || "");
-      })
-      .catch(() => setBuilds([]));
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
-  }, []);
+  }, [buildId]);
   useEffect(() => {
     if (!selected || !selected.proposal.agent_change) return;
     api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
@@ -184,16 +172,6 @@ export function IssuesPage({
         user_experience: t.userExperience,
         other: t.other,
       })[v] ?? t.other,
-    sortedBuilds = useMemo(
-      () =>
-        [...builds].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        ),
-      [builds],
-    ),
     verificationRuns = useMemo(
       () =>
         runs
@@ -208,7 +186,7 @@ export function IssuesPage({
     rows: IssueRow[] = items
       .filter(
         (x) =>
-          (!build || x.build_id === build) &&
+          x.build_id === buildId &&
           (!managedStatuses.size || managedStatuses.has(x.management_status)) &&
           (!decisions.size || decisions.has(x.status)),
       )
@@ -379,25 +357,6 @@ export function IssuesPage({
   const filterCount = managedStatuses.size + decisions.size;
   return (
     <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.build}
-          <select
-            value={build}
-            onChange={(event) => {
-              setBuild(event.target.value);
-              setPage(1);
-            }}
-          >
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}
-                {item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
       <section className="panel active-evaluation-panel issue-management">
         <div className="panel-title-action">
           <div className="panel-title-action__copy">
@@ -677,6 +636,56 @@ export function IssuesPage({
           </div>
         )}
       </Modal>
+    </>
+  );
+}
+
+export function IssuesPage({
+  locale,
+  onNotice,
+}: {
+  locale: Locale;
+  onNotice: (message: string, tone?: "success" | "warning") => void;
+}) {
+  const t = localeMessages<Copy>(locale, "issueManagementPage"),
+    [builds, setBuilds] = useState<Build[]>([]),
+    [buildId, setBuildId] = useState("");
+  const sortedBuilds = useMemo(
+    () =>
+      [...builds].sort(
+        (left, right) =>
+          Number(right.starred) - Number(left.starred) ||
+          lastRunTimestamp(right) - lastRunTimestamp(left) ||
+          left.name.localeCompare(right.name),
+      ),
+    [builds],
+  );
+  useEffect(() => {
+    api<Build[]>("/api/builds")
+      .then((next) => {
+        setBuilds(next);
+        setBuildId((current) => current || [...next].sort(
+          (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
+        )[0]?.id || "");
+      })
+      .catch(() => setBuilds([]));
+  }, []);
+  return (
+    <>
+      <section className="improvements-build-selector">
+        <label>
+          {t.build}
+          <select value={buildId} onChange={(event) => setBuildId(event.target.value)}>
+            {sortedBuilds.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.starred ? "★ " : ""}
+                {item.name} ({compactTimestamp(locale, item.last_run_at)})
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+      {buildId && <IssuesBuildContent key={buildId} locale={locale} onNotice={onNotice} buildId={buildId} />}
     </>
   );
 }
