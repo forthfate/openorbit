@@ -14,6 +14,7 @@ import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
+import { preferredBuildId, savePreferredBuildId } from "../../services/build-selection";
 
 type Copy = {
   title: string;
@@ -664,12 +665,14 @@ export function IssuesPage({
     api<Build[]>("/api/builds")
       .then((next) => {
         setBuilds(next);
-        setBuildId((current) => current || [...next].sort(
+        const fallback = [...next].sort(
           (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
-        )[0]?.id || "");
+        )[0]?.id || "";
+        setBuildId((current) => current || preferredBuildId("issues", next, fallback));
       })
       .catch(() => setBuilds([]));
   }, []);
+  useEffect(() => savePreferredBuildId("issues", buildId), [buildId]);
   return (
     <>
       <section className="improvements-build-selector">

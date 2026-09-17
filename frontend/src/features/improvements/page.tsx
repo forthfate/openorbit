@@ -25,6 +25,7 @@ import type {
   SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
+import { preferredBuildId, savePreferredBuildId } from "../../services/build-selection";
 import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
@@ -1102,13 +1103,15 @@ export function ImprovementsPage({
     api<Build[]>("/api/builds")
       .then((next) => {
         setBuilds(next);
-        setBuildId((current) => current || [...next].sort(
+        const fallback = [...next].sort(
           (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
-        )[0]?.id || "");
+        )[0]?.id || "";
+        setBuildId((current) => current || preferredBuildId("improvements", next, fallback));
       })
       .catch(() => setBuilds([]))
       .finally(() => setInitialLoading(false));
   }, []);
+  useEffect(() => savePreferredBuildId("improvements", buildId), [buildId]);
   if (initialLoading) return <>
     <SectionSkeleton rows={1} />
     <SectionSkeleton rows={3} />
