@@ -84,6 +84,7 @@ EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
 TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 ISSUE_MANAGEMENT = CONFIG / "issue-management.yaml"
+ASSISTANT_MCP_CONFIG = CONFIG / "assistant-mcp.json"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -1124,6 +1125,33 @@ class ConsoleStore:
     def open_runner_in_vscode(self, runner_id: str) -> dict[str, str]:
         self._runner(runner_id)
         self._open_in_vscode(self._runner_entry_path(runner_id, int(self._runner(runner_id)["version"])))
+        return {"status": "opened"}
+
+    def assistant_mcp_config(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            return {"path": str(ASSISTANT_MCP_CONFIG), "content": '{\n  "mcpServers": {}\n}\n'}
+        return {
+            "path": str(ASSISTANT_MCP_CONFIG),
+            "content": ASSISTANT_MCP_CONFIG.read_text(encoding="utf-8"),
+        }
+
+    def save_assistant_mcp_config(self, content: str) -> dict[str, str]:
+        try:
+            document = json.loads(content)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"MCP configuration must be valid JSON: {error.msg}") from error
+        if not isinstance(document, dict):
+            raise ValueError("MCP configuration must be a JSON object")
+        ASSISTANT_MCP_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        temporary = ASSISTANT_MCP_CONFIG.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(ASSISTANT_MCP_CONFIG)
+        return self.assistant_mcp_config()
+
+    def open_assistant_mcp_config_in_vscode(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            self.save_assistant_mcp_config('{"mcpServers": {}}')
+        self._open_in_vscode(ASSISTANT_MCP_CONFIG)
         return {"status": "opened"}
 
     def delete_runner(self, runner_id: str) -> None:

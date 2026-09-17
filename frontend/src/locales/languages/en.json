@@ -147,7 +147,12 @@
         "select": "Coding Agent",
         "none": "Not selected",
         "save": "Save",
-        "saved": "Coding Agent saved."
+        "saved": "Coding Agent saved.",
+        "mcpConfig": "MCP configuration",
+        "mcpConfigDescription": "Edit the JSON configuration file used for local coding-agent MCP connections.",
+        "openInVsCode": "Open in VS Code",
+        "saveMcpConfig": "Save MCP configuration",
+        "mcpConfigSaved": "MCP configuration saved."
       },
       "storage": {
         "title": "Application data",

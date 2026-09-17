@@ -1033,12 +1033,21 @@ def application_settings():
     return store.application_settings()
 
 
+@app.get("/api/assistant-mcp-config")
+def assistant_mcp_config():
+    return store.assistant_mcp_config()
+
+
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
     manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
     coding_agent_provider: Literal["none", "kiro", "claude-code", "codex"] = "none"
     assistant_tools: dict | None = None
+
+
+class AssistantMcpConfigUpdate(BaseModel):
+    content: str = Field(min_length=2, max_length=1_000_000)
 
 
 class ApplicationDataLocationUpdate(BaseModel):
@@ -1082,6 +1091,16 @@ def update_application_data(values: ApplicationDataLocationUpdate):
 @app.put("/api/application-settings")
 def update_application_settings(values: ApplicationSettingsUpdate):
     return store.save_application_settings(values.model_dump(exclude_unset=True))
+
+
+@app.put("/api/assistant-mcp-config")
+def save_assistant_mcp_config(values: AssistantMcpConfigUpdate):
+    return safely(lambda: store.save_assistant_mcp_config(values.content))
+
+
+@app.post("/api/assistant-mcp-config/open-vscode")
+def open_assistant_mcp_config_in_vscode():
+    return safely(store.open_assistant_mcp_config_in_vscode)
 
 
 class ChatTurn(BaseModel):
