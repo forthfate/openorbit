@@ -1045,6 +1045,7 @@ class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
     manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
+    coding_agent_provider: Literal["none", "kiro", "claude-code", "codex"] = "none"
     assistant_tools: dict | None = None
 
 
@@ -1234,7 +1235,10 @@ def chat(values: ChatMessage, request: Request):
     )
     try:
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
-        tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
+        application = store.application_settings()
+        tool_executor = AssistantToolExecutor(
+            application["assistant_tools"], application["coding_agent_provider"]
+        )
         prompt = build_assistant_prompt(
             values.content,
             [(turn.role, turn.content) for turn in values.history],
@@ -1256,7 +1260,10 @@ async def chat_stream(values: ChatMessage, request: Request):
         **{key: value for key, value in configured.items() if key in ModelSettings.__dataclass_fields__}
     )
     provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
-    tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
+    application = store.application_settings()
+    tool_executor = AssistantToolExecutor(
+        application["assistant_tools"], application["coding_agent_provider"]
+    )
     prompt = build_assistant_prompt(
         values.content,
         [(turn.role, turn.content) for turn in values.history],

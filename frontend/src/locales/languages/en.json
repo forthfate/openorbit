@@ -61,6 +61,7 @@
       "fileRead": "Read files",
       "fileSearch": "Search files",
       "runProcess": "Run processes",
+      "codingAgent": "Coding Agent",
       "terminalVisible": "Show terminal mode in deployment",
       "saveTools": "Save tools",
       "empty": "Ask about your evaluation work, runners, or the control room.",
@@ -136,6 +137,14 @@
         "selectChatProfile": "Select a system AI model",
         "saveChatProfile": "Save",
         "chatProfileSaved": "System AI model saved."
+      },
+      "codingAgent": {
+        "title": "Orbit Assistant Coding Agent",
+        "description": "Choose the locally installed coding agent that Orbit Assistant can use for workspace tasks.",
+        "select": "Coding Agent",
+        "none": "Not selected",
+        "save": "Save",
+        "saved": "Coding Agent saved."
       },
       "storage": {
         "title": "Application data",
@@ -920,6 +929,7 @@
       "applicationData": "Changing the location affects future local state and evidence; existing data is not moved automatically.",
       "managerPrompt": "The manager prompt template selected by a build is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
       "systemAiModel": "This profile powers Orbit system features such as chat and cycle analysis.",
+      "orbitAssistantCodingAgent": "The selected local CLI is used when Orbit Assistant delegates coding work in its configured workspace.",
       "orbitLogs": "Entries are local operational events. They help diagnose console and runner activity but are not evaluation evidence."
     },
     "chartHints": {

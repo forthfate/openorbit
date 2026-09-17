@@ -13,8 +13,40 @@ def tool_settings(workspace, **overrides):
     }
 
 
-def test_disabled_tools_are_not_advertised(tmp_path):
-    assert AssistantToolExecutor(tool_settings(tmp_path)).definitions() == []
+def test_coding_agent_is_advertised_even_without_a_selected_provider(tmp_path):
+    tools = AssistantToolExecutor(tool_settings(tmp_path))
+
+    assert [definition["name"] for definition in tools.definitions()] == ["coding_agent"]
+    result = json.loads(tools.execute("coding_agent", {"task": "inspect this project"}))
+    assert result["error_code"] == "coding_agent_not_configured"
+    assert result["settings_page"] == "settings"
+
+
+def test_coding_agent_can_be_disabled_in_assistant_tool_settings(tmp_path):
+    tools = AssistantToolExecutor(tool_settings(tmp_path, coding_agent_enabled=False))
+
+    assert tools.definitions() == []
+
+
+def test_coding_agent_passes_workspace_environment_to_selected_cli(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return type("Result", (), {"stdout": "done", "stderr": "", "returncode": 0})()
+
+    monkeypatch.setattr("app.assistant_tools.shutil.which", lambda _: "/usr/bin/kiro-cli")
+    monkeypatch.setattr("app.assistant_tools.subprocess.run", fake_run)
+    tools = AssistantToolExecutor(tool_settings(tmp_path), coding_agent_provider="kiro")
+
+    result = json.loads(tools.execute("coding_agent", {"task": "Update the README"}))
+
+    assert captured["command"][:2] == ["kiro-cli", "chat"]
+    assert f"- Current working directory: {tmp_path}" in captured["command"][-1]
+    assert "- OS: " in captured["command"][-1]
+    assert captured["cwd"] == tmp_path
+    assert result["provider"] == "kiro"
 
 
 def test_file_read_is_bounded_to_workspace_and_line_range(tmp_path):

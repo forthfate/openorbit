@@ -15,14 +15,16 @@ type ApplicationSettings = {
   manager_prompt_template: string;
   manager_output_locale: string;
   chat_model_profile_name: string;
+  coding_agent_provider: "none" | "kiro" | "claude-code" | "codex";
 };
 type ApplicationData = { path: string; size_bytes: number };
 
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
+type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string };
 type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
-type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; storage: StorageCopy };
+type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; codingAgent: CodingAgentCopy; storage: StorageCopy };
 const bytes = (value: number) => {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = value ? Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1) : 0;
@@ -63,6 +65,7 @@ export function SettingsPage({
     sectionDetails = localeMessages<Record<string, string>>(locale, "sectionDetails");
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
+    [codingAgent, setCodingAgent] = useState<ApplicationSettings["coding_agent_provider"]>("none"),
     [dataPath, setDataPath] = useState(""),
     [dataPathDraft, setDataPathDraft] = useState(""),
     [dataSize, setDataSize] = useState<number | null>(null),
@@ -75,6 +78,7 @@ export function SettingsPage({
       .then((values) => {
         setPrompt(values.manager_prompt_template);
         setChatProfile(values.chat_model_profile_name);
+        setCodingAgent(values.coding_agent_provider ?? "none");
       })
       .catch(() => pushToast(locales[locale].ui.operationalPromptLoadFailed));
   }, [locale, pushToast]);
@@ -95,6 +99,7 @@ export function SettingsPage({
     api<ApplicationSettings>("/api/application-settings", "PUT", {
       manager_prompt_template: prompt,
       chat_model_profile_name: chatProfile,
+      coding_agent_provider: codingAgent,
     })
       .then((values) => {
         setPrompt(values.manager_prompt_template);
@@ -111,6 +116,15 @@ export function SettingsPage({
       .then((values) => {
         setChatProfile(values.chat_model_profile_name);
         pushToast(p.chatProfileSaved, "success");
+      })
+      .catch((error) => pushToast(error.message));
+  const saveCodingAgent = () =>
+    api<ApplicationSettings>("/api/application-settings", "PUT", {
+      coding_agent_provider: codingAgent,
+    })
+      .then((values) => {
+        setCodingAgent(values.coding_agent_provider);
+        pushToast(settingsCopy.codingAgent.saved, "success");
       })
       .catch((error) => pushToast(error.message));
   const saveDataLocation = () => {
@@ -238,6 +252,25 @@ export function SettingsPage({
             >
               {p.saveChatProfile}
             </button>
+          </div>
+        </label>
+      </section>
+      <section className="panel app-settings">
+        <PanelHeader title={<SectionInfo title={settingsCopy.codingAgent.title} description={sectionDetails.orbitAssistantCodingAgent} />} />
+        <p className="hint section-description">{settingsCopy.codingAgent.description}</p>
+        <label className="setting-row">
+          <span>
+            <strong>{settingsCopy.codingAgent.select}</strong>
+            <small>{settingsCopy.codingAgent.description}</small>
+          </span>
+          <div className="setting-actions">
+            <select aria-label={settingsCopy.codingAgent.title} value={codingAgent} onChange={(event) => setCodingAgent(event.target.value as ApplicationSettings["coding_agent_provider"])}>
+              <option value="none">{settingsCopy.codingAgent.none}</option>
+              <option value="kiro">Kiro</option>
+              <option value="claude-code">Claude Code</option>
+              <option value="codex">Codex</option>
+            </select>
+            <button className="approve" onClick={saveCodingAgent}>{settingsCopy.codingAgent.save}</button>
           </div>
         </label>
       </section>

@@ -12,7 +12,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import subprocess
 import tempfile
 import threading
@@ -23,6 +22,8 @@ from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterator, Literal
+
+from coding_agents import build_coding_agent_command
 
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
@@ -1765,20 +1766,6 @@ class RunnerContext:
         normalized_prompt = prompt.strip()
         if not normalized_prompt:
             raise ValueError("AI agent prompt must not be empty")
-        commands = {
-            # ``--approve-for-me`` already selects Codex's workspace-write
-            # sandbox.  The CLI rejects supplying both flags together.
-            "codex": (["codex", "exec", "--approve-for-me"], []),
-            "claude-code": (["claude"], ["-p"]),
-            "kiro": (["kiro-cli", "chat"], []),
-        }
-        if provider not in commands:
-            raise ValueError("AI agent provider must be codex, claude-code, or kiro")
-        try:
-            extra_arguments = shlex.split(options)
-        except ValueError as error:
-            raise ValueError("AI agent options must be a valid command argument string") from error
-        executable, prompt_arguments = commands[provider]
         # Agent edits are proposals, never writes to the evaluated repository.
         # A proposal branch/worktree gives the coding agent a real Git checkout while
         # preserving the operator's working tree and its uncommitted changes.
@@ -1802,7 +1789,7 @@ class RunnerContext:
         keep_worktree = False
         try:
             output = self.exec(
-                [*executable, *extra_arguments, *prompt_arguments, normalized_prompt],
+                build_coding_agent_command(provider, options=options, prompt=normalized_prompt),
                 cwd=worktree,
                 timeout=timeout,
                 target_log_source="ai-agent",

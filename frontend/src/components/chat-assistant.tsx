@@ -28,6 +28,7 @@ type ToolSettings = {
   file_read_enabled: boolean;
   file_search_enabled: boolean;
   run_process_enabled: boolean;
+  coding_agent_enabled: boolean;
   terminal_enabled: boolean;
   terminal_visible: boolean;
   mcp_server_url: string;
@@ -47,6 +48,7 @@ type ChatAssistantCopy = {
   fileRead: string;
   fileSearch: string;
   runProcess: string;
+  codingAgent: string;
   terminalVisible: string;
   saveTools: string;
   empty: string;
@@ -67,6 +69,7 @@ const defaultToolSettings: ToolSettings = {
   file_read_enabled: true,
   file_search_enabled: true,
   run_process_enabled: true,
+  coding_agent_enabled: true,
   terminal_enabled: true,
   terminal_visible: true,
   mcp_server_url: "http://127.0.0.1:3000/mcp/",
@@ -178,9 +181,9 @@ export function ChatAssistant() {
   useEffect(() => {
     if (open)
       api<ApplicationSettings>("/api/application-settings")
-        .then((values) =>
-          setToolSettings(normalizedToolSettings(values.assistant_tools)),
-        )
+        .then((values) => {
+          setToolSettings(normalizedToolSettings(values.assistant_tools));
+        })
         .catch(() => undefined);
   }, [open]);
   useEffect(() => {
@@ -549,6 +552,7 @@ export function ChatAssistant() {
               ["file_read_enabled", copy.fileRead],
               ["file_search_enabled", copy.fileSearch],
               ["run_process_enabled", copy.runProcess],
+              ["coding_agent_enabled", copy.codingAgent],
             ] as const
           ).map(([key, label]) => (
             <label className="chat-tool-popover-toggle" key={key}>

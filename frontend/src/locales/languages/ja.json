@@ -59,6 +59,7 @@
       "fileRead": "ファイルを読む",
       "fileSearch": "ファイルを検索",
       "runProcess": "プロセスを実行",
+      "codingAgent": "Coding Agent",
       "terminalVisible": "配布時にターミナルモードを表示",
       "saveTools": "ツールを保存",
       "empty": "評価作業、ランナー、またはコントロールルームについて質問できます。",
@@ -130,6 +131,14 @@
         "selectChatProfile": "システムAIモデルを選択",
         "saveChatProfile": "保存",
         "chatProfileSaved": "システムAIモデルを保存しました。"
+      },
+      "codingAgent": {
+        "title": "Orbit Assistant Coding Agent",
+        "description": "Orbit Assistant がワークスペース作業に使用する、ローカルにインストール済みのコーディングエージェントを選択します。",
+        "select": "Coding Agent",
+        "none": "未選択",
+        "save": "保存",
+        "saved": "Coding Agent を保存しました。"
       },
       "storage": {
         "title": "アプリデータ",
@@ -914,6 +923,7 @@
       "applicationData": "保存先の変更は今後のローカル状態と証跡に適用されます。既存データは自動移動されません。",
       "managerPrompt": "ビルドで選択した管理者プロンプトテンプレートは __ORBIT_MANAGER_AI_PROMPT__ の位置に挿入されます。",
       "systemAiModel": "このプロファイルは Orbit チャットやサイクル分析などのシステム機能で使用されます。",
+      "orbitAssistantCodingAgent": "選択したローカル CLI は、Orbit Assistant が設定済みワークスペースのコーディング作業を委任するときに使用されます。",
       "orbitLogs": "項目はローカル運用イベントです。コンソールとランナー活動の診断用であり、評価の証跡には含まれません。"
     },
     "chartHints": {

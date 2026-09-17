@@ -60,6 +60,7 @@
       "fileRead": "파일 읽기",
       "fileSearch": "파일 검색",
       "runProcess": "프로세스 실행",
+      "codingAgent": "코딩 에이전트 사용",
       "terminalVisible": "배포 시 터미널 모드 표시",
       "saveTools": "도구 저장",
       "empty": "평가 작업, 러너 또는 컨트롤 룸에 관해 물어보세요.",
@@ -135,6 +136,14 @@
         "selectChatProfile": "시스템 AI 모델 선택",
         "saveChatProfile": "저장",
         "chatProfileSaved": "시스템 AI 모델을 저장했습니다."
+      },
+      "codingAgent": {
+        "title": "Orbit Assistant 코딩 에이전트",
+        "description": "Orbit Assistant가 작업 공간 작업에 사용할 로컬 설치 코딩 에이전트를 선택합니다.",
+        "select": "코딩 에이전트",
+        "none": "미선택",
+        "save": "저장",
+        "saved": "코딩 에이전트를 저장했습니다."
       },
       "storage": {
         "title": "앱 데이터",
@@ -919,6 +928,7 @@
       "applicationData": "저장소 위치 변경은 이후의 로컬 상태와 근거에 적용됩니다. 기존 데이터는 자동으로 이동하지 않습니다.",
       "managerPrompt": "빌드에서 선택한 관리자 프롬프트 템플릿은 __ORBIT_MANAGER_AI_PROMPT__ 위치에 삽입됩니다.",
       "systemAiModel": "이 프로필은 Orbit 챗봇과 사이클 분석 같은 시스템 기능에 사용됩니다.",
+      "orbitAssistantCodingAgent": "선택한 로컬 CLI는 Orbit Assistant가 설정된 작업 공간의 코딩 작업을 위임할 때 사용됩니다.",
       "orbitLogs": "항목은 로컬 운영 이벤트입니다. 콘솔과 러너 활동을 진단하는 용도이며 평가 근거에는 포함되지 않습니다."
     },
     "chartHints": {
