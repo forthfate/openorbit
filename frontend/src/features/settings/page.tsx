@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Database, Pencil, Save } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
@@ -10,6 +10,7 @@ import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileCatalog } from "../assets/page";
 import { OrbitLogs } from "./orbit-logs";
+import { useAssistantUiBridge } from "../../components/assistant-ui-bridge";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
@@ -58,6 +59,7 @@ export function SettingsPage({
   logs: OrbitLog[];
   onDeleteProfile: (profileName: string) => void;
 }) {
+  const { register: registerAssistantUi } = useAssistantUiBridge();
   const t = locales[locale].common,
     settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
     l = settingsCopy.manager,
@@ -140,12 +142,79 @@ export function SettingsPage({
       .catch((error) => pushToast(error.message))
       .finally(() => setDataLoading(false));
   };
-  const setLanguage = (nextLocale: Locale) => {
+  const setLanguage = useCallback((nextLocale: Locale) => {
     setLocale(nextLocale);
     api<ApplicationSettings>("/api/application-settings", "PUT", {
       manager_output_locale: nextLocale,
     }).catch((error) => pushToast(error.message));
-  };
+  }, [pushToast, setLocale]);
+  const settingsUi = useMemo(
+    () => ({
+      id: "settings.application",
+      title: "Application settings",
+      getState: () => ({ locale, theme, coding_agent_provider: codingAgent, editing_data_location: dataEditing }),
+      controls: [
+        {
+          id: "locale",
+          label: "Language",
+          kind: "select" as const,
+          value: locale,
+          options: localeOptions.map((option) => ({ value: option.id, label: option.label })),
+          setValue: (value: unknown) => {
+            if (typeof value === "string" && localeOptions.some((option) => option.id === value))
+              setLanguage(value as Locale);
+          },
+        },
+        {
+          id: "theme",
+          label: "Theme",
+          kind: "select" as const,
+          value: theme,
+          options: [
+            { value: "forest", label: "Forest dark" },
+            { value: "midnight", label: "Midnight" },
+          ],
+          setValue: (value: unknown) => {
+            if (value === "forest" || value === "midnight") setTheme(value);
+          },
+        },
+        {
+          id: "coding_agent_provider",
+          label: "Coding Agent",
+          kind: "select" as const,
+          value: codingAgent,
+          options: [
+            { value: "none", label: settingsCopy.codingAgent.none },
+            { value: "kiro", label: "Kiro" },
+            { value: "claude-code", label: "Claude Code" },
+            { value: "codex", label: "Codex" },
+          ],
+          setValue: (value: unknown) => {
+            if (["none", "kiro", "claude-code", "codex"].includes(String(value)))
+              setCodingAgent(value as ApplicationSettings["coding_agent_provider"]);
+          },
+        },
+        ...(dataEditing ? [{
+          id: "application_data_path",
+          label: "Application data location",
+          kind: "text" as const,
+          value: dataPathDraft,
+          setValue: (value: unknown) => {
+            if (typeof value === "string") setDataPathDraft(value);
+          },
+        }] : []),
+      ],
+      actions: [
+        {
+          id: "edit_application_data_location",
+          label: "Edit application data location",
+          run: () => setDataEditing(true),
+        },
+      ],
+    }),
+    [codingAgent, dataEditing, dataPathDraft, locale, setLanguage, setTheme, settingsCopy.codingAgent.none, theme],
+  );
+  useEffect(() => registerAssistantUi(settingsUi), [registerAssistantUi, settingsUi]);
   return (
     <>
       <section className="panel app-settings">

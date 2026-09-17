@@ -19,6 +19,12 @@ BLOCKED_NAMES = {".env", ".git", ".ssh", "id_rsa", "id_ed25519"}
 DEFAULT_MCP_URL = "http://127.0.0.1:3000/mcp/"
 
 
+def _terminal_visible() -> bool:
+    """Deployment flag; terminal visibility is not an operator UI setting."""
+    value = os.environ.get("ORBIT_ASSISTANT_TERMINAL_VISIBLE", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def defaults() -> dict[str, Any]:
     return {
         "workspace_root": str(Path(__file__).resolve().parents[2]),
@@ -26,8 +32,10 @@ def defaults() -> dict[str, Any]:
         "file_search_enabled": True,
         "run_process_enabled": True,
         "coding_agent_enabled": True,
+        "ui_context_enabled": True,
+        "ui_interaction_enabled": True,
         "terminal_enabled": True,
-        "terminal_visible": True,
+        "terminal_visible": _terminal_visible(),
         "mcp_server_url": DEFAULT_MCP_URL,
     }
 
@@ -43,10 +51,12 @@ def normalize_settings(value: object) -> dict[str, Any]:
         "file_search_enabled",
         "run_process_enabled",
         "coding_agent_enabled",
+        "ui_context_enabled",
+        "ui_interaction_enabled",
         "terminal_enabled",
-        "terminal_visible",
     ):
         result[key] = bool(value.get(key, result[key]))
+    result["terminal_visible"] = _terminal_visible()
     result["mcp_server_url"] = (
         str(value.get("mcp_server_url", result["mcp_server_url"])).strip() or result["mcp_server_url"]
     )

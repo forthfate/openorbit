@@ -12,6 +12,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from .assistant_tools import DEFAULT_MCP_URL, AssistantToolExecutor
+from .assistant_ui import AssistantUiToolExecutor
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 
 
@@ -81,12 +82,14 @@ class OrbitAssistantGraph:
         settings: ModelSettings,
         local_tools: AssistantToolExecutor,
         mcp_tools: LocalMcpTools | None = None,
+        ui_tools: AssistantUiToolExecutor | None = None,
         on_activity: Callable[[str, str | None], None] | None = None,
     ):
         self.provider = provider
         self.settings = settings
         self.local_tools = local_tools
         self.mcp_tools = mcp_tools or LocalMcpTools(local_tools.settings["mcp_server_url"])
+        self.ui_tools = ui_tools
         self.on_activity = on_activity
         graph = StateGraph(AssistantState)
         graph.add_node("model", self._model)
@@ -98,12 +101,15 @@ class OrbitAssistantGraph:
         self._activity("thinking")
         local_definitions = self.local_tools.definitions()
         mcp_definitions = self.mcp_tools.definitions()
-        definitions = [*mcp_definitions, *local_definitions]
+        ui_definitions = self.ui_tools.definitions() if self.ui_tools else []
+        definitions = [*mcp_definitions, *local_definitions, *ui_definitions]
 
         def execute(name: str, arguments: dict[str, Any]) -> str:
             self._activity("working", name)
             if any(tool["name"] == name for tool in mcp_definitions):
                 result = self.mcp_tools.execute(name, arguments)
+            elif self.ui_tools and any(tool["name"] == name for tool in ui_definitions):
+                result = self.ui_tools.execute(name, arguments)
             else:
                 result = self.local_tools.execute(name, arguments)
             self._activity("thinking")
@@ -125,13 +131,23 @@ class OrbitAssistantGraph:
         return str(result["response"])
 
 
-def build_assistant_prompt(content: str, history: list[tuple[str, str]], locale: str | None) -> str:
+def build_assistant_prompt(
+    content: str, history: list[tuple[str, str]], locale: str | None, ui_enabled: bool = False
+) -> str:
     prompt = (
         "You are Orbit, a concise assistant for the local OpenOrbit control room.\n"
         "Use the OpenOrbit MCP tools as the source of truth for local control-room state. "
         "Read state before suggesting or taking any state-changing action.\n"
         + execution_environment_context()
     )
+    if ui_enabled:
+        prompt += (
+            "Browser UI tools are available for this turn. For any question about the current Orbit "
+            "screen, visible component, selected item, open panel, dialog, form value, or any request "
+            "to change the Orbit UI, first call ui_get_context. Use ui_interact only after reading the "
+            "current UI context. Do not use file tools to infer browser UI state. File tools remain for "
+            "workspace files and coding tasks only.\n"
+        )
     if locale:
         prompt += f"Respond in BCP 47 locale '{locale}'.\n"
     if history:

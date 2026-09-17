@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
@@ -7,6 +7,7 @@ import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { QuickStartModal } from "./components/quick-start-modal";
+import { AssistantUiProvider, useAssistantUiBridge } from "./components/assistant-ui-bridge";
 
 const AssetsPage = lazy(() =>
   import("./features/assets/page").then((module) => ({
@@ -86,6 +87,7 @@ type AssetDeleteKind =
   | "target-environment";
 
 export default function App() {
+  const { register: registerAssistantUi } = useAssistantUiBridge();
   const [page, setPageState] = useState<Page>(pageFromLocation);
   const [locale, setLocaleState] = useState<Locale>(savedLocale);
   const [theme, setThemeState] = useState(savedTheme);
@@ -121,6 +123,27 @@ export default function App() {
     localStorage.setItem(themeStorageKey, value);
     setThemeState(value);
   };
+  const navigationUi = useMemo(
+    () => ({
+      id: "app.navigation",
+      title: "Application navigation",
+      getState: () => ({ page }),
+      controls: [
+        {
+          id: "page",
+          label: "Current page",
+          kind: "select" as const,
+          value: page,
+          options: pages.map((value) => ({ value, label: locales[locale].common[value] })),
+          setValue: (value: unknown) => {
+            if (typeof value === "string" && pages.includes(value as Page)) setPage(value as Page);
+          },
+        },
+      ],
+    }),
+    [page, locale],
+  );
+  useEffect(() => registerAssistantUi(navigationUi), [navigationUi, registerAssistantUi]);
   const openQuickStart = (id?: string) => {
     void room.loadProfiles();
     setQuickStartSelection(id);
@@ -451,6 +474,8 @@ export default function App() {
 
 createRoot(document.getElementById("root")!).render(
   <ToastProvider>
-    <App />
+    <AssistantUiProvider>
+      <App />
+    </AssistantUiProvider>
   </ToastProvider>,
 );
