@@ -1508,7 +1508,10 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [
-        ("openorbit.user-journey-smoke-test", ["before_all", "execute", "verify", "after_all"]),
+        (
+            "openorbit.user-journey-smoke-test",
+            ["before_all", "before_all", "execute", "verify", "after_all"],
+        ),
         ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
         (
             "openorbit.agent-self-improvement",
@@ -1526,7 +1529,7 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
         ),
         (
             "openorbit.ai-slo-drift-monitor",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -1548,10 +1551,22 @@ def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, qui
 @pytest.mark.parametrize(
     ("template_id", "phases"),
     [
-        ("user-journey-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "user-journey-cycle",
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
+        ),
         (
             "external-command-adapter",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
         (
             "native-improvement-cycle",
@@ -1571,10 +1586,13 @@ def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, qui
             "source-aware-browser-journey",
             ["before_all", "execute", "verify", "after_each", "after_all"],
         ),
-        ("json-agent-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "json-agent-cycle",
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
         (
             "evidence-gated-probe-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
