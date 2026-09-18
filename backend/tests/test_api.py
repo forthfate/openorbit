@@ -2122,6 +2122,19 @@ def test_application_manager_prompt_has_a_safe_default(tmp_path, monkeypatch):
     )
 
 
+def test_assistant_mcp_configuration_uses_a_valid_default_and_persists_json(tmp_path, monkeypatch):
+    mcp_config = tmp_path / "config" / "assistant-mcp.json"
+    monkeypatch.setattr(store_module, "ASSISTANT_MCP_CONFIG", mcp_config)
+    store = store_module.ConsoleStore()
+
+    assert store.assistant_mcp_config()["content"] == '{\n  "mcpServers": {}\n}\n'
+    saved = store.save_assistant_mcp_config('{"mcpServers": {"orbit": {"command": "uv"}}}')
+
+    assert saved["content"] == '{\n  "mcpServers": {\n    "orbit": {\n      "command": "uv"\n    }\n  }\n}\n'
+    with pytest.raises(ValueError, match="valid JSON"):
+        store.save_assistant_mcp_config("not json")
+
+
 def test_exact_legacy_manager_prompt_is_migrated_but_custom_prompt_is_preserved(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "SETTINGS", tmp_path / "settings.json")
     (tmp_path / "settings.json").write_text(

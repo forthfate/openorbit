@@ -141,7 +141,12 @@
         "select": "Coding Agent",
         "none": "未選択",
         "save": "保存",
-        "saved": "Coding Agent を保存しました。"
+        "saved": "Coding Agent を保存しました。",
+        "mcpConfig": "MCP 設定",
+        "mcpConfigDescription": "ローカルのコーディングエージェント MCP 接続に使う JSON 設定ファイルを編集します。",
+        "openInVsCode": "VS Code で開く",
+        "saveMcpConfig": "MCP 設定を保存",
+        "mcpConfigSaved": "MCP 設定を保存しました。"
       },
       "storage": {
         "title": "アプリデータ",

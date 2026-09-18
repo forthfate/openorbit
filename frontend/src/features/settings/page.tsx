@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Database, Pencil, Save } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, Pencil, Save } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
@@ -11,6 +11,7 @@ import { useToast } from "../../components/ui/toast-context";
 import { ProfileCatalog } from "../assets/page";
 import { OrbitLogs } from "./orbit-logs";
 import { useAssistantUiBridge } from "../../components/assistant-ui-bridge";
+import { JsonEditor } from "../../components/ui/json-editor";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
@@ -23,7 +24,7 @@ type ApplicationData = { path: string; size_bytes: number };
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
-type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string };
+type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string; mcpConfig:string; mcpConfigDescription:string; openInVsCode:string; saveMcpConfig:string; mcpConfigSaved:string };
 type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
 type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; codingAgent: CodingAgentCopy; storage: StorageCopy };
 const bytes = (value: number) => {
@@ -68,6 +69,7 @@ export function SettingsPage({
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
     [codingAgent, setCodingAgent] = useState<ApplicationSettings["coding_agent_provider"]>("none"),
+    [mcpConfig, setMcpConfig] = useState(""),
     [dataPath, setDataPath] = useState(""),
     [dataPathDraft, setDataPathDraft] = useState(""),
     [dataSize, setDataSize] = useState<number | null>(null),
@@ -84,6 +86,7 @@ export function SettingsPage({
       })
       .catch(() => pushToast(locales[locale].ui.operationalPromptLoadFailed));
   }, [locale, pushToast]);
+  useEffect(() => { api<{ content: string }>("/api/assistant-mcp-config").then((value) => setMcpConfig(value.content)).catch((error) => pushToast(error.message)); }, [pushToast]);
   useEffect(() => {
     let mounted = true;
     api<ApplicationData>("/api/application-data")
@@ -129,6 +132,7 @@ export function SettingsPage({
         pushToast(settingsCopy.codingAgent.saved, "success");
       })
       .catch((error) => pushToast(error.message));
+  const saveMcpConfig = () => api<{ content: string }>("/api/assistant-mcp-config", "PUT", { content: mcpConfig }).then((value) => { setMcpConfig(value.content); pushToast(settingsCopy.codingAgent.mcpConfigSaved, "success"); }).catch((error) => pushToast(error.message));
   const saveDataLocation = () => {
     setDataLoading(true);
     api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
@@ -245,6 +249,11 @@ export function SettingsPage({
             <option value="midnight">Midnight</option>
           </select>
         </label>
+        <div className="setting-row setting-row--stacked">
+          <span><strong>{settingsCopy.codingAgent.mcpConfig}</strong><small>{settingsCopy.codingAgent.mcpConfigDescription}</small></span>
+          <JsonEditor value={mcpConfig} onChange={setMcpConfig} label={settingsCopy.codingAgent.mcpConfig} />
+          <div className="setting-actions"><button className="ghost" onClick={() => api("/api/assistant-mcp-config/open-vscode", "POST").catch((error) => pushToast(error.message))}><ExternalLink size={14} />{settingsCopy.codingAgent.openInVsCode}</button><button className="approve" onClick={saveMcpConfig}><Save size={14} />{settingsCopy.codingAgent.saveMcpConfig}</button></div>
+        </div>
       </section>
       <section className="panel app-settings app-data-settings">
         <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
