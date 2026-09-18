@@ -2073,6 +2073,8 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
             "file_search_enabled": True,
             "run_process_enabled": True,
             "coding_agent_enabled": True,
+            "ui_context_enabled": True,
+            "ui_interaction_enabled": True,
             "terminal_enabled": True,
             "terminal_visible": True,
             "mcp_server_url": "http://127.0.0.1:3000/mcp/",

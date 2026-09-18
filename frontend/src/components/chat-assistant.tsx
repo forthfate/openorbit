@@ -12,14 +12,17 @@ import remarkGfm from "remark-gfm";
 import { localeMessages, resolveLocale } from "../locales";
 import { api } from "../services/api";
 import { AssistantTerminal } from "./assistant-terminal";
+import { type AssistantUiCommand, useAssistantUiBridge } from "./assistant-ui-bridge";
 
 type Message = { role: "user" | "assistant"; content: string };
 type ChatStreamEvent = {
-  type: "activity" | "response" | "error";
+  type: "activity" | "response" | "error" | "ui_command";
   phase?: "thinking" | "working";
   tool?: string;
   response?: string;
   message?: string;
+  command_id?: string;
+  command?: AssistantUiCommand;
 };
 type Position = { x: number; y: number };
 type DragTarget = "launcher" | "window";
@@ -29,6 +32,8 @@ type ToolSettings = {
   file_search_enabled: boolean;
   run_process_enabled: boolean;
   coding_agent_enabled: boolean;
+  ui_context_enabled: boolean;
+  ui_interaction_enabled: boolean;
   terminal_enabled: boolean;
   terminal_visible: boolean;
   mcp_server_url: string;
@@ -49,7 +54,8 @@ type ChatAssistantCopy = {
   fileSearch: string;
   runProcess: string;
   codingAgent: string;
-  terminalVisible: string;
+  uiContext: string;
+  uiInteraction: string;
   saveTools: string;
   empty: string;
   requestFailed: string;
@@ -58,6 +64,8 @@ type ChatAssistantCopy = {
   reviewingRequest: string;
   reviewingResults: string;
   usingTool: string;
+  usingUiContext: string;
+  usingUiInteract: string;
   message: string;
   placeholder: string;
   send: string;
@@ -70,6 +78,8 @@ const defaultToolSettings: ToolSettings = {
   file_search_enabled: true,
   run_process_enabled: true,
   coding_agent_enabled: true,
+  ui_context_enabled: true,
+  ui_interaction_enabled: true,
   terminal_enabled: true,
   terminal_visible: true,
   mcp_server_url: "http://127.0.0.1:3000/mcp/",
@@ -124,6 +134,7 @@ const initialWindowPosition = (): Position | null => {
 };
 
 export function ChatAssistant() {
+  const { sessionId, handleCommand } = useAssistantUiBridge();
   const copy = localeMessages<ChatAssistantCopy>(
     resolveLocale(localStorage.getItem("orbit.locale")),
     "chatAssistant",
@@ -249,7 +260,7 @@ export function ChatAssistant() {
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, history }),
+        body: JSON.stringify({ content, history, ui_session_id: sessionId }),
       });
       if (!response.ok || !response.body)
         throw new Error(await response.text());
@@ -259,6 +270,11 @@ export function ChatAssistant() {
       let answer = "";
       const addActivity = (line: string) =>
         setActivityLines((current) => [...current, line].slice(-3));
+      const activityLabel = (tool: string) => {
+        if (tool === "ui_get_context") return copy.usingUiContext;
+        if (tool === "ui_interact") return copy.usingUiInteract;
+        return copy.usingTool.replace("{tool}", tool);
+      };
       while (true) {
         const { done, value } = await reader.read();
         buffered += decoder.decode(value, { stream: !done });
@@ -271,9 +287,7 @@ export function ChatAssistant() {
             setActivityPhase(event.phase);
             if (event.phase === "working") {
               hasUsedTool.current = true;
-              addActivity(
-                copy.usingTool.replace("{tool}", event.tool ?? "tool"),
-              );
+              addActivity(activityLabel(event.tool ?? "tool"));
             } else {
               addActivity(
                 hasUsedTool.current ? copy.reviewingResults : copy.reviewingRequest,
@@ -281,6 +295,16 @@ export function ChatAssistant() {
             }
           } else if (event.type === "response") {
             answer = event.response ?? "";
+          } else if (event.type === "ui_command" && event.command_id && event.command) {
+            const result = await handleCommand(event.command).catch((error) => ({
+              ok: false,
+              error: error instanceof Error ? error.message : copy.requestFailed,
+            }));
+            await api("/api/chat/ui-results", "POST", {
+              session_id: sessionId,
+              command_id: event.command_id,
+              result,
+            });
           } else if (event.type === "error") {
             throw new Error(event.message ?? copy.requestFailed);
           }
@@ -551,6 +575,8 @@ export function ChatAssistant() {
             [
               ["file_read_enabled", copy.fileRead],
               ["file_search_enabled", copy.fileSearch],
+              ["ui_context_enabled", copy.uiContext],
+              ["ui_interaction_enabled", copy.uiInteraction],
               ["run_process_enabled", copy.runProcess],
               ["coding_agent_enabled", copy.codingAgent],
             ] as const
@@ -560,29 +586,19 @@ export function ChatAssistant() {
               <input
                 type="checkbox"
                 checked={toolSettings[key]}
+                disabled={key === "ui_interaction_enabled" && !toolSettings.ui_context_enabled}
                 onChange={(event) =>
                   setToolSettings((current) => ({
                     ...current,
                     [key]: event.target.checked,
+                    ...(key === "ui_context_enabled" && !event.target.checked
+                      ? { ui_interaction_enabled: false }
+                      : {}),
                   }))
                 }
               />
             </label>
           ))}
-          <label className="chat-tool-popover-toggle">
-            <span>{copy.terminalVisible}</span>
-            <input
-              type="checkbox"
-              checked={toolSettings.terminal_visible}
-              onChange={(event) =>
-                setToolSettings((current) => ({
-                  ...current,
-                  terminal_visible: event.target.checked,
-                  terminal_enabled: event.target.checked,
-                }))
-              }
-            />
-          </label>
           <div>
             <button className="ghost" onClick={() => setSettingsOpen(false)}>
               {copy.collapse}

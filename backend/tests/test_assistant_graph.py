@@ -54,3 +54,10 @@ def test_assistant_prompt_uses_local_mcp_as_the_control_room_source_of_truth():
     assert "- Current local time: " in prompt
     assert "Respond in BCP 47 locale 'ko-KR'." in prompt
     assert "Assistant: Earlier answer" in prompt
+
+
+def test_assistant_prompt_prioritizes_ui_tools_for_browser_ui_requests():
+    prompt = build_assistant_prompt("What screen is open?", [], "en", ui_enabled=True)
+
+    assert "first call ui_get_context" in prompt
+    assert "Do not use file tools to infer browser UI state" in prompt

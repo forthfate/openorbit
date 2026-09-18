@@ -62,7 +62,8 @@
       "fileSearch": "Search files",
       "runProcess": "Run processes",
       "codingAgent": "Coding Agent",
-      "terminalVisible": "Show terminal mode in deployment",
+      "uiContext": "View UI",
+      "uiInteraction": "Control UI",
       "saveTools": "Save tools",
       "empty": "Ask about your evaluation work, runners, or the control room.",
       "requestFailed": "Chat request failed.",
@@ -71,6 +72,8 @@
       "reviewingRequest": "Reviewing your request",
       "reviewingResults": "Reviewing the results",
       "usingTool": "Using tool: {tool}",
+      "usingUiContext": "Checking the current UI",
+      "usingUiInteract": "Interacting with the UI",
       "message": "Message",
       "placeholder": "Message Orbit…",
       "send": "Send message"
