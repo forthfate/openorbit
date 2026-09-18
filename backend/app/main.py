@@ -308,6 +308,11 @@ def target_environments():
     return store.target_environments()
 
 
+@app.get("/api/personas")
+def personas():
+    return store.personas()
+
+
 class PromptTemplateUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     content: str = Field(min_length=1, max_length=100_000)
@@ -367,6 +372,20 @@ class TargetEnvironmentUpdate(BaseModel):
     managed_prompt_path: str = ""
 
 
+class PersonaUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    locale: str = Field(min_length=2, max_length=32)
+    timezone: str = Field(min_length=1, max_length=64)
+    activity_windows: list[dict] = Field(default_factory=list)
+    goals: list[str] = Field(min_length=1, max_length=30)
+    constraints: list[str] = Field(default_factory=list, max_length=30)
+    context: dict = Field(default_factory=dict)
+
+
+class PersonaCreate(PersonaUpdate):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
+
+
 @app.put("/api/prompt-templates/{template_id}")
 def update_prompt_template(template_id: str, values: PromptTemplateUpdate):
     return safely(lambda: store.update_prompt_template(template_id, values.model_dump()))
@@ -392,6 +411,11 @@ def create_target_environment(values: TargetEnvironmentCreate):
     return safely(lambda: store.create_target_environment(values.model_dump()))
 
 
+@app.post("/api/personas")
+def create_persona(values: PersonaCreate):
+    return safely(lambda: store.create_persona(values.model_dump()))
+
+
 @app.put("/api/execution-environments/{environment_id}")
 def update_execution_environment(environment_id: str, values: ExecutionEnvironmentUpdate):
     return safely(lambda: store.update_execution_environment(environment_id, values.model_dump()))
@@ -402,6 +426,11 @@ def update_target_environment(environment_id: str, values: TargetEnvironmentUpda
     return safely(lambda: store.update_target_environment(environment_id, values.model_dump()))
 
 
+@app.put("/api/personas/{persona_id}")
+def update_persona(persona_id: str, values: PersonaUpdate):
+    return safely(lambda: store.update_persona(persona_id, values.model_dump()))
+
+
 @app.delete("/api/execution-environments/{environment_id}")
 def delete_execution_environment(environment_id: str):
     return safely(lambda: store.delete_execution_environment(environment_id))
@@ -410,6 +439,11 @@ def delete_execution_environment(environment_id: str):
 @app.delete("/api/target-environments/{environment_id}")
 def delete_target_environment(environment_id: str):
     return safely(lambda: store.delete_target_environment(environment_id))
+
+
+@app.delete("/api/personas/{persona_id}")
+def delete_persona(persona_id: str):
+    return safely(lambda: store.delete_persona(persona_id))
 
 
 @app.delete("/api/prompt-templates/{template_id}")

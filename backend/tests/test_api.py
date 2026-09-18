@@ -1939,6 +1939,25 @@ def test_target_test_case_sets_are_managed_as_assets(tmp_path, monkeypatch):
     assert updated["name"] == "Updated target tests"
 
 
+def test_personas_are_managed_as_reusable_assets(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "PERSONAS", tmp_path / "personas.yaml")
+    store = store_module.ConsoleStore()
+    values = {
+        "id": "careful-investor",
+        "name": "Careful investor",
+        "locale": "en-US",
+        "timezone": "America/New_York",
+        "activity_windows": [{"days": ["mon"], "start": "08:00", "end": "18:00"}],
+        "goals": ["Understand the portfolio safely."],
+        "constraints": ["Never place a real order."],
+        "context": {"plan": "free"},
+    }
+    created = store.create_persona(values)
+    assert created["context"] == {"plan": "free"}
+    updated = store.update_persona("careful-investor", {**values, "name": "Cautious investor"})
+    assert updated["name"] == "Cautious investor"
+
+
 def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
