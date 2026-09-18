@@ -185,6 +185,10 @@ export function IssueManagementSection({
           ),
       [runs, selected?.build_id],
     ),
+    knownAssignees = useMemo(
+      () => [...new Set(items.flatMap((item) => [item.assigner, ...item.comments.map((comment) => comment.assigner)]).filter((value): value is string => Boolean(value?.trim())))].sort((left, right) => left.localeCompare(right)),
+      [items],
+    ),
     rows: IssueRow[] = items
       .filter(
         (x) =>
@@ -574,7 +578,8 @@ export function IssueManagementSection({
                     {selected.comments.length ? [...selected.comments].sort((a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at)).map((item, index) => <article className="issue-message" key={`${item.recorded_at}-${index}`}><header><strong>{item.assigner || "—"}</strong><time>{compactTimestamp(locale, item.recorded_at)}</time></header><p>{item.body}</p>{item.verification_run_id && <small>{t.verificationRun} · {item.verification_run_id}</small>}</article>) : <p className="hint">{t.noComments}</p>}
                   </div>
                   <div className="issue-discussion__composer">
-                    <input value={assigner} placeholder={t.assignerPlaceholder} onChange={(e) => setAssigner(e.target.value)} />
+                    <input list="issue-comment-authors" value={assigner} placeholder={t.assignerPlaceholder} onChange={(e) => setAssigner(e.target.value)} />
+                    <datalist id="issue-comment-authors">{knownAssignees.map((name) => <option key={name} value={name} />)}</datalist>
                     <textarea value={comment} placeholder={t.commentPlaceholder} onChange={(e) => setComment(e.target.value)} />
                     <select value={run} onChange={(e) => setRun(e.target.value)}><option value="">{t.selectVerificationRun}</option>{verificationRuns.map((item) => <option key={item.id} value={item.id}>{item.id} · {compactTimestamp(locale, item.finished_at ?? item.created_at)} · {item.status}</option>)}</select>
                     <div className="modal-actions"><button className="approve" onClick={save} disabled={!comment.trim()}>{t.sendComment}</button></div>
