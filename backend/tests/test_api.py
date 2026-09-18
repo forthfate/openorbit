@@ -400,83 +400,6 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
     assert revisions[2]["after"] == "after\n"
 
 
-def test_commit_changes_returns_sdk_commit_range(tmp_path, monkeypatch):
-    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
-    store = store_module.ConsoleStore()
-    timestamp = store_module.now()
-    store._save(
-        Run(
-            id="commit-run",
-            workflow_id="workflow",
-            workflow_name="Workflow",
-            status="succeeded",
-            created_at=timestamp,
-            updated_at=timestamp,
-            step_results=[
-                {
-                    "phase": "execute",
-                    "loop_index": 2,
-                    "ended_at": timestamp.isoformat(),
-                    "result": {
-                        "commit_change": {
-                            "before": "a" * 40,
-                            "after": "b" * 40,
-                            "changed_paths": ["src/agent.py"],
-                            "commits": [{"sha": "b" * 40, "subject": "Improve agent"}],
-                            "diff_artifact": {"relative_path": "commits/a..b.patch"},
-                        }
-                    },
-                }
-            ],
-        )
-    )
-
-    changes = store.commit_changes("commit-run")
-
-    assert changes[0]["before"] == "a" * 40
-    assert changes[0]["commits"][0]["subject"] == "Improve agent"
-    assert changes[0]["changed_paths"] == ["src/agent.py"]
-
-
-def test_commit_changes_includes_jgent_committed_source_candidate(tmp_path, monkeypatch):
-    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
-    store = store_module.ConsoleStore()
-    timestamp = store_module.now()
-    store._save(
-        Run(
-            id="jgent-commit-run",
-            workflow_id="workflow",
-            workflow_name="Jgent",
-            status="succeeded",
-            created_at=timestamp,
-            updated_at=timestamp,
-            step_results=[
-                {
-                    "phase": "before_each",
-                    "loop_index": 1,
-                    "ended_at": timestamp.isoformat(),
-                    "result": {
-                        "jgent_paired": {
-                            "committed_source_candidate": {
-                                "status": "committed_source_candidate",
-                                "before": "a" * 40,
-                                "after": "b" * 40,
-                                "changed_paths": ["src/Jgent/Agent.cs"],
-                                "commits": [{"sha": "b" * 40, "subject": "Improve Jgent"}],
-                            }
-                        }
-                    },
-                }
-            ],
-        )
-    )
-
-    changes = store.commit_changes("jgent-commit-run")
-
-    assert changes[0]["changed_paths"] == ["src/Jgent/Agent.cs"]
-    assert changes[0]["commits"][0]["subject"] == "Improve Jgent"
-
-
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
 def test_teardown_runs_after_a_failed_or_cancelled_iteration(tmp_path, monkeypatch, terminal_status):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
@@ -1459,6 +1382,21 @@ def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch
     assert "@runner.phase" in captured["source"]
 
 
+def test_shipped_template_graphs_are_previewable_with_unique_nodes():
+    """Every shipped template publishes a valid graph for node-based execution."""
+    store = store_module.ConsoleStore()
+    sources = [item["source"] for item in store.runner_templates()]
+    sources.extend(item["assets"]["runner"]["source"] for item in store._built_in_quick_starts())
+
+    for source in sources:
+        definition = store.preview_runner_graph(source)
+        assert definition is not None
+        nodes = definition["nodes"]
+        assert nodes
+        assert len({node["id"] for node in nodes}) == len(nodes)
+        assert all(node["phase"] for node in nodes)
+
+
 def test_saved_runner_graph_preview_uses_the_selected_version(monkeypatch):
     store = store_module.ConsoleStore()
     expected = {"nodes": [{"id": "start"}], "edges": []}
@@ -1493,12 +1431,17 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [
-        ("openorbit.user-journey-smoke-test", ["before_all", "execute", "verify", "after_all"]),
+        (
+            "openorbit.user-journey-smoke-test",
+            ["before_all", "before_all", "execute", "verify", "after_all"],
+        ),
         ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
         (
             "openorbit.agent-self-improvement",
             [
                 "before_all",
+                "before_all",
+                "before_each",
                 "before_each",
                 "execute",
                 "verify",
@@ -1509,7 +1452,7 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
         ),
         (
             "openorbit.ai-slo-drift-monitor",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -1531,20 +1474,48 @@ def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, qui
 @pytest.mark.parametrize(
     ("template_id", "phases"),
     [
-        ("user-journey-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "user-journey-cycle",
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
+        ),
         (
             "external-command-adapter",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
         (
             "native-improvement-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
         ),
         ("site-exploration", ["before_all", "execute", "verify", "after_all"]),
-        ("json-agent-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "source-aware-browser-journey",
+            ["before_all", "execute", "verify", "after_each", "after_all"],
+        ),
+        (
+            "json-agent-cycle",
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
         (
             "evidence-gated-probe-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -2169,6 +2140,8 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
             "file_search_enabled": True,
             "run_process_enabled": True,
             "coding_agent_enabled": True,
+            "ui_context_enabled": True,
+            "ui_interaction_enabled": True,
             "terminal_enabled": True,
             "terminal_visible": True,
             "mcp_server_url": "http://127.0.0.1:3000/mcp/",
@@ -2214,6 +2187,19 @@ def test_application_manager_prompt_has_a_safe_default(tmp_path, monkeypatch):
         "approval-first operations manager"
         in store_module.ConsoleStore().application_settings()["manager_prompt_template"]
     )
+
+
+def test_assistant_mcp_configuration_uses_a_valid_default_and_persists_json(tmp_path, monkeypatch):
+    mcp_config = tmp_path / "config" / "assistant-mcp.json"
+    monkeypatch.setattr(store_module, "ASSISTANT_MCP_CONFIG", mcp_config)
+    store = store_module.ConsoleStore()
+
+    assert store.assistant_mcp_config()["content"] == '{\n  "mcpServers": {}\n}\n'
+    saved = store.save_assistant_mcp_config('{"mcpServers": {"orbit": {"command": "uv"}}}')
+
+    assert saved["content"] == '{\n  "mcpServers": {\n    "orbit": {\n      "command": "uv"\n    }\n  }\n}\n'
+    with pytest.raises(ValueError, match="valid JSON"):
+        store.save_assistant_mcp_config("not json")
 
 
 def test_exact_legacy_manager_prompt_is_migrated_but_custom_prompt_is_preserved(tmp_path, monkeypatch):

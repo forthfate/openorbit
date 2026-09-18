@@ -40,3 +40,7 @@ source in JSON. A package can also be imported programmatically with
 The former flat `*.py` + `*.json` runner-template files and flat Quick Start
 manifests remain readable for compatibility, but new templates created in the
 application use the directory format.
+
+`runner-template.example/` and `quick-start.example/` are minimal, portable
+starting points. They are intentionally outside the shipped catalog directories
+so they are not presented as production-ready built-in choices.

@@ -29,21 +29,13 @@ class CallbackCycle:
         graph, runner = orbit_sdk.graph, orbit_sdk.runner
         for source, target, kind, label in self.edges:
             graph.connect(source, target, kind=kind, label=label)
-        phases: dict[str, list[Any]] = {}
         for identifier, title, phase, inputs, outputs in self.steps:
             callback = callbacks[identifier]
 
             @graph.step(identifier, title=title, phase=phase, inputs=inputs, outputs=outputs)
+            @runner.phase(phase, step_id=identifier)
             def step(ctx: Any, callback: Any = callback) -> Any:
                 return callback(ctx)
-
-            phases.setdefault(phase, []).append(step)
-        for phase, handlers in phases.items():
-
-            @runner.phase(phase)
-            def invoke(ctx: Any, handlers: list[Any] = handlers) -> None:
-                for handler in handlers:
-                    handler(ctx)
 
 
 @dataclass(frozen=True)
@@ -60,11 +52,14 @@ class RecurringBrowserJourney:
 
         graph, runner = orbit_sdk.graph, orbit_sdk.runner
         prefix = self.namespace.replace("_", "-")
-        validate_id, plan_id, run_id = f"validate-{prefix}", f"plan-{prefix}", f"run-{prefix}"
+        runtime_id, validate_id = f"validate-{prefix}-runtime", f"validate-{prefix}"
+        load_id, plan_id, run_id = f"load-{prefix}-state", f"plan-{prefix}", f"run-{prefix}"
         review_id, retain_id, finalize_id = f"review-{prefix}", f"retain-{prefix}", f"finalize-{prefix}"
         requirements = RunnerRequirements(build_fields=("browser_base_url",), require_test_cases=True)
 
-        graph.connect(validate_id, plan_id)
+        graph.connect(runtime_id, validate_id)
+        graph.connect(validate_id, load_id)
+        graph.connect(load_id, plan_id)
         graph.connect(plan_id, run_id, label="focused cases")
         graph.connect(run_id, review_id, kind="data", label="browser evidence")
         graph.connect(review_id, retain_id)
@@ -72,24 +67,50 @@ class RecurringBrowserJourney:
         graph.connect(retain_id, finalize_id, kind="condition", label="completed")
 
         @graph.step(
+            runtime_id,
+            title=f"Validate {self.title.lower()} runtime",
+            phase="before_all",
+            outputs=["browser_runtime"],
+        )
+        @runner.phase("before_all", step_id=runtime_id)
+        def validate_runtime(ctx: Any) -> None:
+            requirements.validate_build_fields(ctx)
+            ctx.log("Validated the browser runtime target")
+
+        @graph.step(
             validate_id,
             title=f"Validate {self.title.lower()} contract",
             phase="before_all",
+            inputs=["browser_runtime"],
             outputs=["journey_contract"],
         )
-        @runner.phase("before_all")
+        @runner.phase("before_all", step_id=validate_id)
         def before_all(ctx: Any) -> None:
-            requirements.validate(ctx)
+            requirements.validate_test_cases(ctx)
             ctx.log(f"Validated the {self.title.lower()} contract")
+
+        @graph.step(
+            load_id,
+            title=f"Load {self.title.lower()} state",
+            phase="before_each",
+            inputs=["journey_contract"],
+            outputs=["journey_state"],
+        )
+        @runner.phase("before_each", step_id=load_id)
+        def load_state(ctx: Any) -> None:
+            state = ctx.load_state(
+                self.namespace, {"next_case_index": 0, "failed_case_ids": [], "history": []}
+            )
+            ctx.save_state(self.namespace, state)
 
         @graph.step(
             plan_id,
             title=f"Plan focused {self.title.lower()}",
             phase="before_each",
-            inputs=["journey_contract"],
+            inputs=["journey_state"],
             outputs=["journey_plan"],
         )
-        @runner.phase("before_each")
+        @runner.phase("before_each", step_id=plan_id)
         def before_each(ctx: Any) -> None:
             state = ctx.load_state(
                 self.namespace, {"next_case_index": 0, "failed_case_ids": [], "history": []}
@@ -133,7 +154,7 @@ class RecurringBrowserJourney:
             inputs=["journey_plan"],
             outputs=["journey_evidence"],
         )
-        @runner.phase("execute")
+        @runner.phase("execute", step_id=run_id)
         def execute(ctx: Any) -> None:
             state = ctx.load_state(self.namespace, {})
             plan = state.get("plan") or {}
@@ -184,7 +205,7 @@ class RecurringBrowserJourney:
             inputs=["journey_evidence"],
             outputs=["journey_handoff"],
         )
-        @runner.phase("verify")
+        @runner.phase("verify", step_id=review_id)
         def verify(ctx: Any) -> None:
             ctx.emit_result(
                 {self.namespace: {"next_iteration": ctx.load_state(self.namespace, {}).get("handoff", {})}}
@@ -198,7 +219,7 @@ class RecurringBrowserJourney:
             inputs=["journey_handoff"],
             outputs=["iteration_complete"],
         )
-        @runner.phase("after_each")
+        @runner.phase("after_each", step_id=retain_id)
         def after_each(ctx: Any) -> None:
             ctx.log(f"Closed this bounded {self.title.lower()}")
 
@@ -209,7 +230,7 @@ class RecurringBrowserJourney:
             inputs=["iteration_complete"],
             outputs=["final_status"],
         )
-        @runner.phase("after_all")
+        @runner.phase("after_all", step_id=finalize_id)
         def after_all(ctx: Any) -> None:
             ctx.log(f"Finalized the {self.title.lower()} evaluation")
 
@@ -230,6 +251,7 @@ class JsonActionCycle:
         graph, runner = orbit_sdk.graph, orbit_sdk.runner
         prefix = self.namespace.replace("_", "-")
         ids = (
+            f"validate-{prefix}-contract",
             f"preflight-{prefix}",
             f"prepare-{prefix}",
             f"run-{prefix}",
@@ -241,8 +263,9 @@ class JsonActionCycle:
         graph.connect(ids[1], ids[2], label="prepared inputs")
         graph.connect(ids[2], ids[3], kind="data", label="action result")
         graph.connect(ids[3], ids[4])
-        graph.connect(ids[4], ids[1], kind="loop", label="next cycle")
-        graph.connect(ids[4], ids[5], kind="condition", label="completed")
+        graph.connect(ids[4], ids[5])
+        graph.connect(ids[5], ids[2], kind="loop", label="next cycle")
+        graph.connect(ids[5], ids[6], kind="condition", label="completed")
 
         def invoke(ctx: Any, action: str) -> dict[str, Any]:
             configured = os.environ.get(self.command_env, "").strip()
@@ -275,70 +298,82 @@ class JsonActionCycle:
                 raise RuntimeError(f"Action {action!r} must return a JSON object")
             return result
 
-        @graph.step(ids[0], title=f"Preflight {self.title.lower()}", phase="before_all", outputs=["contract"])
-        @runner.phase("before_all")
-        def before_all(ctx: Any) -> None:
+        @graph.step(
+            ids[0], title=f"Validate {self.title.lower()} contract", phase="before_all", outputs=["contract"]
+        )
+        @runner.phase("before_all", step_id=ids[0])
+        def validate_contract(ctx: Any) -> None:
             RunnerRequirements(require_test_cases=True).validate(ctx)
-            ctx.emit_result({self.namespace: {"preflight": invoke(ctx, self.actions[0])}})
 
         @graph.step(
             ids[1],
+            title=f"Check {self.title.lower()} readiness",
+            phase="before_all",
+            inputs=["contract"],
+            outputs=["preflight"],
+        )
+        @runner.phase("before_all", step_id=ids[1])
+        def before_all(ctx: Any) -> None:
+            ctx.emit_result({self.namespace: {"preflight": invoke(ctx, self.actions[0])}})
+
+        @graph.step(
+            ids[2],
             title=f"Prepare {self.title.lower()}",
             phase="before_each",
-            inputs=["contract"],
+            inputs=["preflight"],
             outputs=["prepared"],
         )
-        @runner.phase("before_each")
+        @runner.phase("before_each", step_id=ids[2])
         def before_each(ctx: Any) -> None:
             ctx.emit_result(
                 {self.namespace: {"iteration": ctx.loop_index, "prepared": invoke(ctx, self.actions[1])}}
             )
 
         @graph.step(
-            ids[2],
+            ids[3],
             title=f"Run {self.title.lower()}",
             phase="execute",
             inputs=["prepared"],
             outputs=["result"],
         )
-        @runner.phase("execute")
+        @runner.phase("execute", step_id=ids[3])
         def execute(ctx: Any) -> None:
             ctx.emit_result(
                 {self.namespace: {"iteration": ctx.loop_index, "result": invoke(ctx, self.actions[2])}}
             )
 
         @graph.step(
-            ids[3],
+            ids[4],
             title=f"Collect {self.title.lower()} evidence",
             phase="verify",
             inputs=["result"],
             outputs=["evidence"],
         )
-        @runner.phase("verify")
+        @runner.phase("verify", step_id=ids[4])
         def verify(ctx: Any) -> None:
             ctx.emit_result(
                 {self.namespace: {"iteration": ctx.loop_index, "evidence": invoke(ctx, self.actions[3])}}
             )
 
         @graph.step(
-            ids[4],
+            ids[5],
             title=f"Close {self.title.lower()} cycle",
             phase="after_each",
             inputs=["evidence"],
             outputs=["complete"],
         )
-        @runner.phase("after_each")
+        @runner.phase("after_each", step_id=ids[5])
         def after_each(ctx: Any) -> None:
             ctx.log(f"Completed one bounded {self.title.lower()} cycle")
 
         @graph.step(
-            ids[5],
+            ids[6],
             title=f"Finalize {self.title.lower()}",
             phase="after_all",
             inputs=["complete"],
             outputs=["final"],
         )
-        @runner.phase("after_all")
+        @runner.phase("after_all", step_id=ids[6])
         def after_all(ctx: Any) -> None:
             ctx.log(f"Finalized the {self.title.lower()}")
 
@@ -355,6 +390,7 @@ class CommandActionCycle:
 
         graph, runner = orbit_sdk.graph, orbit_sdk.runner
         ids = (
+            "validate-adapter-contract",
             "check-adapter",
             "prepare-adapter",
             "run-adapter",
@@ -367,8 +403,9 @@ class CommandActionCycle:
             (ids[1], ids[2], {"label": "prepared target"}),
             (ids[2], ids[3], {"kind": "data", "label": "adapter output"}),
             (ids[3], ids[4], {}),
-            (ids[4], ids[1], {"kind": "loop", "label": "next cycle"}),
-            (ids[4], ids[5], {"kind": "condition", "label": "completed"}),
+            (ids[4], ids[5], {}),
+            (ids[5], ids[2], {"kind": "loop", "label": "next cycle"}),
+            (ids[5], ids[6], {"kind": "condition", "label": "completed"}),
         ):
             graph.connect(source, target, **kwargs)
 
@@ -386,14 +423,38 @@ class CommandActionCycle:
 
         def phase(phase_name: str, node: str, title: str, key: str, action: str, inputs=(), outputs=()):
             @graph.step(node, title=title, phase=phase_name, inputs=inputs, outputs=outputs)
-            @runner.phase(phase_name)
+            @runner.phase(phase_name, step_id=node)
             def handler(ctx: Any) -> None:
                 ctx.emit_result({self.namespace: {key: invoke(ctx, action), "iteration": ctx.loop_index}})
 
-        phase("before_all", ids[0], "Check adapter readiness", "status", "status", outputs=["adapter_status"])
+        @graph.step(
+            ids[0], title="Validate adapter command", phase="before_all", outputs=["adapter_contract"]
+        )
+        @runner.phase("before_all", step_id=ids[0])
+        def validate_contract(ctx: Any) -> None:
+            raw = os.environ.get(self.command_env, "").strip()
+            if not raw:
+                raise ValueError(f"Set {self.command_env} to an external tool command")
+            command = json.loads(raw) if raw.startswith("[") else shlex.split(raw)
+            if (
+                not isinstance(command, list)
+                or not command
+                or not all(isinstance(item, str) for item in command)
+            ):
+                raise ValueError(f"{self.command_env} must be a non-empty JSON string array or command")
+
+        phase(
+            "before_all",
+            ids[1],
+            "Check adapter readiness",
+            "status",
+            "status",
+            inputs=["adapter_contract"],
+            outputs=["adapter_status"],
+        )
         phase(
             "before_each",
-            ids[1],
+            ids[2],
             "Prepare adapter cycle",
             "prepared",
             "prepare",
@@ -402,7 +463,7 @@ class CommandActionCycle:
         )
         phase(
             "execute",
-            ids[2],
+            ids[3],
             "Run bounded adapter task",
             "result",
             "run-once",
@@ -411,7 +472,7 @@ class CommandActionCycle:
         )
         phase(
             "verify",
-            ids[3],
+            ids[4],
             "Collect adapter evidence",
             "evidence",
             "collect-evidence",
@@ -420,24 +481,24 @@ class CommandActionCycle:
         )
 
         @graph.step(
-            ids[4],
+            ids[5],
             title="Close adapter cycle",
             phase="after_each",
             inputs=["adapter_evidence"],
             outputs=["cycle_complete"],
         )
-        @runner.phase("after_each")
+        @runner.phase("after_each", step_id=ids[5])
         def after_each(ctx: Any) -> None:
             ctx.log("Completed one bounded external adapter cycle")
 
         @graph.step(
-            ids[5],
+            ids[6],
             title="Finalize external automation",
             phase="after_all",
             inputs=["cycle_complete"],
             outputs=["final_status"],
         )
-        @runner.phase("after_all")
+        @runner.phase("after_all", step_id=ids[6])
         def after_all(ctx: Any) -> None:
             ctx.log("Finalized the external automation evaluation")
 
@@ -453,28 +514,41 @@ class BrowserSmokeTest:
 
         graph, runner = orbit_sdk.graph, orbit_sdk.runner
         ids = (
-            "validate-browser",
+            "validate-browser-runtime",
+            "validate-browser-journey",
             "run-browser-journey",
             "verify-browser-evidence",
             "finalize-browser-evaluation",
         )
         graph.connect(ids[0], ids[1])
-        graph.connect(ids[1], ids[2], kind="data", label="journey evidence")
-        graph.connect(ids[2], ids[3])
+        graph.connect(ids[1], ids[2])
+        graph.connect(ids[2], ids[3], kind="data", label="journey evidence")
+        graph.connect(ids[3], ids[4])
 
-        @graph.step(ids[0], title="Validate browser target", phase="before_all", outputs=["browser_target"])
-        @runner.phase("before_all")
-        def before_all(ctx: Any) -> None:
-            RunnerRequirements(build_fields=("browser_base_url",), require_test_cases=True).validate(ctx)
+        @graph.step(ids[0], title="Validate browser runtime", phase="before_all", outputs=["browser_target"])
+        @runner.phase("before_all", step_id=ids[0])
+        def validate_runtime(ctx: Any) -> None:
+            RunnerRequirements(build_fields=("browser_base_url",)).validate_build_fields(ctx)
 
         @graph.step(
             ids[1],
+            title="Validate browser journey contract",
+            phase="before_all",
+            inputs=["browser_target"],
+            outputs=["journey_contract"],
+        )
+        @runner.phase("before_all", step_id=ids[1])
+        def before_all(ctx: Any) -> None:
+            RunnerRequirements(require_test_cases=True).validate_test_cases(ctx)
+
+        @graph.step(
+            ids[2],
             title="Run browser journey",
             phase="execute",
-            inputs=["browser_target"],
+            inputs=["journey_contract"],
             outputs=["journey_evidence"],
         )
-        @runner.phase("execute")
+        @runner.phase("execute", step_id=ids[2])
         def execute(ctx: Any) -> None:
             evidence = ctx.playwright_journey()
             ctx.emit_result({self.namespace: {"iteration": ctx.loop_index, "evidence": evidence}})
@@ -482,24 +556,24 @@ class BrowserSmokeTest:
                 raise SystemExit("A browser journey failed")
 
         @graph.step(
-            ids[2],
+            ids[3],
             title="Verify journey evidence",
             phase="verify",
             inputs=["journey_evidence"],
             outputs=["journey_verdict"],
         )
-        @runner.phase("verify")
+        @runner.phase("verify", step_id=ids[3])
         def verify(ctx: Any) -> None:
             ctx.log("Quick start browser evaluation completed")
 
         @graph.step(
-            ids[3],
+            ids[4],
             title="Finalize browser evaluation",
             phase="after_all",
             inputs=["journey_verdict"],
             outputs=["completed_evaluation"],
         )
-        @runner.phase("after_all")
+        @runner.phase("after_all", step_id=ids[4])
         def after_all(ctx: Any) -> None:
             ctx.log("Finalized the one-shot browser evaluation")
 
@@ -519,7 +593,7 @@ class SiteExplorationReview:
         graph.connect("review-evidence", "finalize-review")
 
         @graph.step("validate-site", title="Validate site", phase="before_all", outputs=["site_target"])
-        @runner.phase("before_all")
+        @runner.phase("before_all", step_id="validate-site")
         def before_all(ctx: Any) -> None:
             RunnerRequirements(build_fields=("browser_base_url",)).validate(ctx)
 
@@ -530,7 +604,7 @@ class SiteExplorationReview:
             inputs=["site_target"],
             outputs=["rendered_pages"],
         )
-        @runner.phase("execute")
+        @runner.phase("execute", step_id="explore-site")
         def execute(ctx: Any) -> None:
             module = str(
                 __import__("pathlib").Path(orbit_sdk.__file__).resolve().parents[1]
@@ -593,7 +667,7 @@ class SiteExplorationReview:
             inputs=["rendered_pages"],
             outputs=["product_review"],
         )
-        @runner.phase("verify")
+        @runner.phase("verify", step_id="review-evidence")
         def verify(ctx: Any) -> None:
             ctx.log("Retained rendered exploration evidence for review")
 
@@ -604,7 +678,7 @@ class SiteExplorationReview:
             inputs=["product_review"],
             outputs=["completed_review"],
         )
-        @runner.phase("after_all")
+        @runner.phase("after_all", step_id="finalize-review")
         def after_all(ctx: Any) -> None:
             ctx.log("Finalized the bounded site exploration review")
 

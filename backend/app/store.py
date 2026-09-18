@@ -85,6 +85,7 @@ TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
 PERSONAS = CONFIG / "personas.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 ISSUE_MANAGEMENT = CONFIG / "issue-management.yaml"
+ASSISTANT_MCP_CONFIG = CONFIG / "assistant-mcp.json"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -1128,6 +1129,33 @@ class ConsoleStore:
         self._open_in_vscode(self._runner_entry_path(runner_id, int(self._runner(runner_id)["version"])))
         return {"status": "opened"}
 
+    def assistant_mcp_config(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            return {"path": str(ASSISTANT_MCP_CONFIG), "content": '{\n  "mcpServers": {}\n}\n'}
+        return {
+            "path": str(ASSISTANT_MCP_CONFIG),
+            "content": ASSISTANT_MCP_CONFIG.read_text(encoding="utf-8"),
+        }
+
+    def save_assistant_mcp_config(self, content: str) -> dict[str, str]:
+        try:
+            document = json.loads(content)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"MCP configuration must be valid JSON: {error.msg}") from error
+        if not isinstance(document, dict):
+            raise ValueError("MCP configuration must be a JSON object")
+        ASSISTANT_MCP_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        temporary = ASSISTANT_MCP_CONFIG.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(ASSISTANT_MCP_CONFIG)
+        return self.assistant_mcp_config()
+
+    def open_assistant_mcp_config_in_vscode(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            self.save_assistant_mcp_config('{"mcpServers": {}}')
+        self._open_in_vscode(ASSISTANT_MCP_CONFIG)
+        return {"status": "opened"}
+
     def delete_runner(self, runner_id: str) -> None:
         self._runner(runner_id)
         if any(build.get("runner_id") == runner_id for build in self.builds()):
@@ -1141,9 +1169,7 @@ class ConsoleStore:
         definition = self._runner_graph_definition(runner_id, None, runner_version)
         graph_nodes = definition.get("nodes", []) if isinstance(definition, dict) else []
         lifecycle_phases = {"before_all", "before_each", "execute", "verify", "after_each", "after_all"}
-        if isinstance(graph_nodes, list) and any(
-            isinstance(node, dict) and node.get("after_supervision", False) for node in graph_nodes
-        ):
+        if isinstance(graph_nodes, list) and graph_nodes:
             steps = [
                 Step(
                     id=str(node["id"]),
@@ -2937,51 +2963,6 @@ class ConsoleStore:
             elif isinstance(after, str) and path:
                 current_by_path[path] = after
         return [*initial_revisions, *ordered]
-
-    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
-        """Return commit ranges automatically retained by SDK runner phases."""
-        run = self._load(run_id)
-        changes: list[dict[str, Any]] = []
-        for step in run.step_results:
-            result = step.get("result")
-            event = result.get("commit_change") if isinstance(result, dict) else None
-            if not isinstance(event, dict) and isinstance(result, dict):
-                jgent = result.get("jgent_paired")
-                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
-                event = candidate if isinstance(candidate, dict) else None
-            if not isinstance(event, dict):
-                continue
-            before, after = str(event.get("before") or ""), str(event.get("after") or "")
-            if not before or not after or before == after:
-                continue
-            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
-            diff: str | None = None
-            if artifact:
-                raw_path = artifact.get("path")
-                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
-                artifacts_root = (APP_DATA / "artifacts").resolve()
-                if candidate and artifacts_root in candidate.parents:
-                    try:
-                        if candidate.stat().st_size <= 500_000:
-                            diff = candidate.read_text(encoding="utf-8")
-                    except (OSError, UnicodeDecodeError):
-                        pass
-            changes.append(
-                {
-                    "iteration": step.get("loop_index"),
-                    "phase": step.get("phase"),
-                    "recorded_at": step.get("ended_at"),
-                    "before": before,
-                    "after": after,
-                    "changed_paths": event.get("changed_paths")
-                    if isinstance(event.get("changed_paths"), list)
-                    else [],
-                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
-                    "diff_artifact": artifact,
-                    "diff": diff,
-                }
-            )
-        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
 
     def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
         """Resolve one retained run artifact without permitting path traversal."""

@@ -123,10 +123,14 @@ def managed_prompt_evidence(ctx):
 
 
 @graph.step("validate-target", title="Validate target", phase="before_all", outputs=["evaluation_contract"])
-@runner.phase("before_all")
+@runner.phase("before_all", step_id="validate-target")
 def before_all(ctx):
-    # Process-level validation runs once before the iteration loop begins.
+    # Repository validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
+
+
+def validate_evaluation_inputs(ctx):
+    """Validate the fixed evidence contract independently of the repository."""
     if not ctx.test_cases:
         raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
     if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get(
@@ -136,6 +140,11 @@ def before_all(ctx):
     ctx.log("Validated an OpenOrbit-native target-AI prompt improvement cycle")
 
 
+def snapshot_baseline(ctx):
+    """Capture the reversible target state before preparing this iteration."""
+    ctx.save_before_each_snapshot()
+
+
 @graph.step(
     "prepare-prompt",
     title="Prepare prompt candidate",
@@ -143,11 +152,8 @@ def before_all(ctx):
     inputs=["evaluation_contract"],
     outputs=["managed_prompt"],
 )
-@runner.phase("before_each")
+@runner.phase("before_each", step_id="prepare-prompt")
 def before_each(ctx):
-    # Keep the target's complete pre-evaluation state outside commit history.
-    # The call is idempotent because before_each runs for every iteration.
-    ctx.save_before_each_snapshot()
     # Apply only feedback accepted by a human before the next validation.
     feedback = ctx.previous_supervisor_feedback
     accepted = [
@@ -193,7 +199,7 @@ def before_each(ctx):
     inputs=["managed_prompt"],
     outputs=["target_responses"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="exercise-target")
 def execute(ctx):
     # Exercise the evaluated AI with the current managed prompt. The raw reply
     # is retained as supervisor evidence instead of treating a browser page as
@@ -247,7 +253,7 @@ def execute(ctx):
     inputs=["target_responses"],
     outputs=["candidate_verdict"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="assess-candidate")
 def verify(ctx):
     # Promote a candidate only after the required number of stable evaluations.
     state = load_state(ctx)
@@ -292,7 +298,7 @@ def verify(ctx):
     inputs=["candidate_verdict"],
     outputs=["iteration_snapshot"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="retain-iteration")
 def after_each(ctx):
     # Preserve the first evaluated state as a named recovery checkpoint.
     ctx.save_first_after_each_snapshot()
@@ -307,7 +313,7 @@ def after_each(ctx):
     inputs=["iteration_snapshot"],
     outputs=["restored_target"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="restore-baseline")
 def after_all(ctx):
     # Return the target to its exact baseline without creating a Git commit.
     ctx.restore_before_each_snapshot()
@@ -316,12 +322,26 @@ def after_all(ctx):
 
 CallbackCycle(
     steps=(
-        ("validate-target", "Validate target", "before_all", (), ("evaluation_contract",)),
+        ("validate-target", "Validate target repository", "before_all", (), ("repository_target",)),
+        (
+            "validate-evaluation-inputs",
+            "Validate evaluation inputs",
+            "before_all",
+            ("repository_target",),
+            ("evaluation_contract",),
+        ),
+        (
+            "snapshot-baseline",
+            "Snapshot iteration baseline",
+            "before_each",
+            ("evaluation_contract",),
+            ("baseline_snapshot",),
+        ),
         (
             "prepare-prompt",
             "Prepare prompt candidate",
             "before_each",
-            ("evaluation_contract",),
+            ("baseline_snapshot",),
             ("managed_prompt",),
         ),
         ("exercise-target", "Exercise target AI", "execute", ("managed_prompt",), ("target_responses",)),
@@ -342,7 +362,9 @@ CallbackCycle(
         ("restore-baseline", "Restore baseline", "after_all", ("iteration_snapshot",), ("restored_target",)),
     ),
     edges=(
-        ("validate-target", "prepare-prompt", "execution", None),
+        ("validate-target", "validate-evaluation-inputs", "execution", None),
+        ("validate-evaluation-inputs", "snapshot-baseline", "execution", None),
+        ("snapshot-baseline", "prepare-prompt", "execution", None),
         ("prepare-prompt", "exercise-target", "execution", "managed prompt"),
         ("exercise-target", "assess-candidate", "data", "responses"),
         ("assess-candidate", "retain-iteration", "execution", None),
@@ -352,6 +374,8 @@ CallbackCycle(
 ).install(
     {
         "validate-target": before_all,
+        "validate-evaluation-inputs": validate_evaluation_inputs,
+        "snapshot-baseline": snapshot_baseline,
         "prepare-prompt": before_each,
         "exercise-target": execute,
         "assess-candidate": verify,
