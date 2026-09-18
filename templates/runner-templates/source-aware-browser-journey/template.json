@@ -1,0 +1,6 @@
+{
+  "id": "source-aware-browser-journey",
+  "name": "Source-aware browser journey",
+  "description": "Checks a configured source contract before validating fixed browser journeys and retaining rendered evidence.",
+  "entrypoint": "runner.py"
+}

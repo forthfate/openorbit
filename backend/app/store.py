@@ -1139,9 +1139,7 @@ class ConsoleStore:
         definition = self._runner_graph_definition(runner_id, None, runner_version)
         graph_nodes = definition.get("nodes", []) if isinstance(definition, dict) else []
         lifecycle_phases = {"before_all", "before_each", "execute", "verify", "after_each", "after_all"}
-        if isinstance(graph_nodes, list) and any(
-            isinstance(node, dict) and node.get("after_supervision", False) for node in graph_nodes
-        ):
+        if isinstance(graph_nodes, list) and graph_nodes:
             steps = [
                 Step(
                     id=str(node["id"]),
