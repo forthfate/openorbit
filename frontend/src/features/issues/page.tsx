@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import "./discussion.css";
 import type { IssueManagementItem, Run } from "../../domain/models";
 import { api } from "../../services/api";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -55,6 +56,9 @@ type Copy = {
   statusHint: string;
   managementStatusHint: string;
   commentHint: string;
+  discussion: string;
+  noComments: string;
+  sendComment: string;
   assignerHint: string;
   verificationHint: string;
   historyHint: string;
@@ -180,6 +184,10 @@ export function IssueManagementSection({
               Date.parse(left.finished_at ?? left.created_at ?? ""),
           ),
       [runs, selected?.build_id],
+    ),
+    knownAssignees = useMemo(
+      () => [...new Set(items.flatMap((item) => [item.assigner, ...item.comments.map((comment) => comment.assigner)]).filter((value): value is string => Boolean(value?.trim())))].sort((left, right) => left.localeCompare(right)),
+      [items],
     ),
     rows: IssueRow[] = items
       .filter(
@@ -564,47 +572,19 @@ export function IssueManagementSection({
                     ))}
                   </select>
                 </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo title={t.assigner} description={t.assignerHint} />
-                  </span>
-                  <input
-                    value={assigner}
-                    placeholder={t.assignerPlaceholder}
-                    onChange={(e) => setAssigner(e.target.value)}
-                  />
-                </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo title={t.comment} description={t.commentHint} />
-                  </span>
-                  <textarea
-                    value={comment}
-                    placeholder={t.commentPlaceholder}
-                    onChange={(e) => setComment(e.target.value)}
-                  />
-                </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo
-                      title={t.verificationRun}
-                      description={t.verificationHint}
-                    />
-                  </span>
-                  <select value={run} onChange={(e) => setRun(e.target.value)}>
-                    <option value="">{t.selectVerificationRun}</option>
-                    {verificationRuns.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.id} · {compactTimestamp(locale, item.finished_at ?? item.created_at)} · {item.status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="modal-actions">
-                  <button className="approve" onClick={save}>
-                    {t.save}
-                  </button>
-                </div>
+                <section className="issue-discussion">
+                  <h3><SectionInfo title={t.discussion} description={t.commentHint} /></h3>
+                  <div className="issue-discussion__messages">
+                    {selected.comments.length ? [...selected.comments].sort((a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at)).map((item, index) => <article className="issue-message" key={`${item.recorded_at}-${index}`}><header><strong>{item.assigner || "—"}</strong><time>{compactTimestamp(locale, item.recorded_at)}</time></header><p>{item.body}</p>{item.verification_run_id && <small>{t.verificationRun} · {item.verification_run_id}</small>}</article>) : <p className="hint">{t.noComments}</p>}
+                  </div>
+                  <div className="issue-discussion__composer">
+                    <input list="issue-comment-authors" value={assigner} placeholder={t.assignerPlaceholder} onChange={(e) => setAssigner(e.target.value)} />
+                    <datalist id="issue-comment-authors">{knownAssignees.map((name) => <option key={name} value={name} />)}</datalist>
+                    <textarea value={comment} placeholder={t.commentPlaceholder} onChange={(e) => setComment(e.target.value)} />
+                    <select value={run} onChange={(e) => setRun(e.target.value)}><option value="">{t.selectVerificationRun}</option>{verificationRuns.map((item) => <option key={item.id} value={item.id}>{item.id} · {compactTimestamp(locale, item.finished_at ?? item.created_at)} · {item.status}</option>)}</select>
+                    <div className="modal-actions"><button className="approve" onClick={save} disabled={!comment.trim()}>{t.sendComment}</button></div>
+                  </div>
+                </section>
               </>
             ) : (
               <section>

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AlertTriangle, Database, Pencil, Save } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Database, ExternalLink, Pencil, Save } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
@@ -10,6 +10,8 @@ import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileCatalog } from "../assets/page";
 import { OrbitLogs } from "./orbit-logs";
+import { useAssistantUiBridge } from "../../components/assistant-ui-bridge";
+import { JsonEditor } from "../../components/ui/json-editor";
 
 type ApplicationSettings = {
   manager_prompt_template: string;
@@ -22,7 +24,7 @@ type ApplicationData = { path: string; size_bytes: number };
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
-type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string };
+type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string; mcpConfig:string; mcpConfigDescription:string; openInVsCode:string; saveMcpConfig:string; mcpConfigSaved:string };
 type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
 type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; codingAgent: CodingAgentCopy; storage: StorageCopy };
 const bytes = (value: number) => {
@@ -58,6 +60,7 @@ export function SettingsPage({
   logs: OrbitLog[];
   onDeleteProfile: (profileName: string) => void;
 }) {
+  const { register: registerAssistantUi } = useAssistantUiBridge();
   const t = locales[locale].common,
     settingsCopy = localeMessages<SettingsCopy>(locale, "settingsPage"),
     l = settingsCopy.manager,
@@ -66,6 +69,7 @@ export function SettingsPage({
   const [prompt, setPrompt] = useState(""),
     [chatProfile, setChatProfile] = useState(""),
     [codingAgent, setCodingAgent] = useState<ApplicationSettings["coding_agent_provider"]>("none"),
+    [mcpConfig, setMcpConfig] = useState(""),
     [dataPath, setDataPath] = useState(""),
     [dataPathDraft, setDataPathDraft] = useState(""),
     [dataSize, setDataSize] = useState<number | null>(null),
@@ -82,6 +86,7 @@ export function SettingsPage({
       })
       .catch(() => pushToast(locales[locale].ui.operationalPromptLoadFailed));
   }, [locale, pushToast]);
+  useEffect(() => { api<{ content: string }>("/api/assistant-mcp-config").then((value) => setMcpConfig(value.content)).catch((error) => pushToast(error.message)); }, [pushToast]);
   useEffect(() => {
     let mounted = true;
     api<ApplicationData>("/api/application-data")
@@ -127,6 +132,7 @@ export function SettingsPage({
         pushToast(settingsCopy.codingAgent.saved, "success");
       })
       .catch((error) => pushToast(error.message));
+  const saveMcpConfig = () => api<{ content: string }>("/api/assistant-mcp-config", "PUT", { content: mcpConfig }).then((value) => { setMcpConfig(value.content); pushToast(settingsCopy.codingAgent.mcpConfigSaved, "success"); }).catch((error) => pushToast(error.message));
   const saveDataLocation = () => {
     setDataLoading(true);
     api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
@@ -140,12 +146,79 @@ export function SettingsPage({
       .catch((error) => pushToast(error.message))
       .finally(() => setDataLoading(false));
   };
-  const setLanguage = (nextLocale: Locale) => {
+  const setLanguage = useCallback((nextLocale: Locale) => {
     setLocale(nextLocale);
     api<ApplicationSettings>("/api/application-settings", "PUT", {
       manager_output_locale: nextLocale,
     }).catch((error) => pushToast(error.message));
-  };
+  }, [pushToast, setLocale]);
+  const settingsUi = useMemo(
+    () => ({
+      id: "settings.application",
+      title: "Application settings",
+      getState: () => ({ locale, theme, coding_agent_provider: codingAgent, editing_data_location: dataEditing }),
+      controls: [
+        {
+          id: "locale",
+          label: "Language",
+          kind: "select" as const,
+          value: locale,
+          options: localeOptions.map((option) => ({ value: option.id, label: option.label })),
+          setValue: (value: unknown) => {
+            if (typeof value === "string" && localeOptions.some((option) => option.id === value))
+              setLanguage(value as Locale);
+          },
+        },
+        {
+          id: "theme",
+          label: "Theme",
+          kind: "select" as const,
+          value: theme,
+          options: [
+            { value: "forest", label: "Forest dark" },
+            { value: "midnight", label: "Midnight" },
+          ],
+          setValue: (value: unknown) => {
+            if (value === "forest" || value === "midnight") setTheme(value);
+          },
+        },
+        {
+          id: "coding_agent_provider",
+          label: "Coding Agent",
+          kind: "select" as const,
+          value: codingAgent,
+          options: [
+            { value: "none", label: settingsCopy.codingAgent.none },
+            { value: "kiro", label: "Kiro" },
+            { value: "claude-code", label: "Claude Code" },
+            { value: "codex", label: "Codex" },
+          ],
+          setValue: (value: unknown) => {
+            if (["none", "kiro", "claude-code", "codex"].includes(String(value)))
+              setCodingAgent(value as ApplicationSettings["coding_agent_provider"]);
+          },
+        },
+        ...(dataEditing ? [{
+          id: "application_data_path",
+          label: "Application data location",
+          kind: "text" as const,
+          value: dataPathDraft,
+          setValue: (value: unknown) => {
+            if (typeof value === "string") setDataPathDraft(value);
+          },
+        }] : []),
+      ],
+      actions: [
+        {
+          id: "edit_application_data_location",
+          label: "Edit application data location",
+          run: () => setDataEditing(true),
+        },
+      ],
+    }),
+    [codingAgent, dataEditing, dataPathDraft, locale, setLanguage, setTheme, settingsCopy.codingAgent.none, theme],
+  );
+  useEffect(() => registerAssistantUi(settingsUi), [registerAssistantUi, settingsUi]);
   return (
     <>
       <section className="panel app-settings">
@@ -176,6 +249,11 @@ export function SettingsPage({
             <option value="midnight">Midnight</option>
           </select>
         </label>
+        <div className="setting-row setting-row--stacked">
+          <span><strong>{settingsCopy.codingAgent.mcpConfig}</strong><small>{settingsCopy.codingAgent.mcpConfigDescription}</small></span>
+          <JsonEditor value={mcpConfig} onChange={setMcpConfig} label={settingsCopy.codingAgent.mcpConfig} />
+          <div className="setting-actions"><button className="ghost" onClick={() => api("/api/assistant-mcp-config/open-vscode", "POST").catch((error) => pushToast(error.message))}><ExternalLink size={14} />{settingsCopy.codingAgent.openInVsCode}</button><button className="approve" onClick={saveMcpConfig}><Save size={14} />{settingsCopy.codingAgent.saveMcpConfig}</button></div>
+        </div>
       </section>
       <section className="panel app-settings app-data-settings">
         <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />

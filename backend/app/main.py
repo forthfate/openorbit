@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from . import store as store_module
 from .assistant_graph import OrbitAssistantGraph, build_assistant_prompt
 from .assistant_tools import AssistantToolExecutor
+from .assistant_ui import AssistantUiBroker, AssistantUiToolExecutor
 from .docker import preflight_docker
 from .mcp_server import create_mcp_server
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
@@ -80,6 +81,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 store = ConsoleStore()
+assistant_ui_broker = AssistantUiBroker()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
 
@@ -264,16 +266,6 @@ def delete_run(run_id: str):
 @app.get("/api/runs/{run_id}/telemetry")
 def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
-
-
-@app.get("/api/runs/{run_id}/prompt-revisions")
-def prompt_revisions(run_id: str):
-    return safely(lambda: store.prompt_revisions(run_id))
-
-
-@app.get("/api/runs/{run_id}/commit-changes")
-def commit_changes(run_id: str):
-    return safely(lambda: store.commit_changes(run_id))
 
 
 @app.get("/api/runs/{run_id}/artifacts/{loop_index}/{artifact_path:path}")
@@ -1041,12 +1033,21 @@ def application_settings():
     return store.application_settings()
 
 
+@app.get("/api/assistant-mcp-config")
+def assistant_mcp_config():
+    return store.assistant_mcp_config()
+
+
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
     manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
     coding_agent_provider: Literal["none", "kiro", "claude-code", "codex"] = "none"
     assistant_tools: dict | None = None
+
+
+class AssistantMcpConfigUpdate(BaseModel):
+    content: str = Field(min_length=2, max_length=1_000_000)
 
 
 class ApplicationDataLocationUpdate(BaseModel):
@@ -1092,6 +1093,16 @@ def update_application_settings(values: ApplicationSettingsUpdate):
     return store.save_application_settings(values.model_dump(exclude_unset=True))
 
 
+@app.put("/api/assistant-mcp-config")
+def save_assistant_mcp_config(values: AssistantMcpConfigUpdate):
+    return safely(lambda: store.save_assistant_mcp_config(values.content))
+
+
+@app.post("/api/assistant-mcp-config/open-vscode")
+def open_assistant_mcp_config_in_vscode():
+    return safely(store.open_assistant_mcp_config_in_vscode)
+
+
 class ChatTurn(BaseModel):
     role: str = Field(pattern="^(user|assistant)$")
     content: str = Field(min_length=1, max_length=20_000)
@@ -1100,6 +1111,13 @@ class ChatTurn(BaseModel):
 class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+    ui_session_id: str = Field(default="", max_length=200)
+
+
+class AssistantUiResult(BaseModel):
+    session_id: str = Field(min_length=1, max_length=200)
+    command_id: str = Field(min_length=1, max_length=200)
+    result: dict
 
 
 class TemplateTranslationRequest(BaseModel):
@@ -1268,11 +1286,28 @@ async def chat_stream(values: ChatMessage, request: Request):
         values.content,
         [(turn.role, turn.content) for turn in values.history],
         request_locale(request),
+        ui_enabled=bool(values.ui_session_id and application["assistant_tools"]["ui_context_enabled"]),
     )
 
     async def events():
-        queue: asyncio.Queue[dict[str, str]] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
+
+        def send_ui_command(command_id: str, command: dict[str, object]) -> None:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "ui_command", "command_id": command_id, "command": command},
+            )
+
+        ui_tools = None
+        if values.ui_session_id and application["assistant_tools"]["ui_context_enabled"]:
+            assistant_ui_broker.open(values.ui_session_id, send_ui_command)
+            ui_tools = AssistantUiToolExecutor(
+                assistant_ui_broker,
+                values.ui_session_id,
+                context_enabled=True,
+                interaction_enabled=application["assistant_tools"]["ui_interaction_enabled"],
+            )
 
         def activity(phase: str, tool: str | None = None) -> None:
             event = {"type": "activity", "phase": phase}
@@ -1283,7 +1318,9 @@ async def chat_stream(values: ChatMessage, request: Request):
         async def run() -> None:
             try:
                 response = await asyncio.to_thread(
-                    OrbitAssistantGraph(provider, settings, tool_executor, on_activity=activity).invoke,
+                    OrbitAssistantGraph(
+                        provider, settings, tool_executor, ui_tools=ui_tools, on_activity=activity
+                    ).invoke,
                     prompt,
                 )
                 await queue.put({"type": "response", "response": response})
@@ -1302,8 +1339,17 @@ async def chat_stream(values: ChatMessage, request: Request):
         finally:
             if not task.done():
                 task.cancel()
+            if values.ui_session_id:
+                assistant_ui_broker.close(values.ui_session_id)
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+@app.post("/api/chat/ui-results")
+def chat_ui_result(values: AssistantUiResult):
+    if not assistant_ui_broker.resolve(values.session_id, values.command_id, values.result):
+        raise HTTPException(404, "Browser UI command was not found or has expired.")
+    return {"ok": True}
 
 
 @app.websocket("/api/terminal")
