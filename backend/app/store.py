@@ -82,6 +82,7 @@ CONFIG = APP_DATA / "config"
 TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
 EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
 TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+PERSONAS = CONFIG / "personas.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 ISSUE_MANAGEMENT = CONFIG / "issue-management.yaml"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
@@ -148,12 +149,13 @@ def configure_application_data(path: str) -> Path:
 
     global APP_DATA, CONFIG, TARGET_TEST_CASE_SETS, EXECUTION_ENVIRONMENTS, TARGET_ENVIRONMENTS
     global CYCLE_INTERVENTIONS, DATA, RUNS, TELEMETRY, SETTINGS, TOOL_TIMES, RUNNERS
-    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS
+    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS, PERSONAS
     APP_DATA = target
     CONFIG = APP_DATA / "config"
     TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
     EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
     TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+    PERSONAS = CONFIG / "personas.yaml"
     CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
     DATA = APP_DATA / "data"
     RUNS = DATA / "runs"
@@ -1689,6 +1691,80 @@ class ConsoleStore:
             else []
         )
 
+    def personas(self) -> list[dict[str, Any]]:
+        return yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+
+    @staticmethod
+    def _validated_persona(values: dict[str, Any], persona_id: str) -> dict[str, Any]:
+        name = str(values.get("name", "")).strip()
+        locale, timezone = str(values.get("locale", "")).strip(), str(values.get("timezone", "")).strip()
+        goals, windows, context = (
+            values.get("goals", []),
+            values.get("activity_windows", []),
+            values.get("context", {}),
+        )
+        if not name or not locale or not timezone or not isinstance(goals, list) or not goals:
+            raise ValueError("persona requires a name, locale, timezone, and at least one goal")
+        if not all(isinstance(goal, str) and goal.strip() for goal in goals):
+            raise ValueError("persona goals must be non-empty strings")
+        if not isinstance(windows, list) or not all(isinstance(window, dict) for window in windows):
+            raise ValueError("persona activity windows must be a list of objects")
+        if not isinstance(context, dict):
+            raise ValueError("persona context must be an object")
+        return {
+            "id": persona_id,
+            "name": name,
+            "locale": locale,
+            "timezone": timezone,
+            "activity_windows": windows,
+            "goals": [goal.strip() for goal in goals],
+            "constraints": [str(item).strip() for item in values.get("constraints", []) if str(item).strip()],
+            "context": context,
+        }
+
+    def create_persona(self, values: dict[str, Any]) -> dict[str, Any]:
+        persona_id = str(values.get("id", "")).strip()
+        personas = self.personas()
+        if not persona_id or any(item.get("id") == persona_id for item in personas):
+            raise ValueError("persona ID is required and must be unique")
+        persona = self._validated_persona(values, persona_id)
+        persona["created_at"] = now().isoformat()
+        personas.append(persona)
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(personas, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(PERSONAS)
+        return persona
+
+    def update_persona(self, persona_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        personas = self.personas()
+        index = next((i for i, item in enumerate(personas) if item.get("id") == persona_id), None)
+        if index is None:
+            raise KeyError(persona_id)
+        persona = self._validated_persona(values, persona_id)
+        persona["created_at"] = personas[index].get("created_at", now().isoformat())
+        personas[index] = persona
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(personas, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(PERSONAS)
+        return persona
+
+    def delete_persona(self, persona_id: str) -> None:
+        personas = self.personas()
+        if not any(item.get("id") == persona_id for item in personas):
+            raise KeyError(persona_id)
+        if any(persona_id in build.get("persona_ids", []) for build in self.builds()):
+            raise ValueError("persona is used by a build")
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(
+            yaml.safe_dump(
+                [item for item in personas if item.get("id") != persona_id],
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(PERSONAS)
+
     @staticmethod
     def _validated_target_test_case_set(values: dict[str, Any], set_id: str) -> dict[str, Any]:
         name, description = str(values.get("name", "")).strip(), str(values.get("description", "")).strip()
@@ -2005,6 +2081,12 @@ class ConsoleStore:
             raise ValueError("AI model profile does not exist")
         if not any(item.get("id") == values.get("test_case_set_id") for item in self.target_test_case_sets()):
             raise ValueError("target-AI test case set does not exist")
+        persona_ids = [str(item) for item in values.get("persona_ids", [])]
+        if len(set(persona_ids)) != len(persona_ids) or any(
+            not any(persona.get("id") == persona_id for persona in self.personas())
+            for persona_id in persona_ids
+        ):
+            raise ValueError("persona selection contains an unknown or duplicate persona")
         build = {
             "id": build_id,
             "name": values["name"],
@@ -2025,6 +2107,7 @@ class ConsoleStore:
             "model_profile_name": values.get("model_profile_name", "Default"),
             "task_instruction": values.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
+            "persona_ids": persona_ids,
             "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
             "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
@@ -2091,6 +2174,12 @@ class ConsoleStore:
             raise ValueError("AI model profile does not exist")
         if not any(item.get("id") == values.get("test_case_set_id") for item in self.target_test_case_sets()):
             raise ValueError("target-AI test case set does not exist")
+        persona_ids = [str(item) for item in values.get("persona_ids", [])]
+        if len(set(persona_ids)) != len(persona_ids) or any(
+            not any(persona.get("id") == persona_id for persona in self.personas())
+            for persona_id in persona_ids
+        ):
+            raise ValueError("persona selection contains an unknown or duplicate persona")
         existing = builds[index]
         build = {
             "id": build_id,
@@ -2112,6 +2201,7 @@ class ConsoleStore:
             "model_profile_name": values.get("model_profile_name", "Default"),
             "task_instruction": existing.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
+            "persona_ids": persona_ids,
             "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
             "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
@@ -3642,6 +3732,10 @@ class ConsoleStore:
                 None,
             )
             resources["test_cases"] = selected.get("cases", []) if selected else build.get("test_cases", [])
+            selected_personas = set(build.get("persona_ids", []))
+            resources["personas"] = [
+                persona for persona in self.personas() if persona.get("id") in selected_personas
+            ]
             profile_name = str(build.get("model_profile_name", ""))
             resources["model_profile"] = next(
                 (profile for profile in self.profiles() if profile.get("profile_name") == profile_name),

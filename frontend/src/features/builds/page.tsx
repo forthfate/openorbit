@@ -23,6 +23,7 @@ import type {
   Build,
   ExecutionEnvironment,
   PromptTemplate,
+  Persona,
   Run,
   RunnerAsset,
   Settings,
@@ -50,6 +51,7 @@ type Draft = {
   manager_template_id: string;
   model_profile_name: string;
   test_case_set_id: string;
+  persona_ids: string[];
   timezone: string;
   repeat_interval_minutes: number;
   run_limit: number;
@@ -130,6 +132,7 @@ const empty: Draft = {
   manager_template_id: "",
   model_profile_name: "",
   test_case_set_id: "",
+  persona_ids: [],
   timezone: "Asia/Tokyo",
   repeat_interval_minutes: 30,
   run_limit: 1,
@@ -159,6 +162,7 @@ const draftOf = (b: Build, copy = false): Draft => ({
   manager_template_id: b.manager_template_id ?? "",
   model_profile_name: b.model_profile_name ?? "",
   test_case_set_id: b.test_case_set_id ?? "",
+  persona_ids: b.persona_ids ?? [],
   timezone: b.timezone,
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
@@ -326,6 +330,10 @@ function Direct({
 }) {
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  useEffect(() => {
+    void api<Persona[]>("/api/personas").then(setPersonas).catch(() => setPersonas([]));
+  }, []);
   const selectedRunner = runners.find((runner) => runner.id === d.runner_id);
   const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
@@ -450,6 +458,24 @@ function Direct({
               {tests.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Personas"
+            description="Optional reusable user perspectives supplied to this runner. Select more than one for multi-persona simulations."
+          >
+            <select
+              multiple
+              value={d.persona_ids}
+              onChange={(event) =>
+                setD({ ...d, persona_ids: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })
+              }
+            >
+              {personas.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.name} · {persona.locale}
                 </option>
               ))}
             </select>

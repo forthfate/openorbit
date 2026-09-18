@@ -15,6 +15,7 @@ import type {
   Build,
   ExecutionEnvironment,
   PromptTemplate,
+  Persona,
   RunnerAsset,
   RunnerTemplate,
   Settings,
@@ -1916,6 +1917,20 @@ function EnvironmentCatalog({
   );
 }
 
+function PersonaCatalog({ builds, onRefresh }: { builds: Build[]; onRefresh: () => Promise<unknown> }) {
+  const [items, setItems] = useState<Persona[]>([]), [draft, setDraft] = useState<Persona | null>(null), [error, setError] = useState("");
+  const load = () => api<Persona[]>("/api/personas").then(setItems);
+  useEffect(() => { void load(); }, []);
+  const save = () => {
+    if (!draft) return;
+    const exists = items.some((item) => item.id === draft.id);
+    api<Persona>(exists ? `/api/personas/${draft.id}` : "/api/personas", exists ? "PUT" : "POST", draft)
+      .then(() => { setDraft(null); setError(""); return Promise.all([load(), onRefresh()]); })
+      .catch((value) => setError(value.message));
+  };
+  return <section className="panel app-settings"><div className="panel-title-action"><PanelHeader title="Personas" /><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], goals: [""], constraints: [], context: {} })}><Plus size={14} />Create</button></div><p className="hint">Reusable user perspectives, goals, constraints, and product-specific context. Runtime identity and memory are never stored here.</p><AssetCatalog emptyHint="No personas yet.">{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone} · ${item.goals.length} goals`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title="Persona" onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>ID</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>Name</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>Locale</span><input value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value })} /></label><label className="modal-setting-row"><span>Timezone</span><input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} /></label><label className="modal-setting-row"><span>Goals (one per line)</span><textarea value={draft.goals.join("\n")} onChange={(event) => setDraft({ ...draft, goals: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>Constraints (one per line)</span><textarea value={draft.constraints.join("\n")} onChange={(event) => setDraft({ ...draft, constraints: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>Activity windows / context (JSON)</span><textarea value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(event) => { try { const value = JSON.parse(event.target.value); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError("Activity windows and context must be valid JSON"); } }} /></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>Save</button></div></div></Modal>}</section>;
+}
+
 export function AssetsPage({
   locale,
   builds,
@@ -1984,6 +1999,7 @@ export function AssetsPage({
         usage={usage.profiles}
         onDelete={(id) => onDelete("profile", id)}
       />
+      <PersonaCatalog builds={builds} onRefresh={legacy.onRefresh} />
       <EnvironmentCatalog
         locale={locale}
         executionEnvironments={executionEnvironments}
