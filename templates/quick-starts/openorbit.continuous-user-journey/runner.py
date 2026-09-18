@@ -29,6 +29,7 @@ BLOCKED = re.compile(
 )
 MAX_HISTORY, MAX_LEARNINGS, MAX_ISSUES = 24, 12, 8
 
+graph.connect("validate-browser-runtime", "validate")
 graph.connect("validate", "observe")
 graph.connect("observe", "decide", kind="data", label="rendered choices")
 graph.connect("decide", "act", kind="data", label="one safe action")
@@ -120,11 +121,29 @@ const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase
     return json.loads(result)
 
 
-@graph.step("validate", title="Validate autonomous persona", phase="before_all", outputs=["persona_contract"])
-@runner.phase("before_all")
+@graph.step(
+    "validate-browser-runtime",
+    title="Validate persona browser runtime",
+    phase="before_all",
+    outputs=["browser_target"],
+)
+@runner.phase("before_all", step_id="validate-browser-runtime")
+def validate_browser_runtime(ctx):
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("An autonomous persona needs a browser base URL")
+
+
+@graph.step(
+    "validate",
+    title="Validate autonomous persona contract",
+    phase="before_all",
+    inputs=["browser_target"],
+    outputs=["persona_contract"],
+)
+@runner.phase("before_all", step_id="validate")
 def before_all(ctx):
-    if not ctx.build.get("browser_base_url") or not ctx.test_cases:
-        raise ValueError("An autonomous persona needs a browser base URL and one persona contract")
+    if not ctx.test_cases:
+        raise ValueError("An autonomous persona needs one persona contract")
     ctx.log("Validated the autonomous persona contract and safe browser boundary")
 
 
@@ -135,7 +154,7 @@ def before_all(ctx):
     inputs=["persona_contract"],
     outputs=["page_choices"],
 )
-@runner.phase("before_each")
+@runner.phase("before_each", step_id="observe")
 def before_each(ctx):
     state = load_state(ctx)
     url = str(state.get("last_url") or ctx.build["browser_base_url"])
@@ -171,7 +190,7 @@ def before_each(ctx):
     inputs=["page_choices"],
     outputs=["persona_plan"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="decide")
 def execute(ctx):
     state = load_state(ctx)
     actions = state["observation"]["available_actions"]
@@ -222,7 +241,7 @@ Persona state:\n"""
     inputs=["persona_plan"],
     outputs=["action_evidence"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="act")
 def verify(ctx):
     state = load_state(ctx)
     action = state["plan"].get("action")
@@ -305,7 +324,20 @@ def after_all(ctx):
 
 CallbackCycle(
     steps=(
-        ("validate", "Validate autonomous persona", "before_all", (), ("persona_contract",)),
+        (
+            "validate-browser-runtime",
+            "Validate persona browser runtime",
+            "before_all",
+            (),
+            ("browser_target",),
+        ),
+        (
+            "validate",
+            "Validate autonomous persona contract",
+            "before_all",
+            ("browser_target",),
+            ("persona_contract",),
+        ),
         ("observe", "Observe current page", "before_each", ("persona_contract",), ("page_choices",)),
         ("decide", "Plan next persona action", "execute", ("page_choices",), ("persona_plan",)),
         ("act", "Take one safe persona action", "verify", ("persona_plan",), ("action_evidence",)),
@@ -313,6 +345,7 @@ CallbackCycle(
         ("finalize", "Finalize autonomous persona", "after_all", ("persona_handoff",), ("final_status",)),
     ),
     edges=(
+        ("validate-browser-runtime", "validate", "execution", None),
         ("validate", "observe", "execution", None),
         ("observe", "decide", "data", "rendered choices"),
         ("decide", "act", "data", "one safe action"),
@@ -322,6 +355,7 @@ CallbackCycle(
 ).install(
     {
         "validate": before_all,
+        "validate-browser-runtime": validate_browser_runtime,
         "observe": before_each,
         "decide": execute,
         "act": verify,

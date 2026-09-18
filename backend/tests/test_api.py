@@ -1382,6 +1382,21 @@ def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch
     assert "@runner.phase" in captured["source"]
 
 
+def test_shipped_template_graphs_are_previewable_with_unique_nodes():
+    """Every shipped template publishes a valid graph for node-based execution."""
+    store = store_module.ConsoleStore()
+    sources = [item["source"] for item in store.runner_templates()]
+    sources.extend(item["assets"]["runner"]["source"] for item in store._built_in_quick_starts())
+
+    for source in sources:
+        definition = store.preview_runner_graph(source)
+        assert definition is not None
+        nodes = definition["nodes"]
+        assert nodes
+        assert len({node["id"] for node in nodes}) == len(nodes)
+        assert all(node["phase"] for node in nodes)
+
+
 def test_saved_runner_graph_preview_uses_the_selected_version(monkeypatch):
     store = store_module.ConsoleStore()
     expected = {"nodes": [{"id": "start"}], "edges": []}
@@ -1416,12 +1431,17 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [
-        ("openorbit.user-journey-smoke-test", ["before_all", "execute", "verify", "after_all"]),
+        (
+            "openorbit.user-journey-smoke-test",
+            ["before_all", "before_all", "execute", "verify", "after_all"],
+        ),
         ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
         (
             "openorbit.agent-self-improvement",
             [
                 "before_all",
+                "before_all",
+                "before_each",
                 "before_each",
                 "execute",
                 "verify",
@@ -1432,7 +1452,7 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
         ),
         (
             "openorbit.ai-slo-drift-monitor",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -1454,20 +1474,48 @@ def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, qui
 @pytest.mark.parametrize(
     ("template_id", "phases"),
     [
-        ("user-journey-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "user-journey-cycle",
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
+        ),
         (
             "external-command-adapter",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
         (
             "native-improvement-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
         ),
         ("site-exploration", ["before_all", "execute", "verify", "after_all"]),
-        ("json-agent-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "source-aware-browser-journey",
+            ["before_all", "execute", "verify", "after_each", "after_all"],
+        ),
+        (
+            "json-agent-cycle",
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
         (
             "evidence-gated-probe-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
