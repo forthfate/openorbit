@@ -1927,11 +1927,16 @@ function EnvironmentCatalog({
   );
 }
 
-function PersonaCatalog({ builds, onRefresh, locale }: { builds: Build[]; onRefresh: () => Promise<unknown>; locale: Locale }) {
+function PersonaCatalog({ builds, onRefresh, locale, loading }: { builds: Build[]; onRefresh: () => Promise<unknown>; locale: Locale; loading: boolean }) {
   const t = text[locale];
-  const [items, setItems] = useState<Persona[]>([]), [draft, setDraft] = useState<Persona | null>(null), [error, setError] = useState("");
-  const load = () => api<Persona[]>("/api/personas").then(setItems);
-  useEffect(() => { void load(); }, []);
+  const [items, setItems] = useState<Persona[]>([]), [draft, setDraft] = useState<Persona | null>(null), [error, setError] = useState(""), [itemsLoading, setItemsLoading] = useState(true);
+  const load = () => {
+    setItemsLoading(true);
+    return api<Persona[]>("/api/personas").then(setItems).finally(() => setItemsLoading(false));
+  };
+  useEffect(() => {
+    void api<Persona[]>("/api/personas").then(setItems).finally(() => setItemsLoading(false));
+  }, []);
   const save = () => {
     if (!draft) return;
     const exists = items.some((item) => item.id === draft.id);
@@ -1939,7 +1944,7 @@ function PersonaCatalog({ builds, onRefresh, locale }: { builds: Build[]; onRefr
       .then(() => { setDraft(null); setError(""); return Promise.all([load(), onRefresh()]); })
       .catch((value) => setError(value.message));
   };
-  return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], goals: [""], constraints: [], context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone} · ${item.goals.length} ${t.goals.toLowerCase()}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><input value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.target.value })} /></label><label className="modal-setting-row"><span>{t.goals} ({t.goalsHint})</span><textarea value={draft.goals.join("\n")} onChange={(event) => setDraft({ ...draft, goals: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.constraints} ({t.constraintsHint})</span><textarea value={draft.constraints.join("\n")} onChange={(event) => setDraft({ ...draft, constraints: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.activityContext} ({t.activityContextHint})</span><textarea value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(event) => { try { const value = JSON.parse(event.target.value); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} /></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
+  return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], goals: [""], constraints: [], context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} loading={loading || itemsLoading} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone} · ${item.goals.length} ${t.goals.toLowerCase()}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><input value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><input value={draft.timezone} onChange={(event) => setDraft({ ...draft, locale: draft.locale, timezone: event.target.value })} /></label><label className="modal-setting-row"><span>{t.goals} ({t.goalsHint})</span><textarea value={draft.goals.join("\n")} onChange={(event) => setDraft({ ...draft, goals: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.constraints} ({t.constraintsHint})</span><textarea value={draft.constraints.join("\n")} onChange={(event) => setDraft({ ...draft, constraints: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.activityContext} ({t.activityContextHint})</span><textarea value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(event) => { try { const value = JSON.parse(event.target.value); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} /></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
 }
 
 export function AssetsPage({
@@ -2010,14 +2015,6 @@ export function AssetsPage({
     const index = tabs.findIndex((tab) => tab.id === activeTab);
     selectTab(tabs[(index + offset + tabs.length) % tabs.length].id);
   };
-  if (loading) return <>
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={4} />
-  </>;
   return (
     <>
       <div className="asset-tabs" role="tablist" aria-label={text[locale].tabsLabel}>
@@ -2058,7 +2055,7 @@ export function AssetsPage({
       <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} activeTab="ai" />
       </>}
       {activeTab === "test-design" && <>
-      <PersonaCatalog builds={builds} onRefresh={legacy.onRefresh} locale={locale} />
+      <PersonaCatalog builds={builds} onRefresh={legacy.onRefresh} locale={locale} loading={loading} />
       <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} activeTab="test-design" />
       </>}
       {activeTab === "run-setup" && <>
