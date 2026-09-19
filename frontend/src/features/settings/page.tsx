@@ -294,22 +294,32 @@ export function SettingsPage({
           </div>
           <button className="approve" onClick={() => setMcpOpen(true)}><Pencil size={14} />{settingsCopy.mcp.edit}</button>
         </div>
-        <DataTable
-          className="mcp-server-table"
-          columns={mcpColumns}
-          rows={mcpServers}
-          empty={settingsCopy.mcp.noServers}
-          gridTemplateColumns="minmax(140px,.8fr) minmax(280px,2fr) 110px"
-        />
+        <div className="settings-section-content">
+          <DataTable
+            className="mcp-server-table"
+            columns={mcpColumns}
+            rows={mcpServers}
+            empty={settingsCopy.mcp.noServers}
+            gridTemplateColumns="minmax(140px,.8fr) minmax(280px,2fr) 110px"
+          />
+        </div>
       </section>
       <section className="panel app-settings app-data-settings">
-        <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
-        <p className="hint section-description">{settingsCopy.storage.description}</p>
+        <div className="panel-title-action">
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
+            <p className="hint section-description">{settingsCopy.storage.description}</p>
+          </div>
+          {!dataEditing && <button className="approve" onClick={() => { setDataPathDraft(dataPath); setDataEditing(true); }}>
+            <Pencil size={14} />
+            {l.edit}
+          </button>}
+        </div>
         <div className="setting-row">
-          <span>
-            <strong>{settingsCopy.storage.location}</strong>
-            <small>{settingsCopy.storage.locationHint}</small>
-          </span>
+          <div className="settings-summary">
+            <span className="settings-summary-label">{settingsCopy.storage.location}</span>
+            <span className="settings-summary-detail">{settingsCopy.storage.locationHint}</span>
+          </div>
           {dataEditing ? (
             <div className="app-data-path-actions">
               <input value={dataPathDraft} onChange={(event) => setDataPathDraft(event.target.value)} />
@@ -326,10 +336,6 @@ export function SettingsPage({
           ) : (
             <div className="app-data-path-actions">
               <p className="setting-prompt-preview app-data-path">{dataPath}</p>
-              <button className="approve" onClick={() => { setDataPathDraft(dataPath); setDataEditing(true); }}>
-                <Pencil size={14} />
-                {l.edit}
-              </button>
             </div>
           )}
         </div>
@@ -410,11 +416,13 @@ export function SettingsPage({
             {l.edit}
           </button>
         </div>
-        <p className="operational-prompt-warning" role="note">
-          <AlertTriangle size={16} />
-          {l.warning}
-        </p>
-        <p className="setting-prompt-preview">{prompt || l.empty}</p>
+        <div className="settings-section-content">
+          <p className="operational-prompt-warning" role="note">
+            <AlertTriangle size={16} />
+            {l.warning}
+          </p>
+          <p className="setting-prompt-preview">{prompt || l.empty}</p>
+        </div>
       </section>
       <OrbitLogs logs={logs} locale={locale} />
       <Modal open={mcpOpen} title={settingsCopy.mcp.title} onClose={() => setMcpOpen(false)}>
