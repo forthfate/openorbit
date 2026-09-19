@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Database, ExternalLink, Pencil, Save } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, Pencil, RotateCcw, Save } from "lucide-react";
 import type { Locale } from "../../locales";
 import { localeMessages, localeOptions, locales } from "../../locales";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
+import { DataTable, type Column } from "../../components/ui/data-table";
 import type { OrbitLog, Settings } from "../../domain/models";
 import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
@@ -24,9 +25,16 @@ type ApplicationData = { path: string; size_bytes: number };
 type ManagerCopy = { title:string; description:string; warning:string; edit:string; content:string; save:string; cancel:string; empty:string; saved:string };
 
 type ProfileCopy = { title:string; description:string; create:string; edit:string; empty:string; delete:string; chatProfile:string; chatProfileHint:string; selectChatProfile:string; saveChatProfile:string; chatProfileSaved:string };
-type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string; mcpConfig:string; mcpConfigDescription:string; openInVsCode:string; saveMcpConfig:string; mcpConfigSaved:string };
+type CodingAgentCopy = { title:string; description:string; select:string; none:string; save:string; saved:string };
+type McpCopy = { title:string; description:string; edit:string; save:string; reset:string; openInVsCode:string; name:string; url:string; status:string; enabled:string; disabled:string; noServers:string; saved:string };
 type StorageCopy = { title:string; description:string; location:string; locationHint:string; size:string; calculating:string; save:string; saved:string };
-type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; codingAgent: CodingAgentCopy; storage: StorageCopy };
+type SettingsCopy = { manager: ManagerCopy; profiles: ProfileCopy; codingAgent: CodingAgentCopy; mcp: McpCopy; storage: StorageCopy };
+type McpServer = { id: string; name: string; url: string; enabled: boolean };
+const defaultMcpConfig = JSON.stringify(
+  { mcpServers: { openorbit: { url: "http://127.0.0.1:3000/mcp/" } } },
+  null,
+  2,
+);
 const bytes = (value: number) => {
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = value ? Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1) : 0;
@@ -70,6 +78,7 @@ export function SettingsPage({
     [chatProfile, setChatProfile] = useState(""),
     [codingAgent, setCodingAgent] = useState<ApplicationSettings["coding_agent_provider"]>("none"),
     [mcpConfig, setMcpConfig] = useState(""),
+    [mcpOpen, setMcpOpen] = useState(false),
     [dataPath, setDataPath] = useState(""),
     [dataPathDraft, setDataPathDraft] = useState(""),
     [dataSize, setDataSize] = useState<number | null>(null),
@@ -132,7 +141,34 @@ export function SettingsPage({
         pushToast(settingsCopy.codingAgent.saved, "success");
       })
       .catch((error) => pushToast(error.message));
-  const saveMcpConfig = () => api<{ content: string }>("/api/assistant-mcp-config", "PUT", { content: mcpConfig }).then((value) => { setMcpConfig(value.content); pushToast(settingsCopy.codingAgent.mcpConfigSaved, "success"); }).catch((error) => pushToast(error.message));
+  const mcpServers = useMemo(() => {
+    try {
+      const value = JSON.parse(mcpConfig) as { mcpServers?: unknown };
+      if (!value.mcpServers || typeof value.mcpServers !== "object" || Array.isArray(value.mcpServers)) return [];
+      return Object.entries(value.mcpServers).map(([name, config]) => {
+        const details = config && typeof config === "object" && !Array.isArray(config)
+          ? config as Record<string, unknown>
+          : {};
+        return {
+          id: name,
+          name,
+          url: typeof details.url === "string" ? details.url : "—",
+          enabled: details.enabled !== false && details.disabled !== true,
+        };
+      });
+    } catch { return []; }
+  }, [mcpConfig]);
+  const mcpColumns = useMemo<Column<McpServer>[]>(() => [
+    { id: "name", header: settingsCopy.mcp.name, render: (server) => <strong>{server.name}</strong>, sortValue: (server) => server.name },
+    { id: "url", header: settingsCopy.mcp.url, render: (server) => server.url, sortValue: (server) => server.url },
+    {
+      id: "status",
+      header: settingsCopy.mcp.status,
+      render: (server) => server.enabled ? settingsCopy.mcp.enabled : settingsCopy.mcp.disabled,
+      sortValue: (server) => server.enabled,
+    },
+  ], [settingsCopy.mcp]);
+  const saveMcpConfig = () => api<{ content: string }>("/api/assistant-mcp-config", "PUT", { content: mcpConfig }).then((value) => { setMcpConfig(value.content); setMcpOpen(false); pushToast(settingsCopy.mcp.saved, "success"); }).catch((error) => pushToast(error.message));
   const saveDataLocation = () => {
     setDataLoading(true);
     api<ApplicationData>("/api/application-data", "PUT", { path: dataPathDraft })
@@ -249,11 +285,22 @@ export function SettingsPage({
             <option value="midnight">Midnight</option>
           </select>
         </label>
-        <div className="setting-row setting-row--stacked">
-          <span><strong>{settingsCopy.codingAgent.mcpConfig}</strong><small>{settingsCopy.codingAgent.mcpConfigDescription}</small></span>
-          <JsonEditor value={mcpConfig} onChange={setMcpConfig} label={settingsCopy.codingAgent.mcpConfig} />
-          <div className="setting-actions"><button className="ghost" onClick={() => api("/api/assistant-mcp-config/open-vscode", "POST").catch((error) => pushToast(error.message))}><ExternalLink size={14} />{settingsCopy.codingAgent.openInVsCode}</button><button className="approve" onClick={saveMcpConfig}><Save size={14} />{settingsCopy.codingAgent.saveMcpConfig}</button></div>
+      </section>
+      <section className="panel app-settings">
+        <div className="panel-title-action">
+          <div className="panel-title-action__copy">
+            <PanelHeader title={<SectionInfo title={settingsCopy.mcp.title} description={settingsCopy.mcp.description} />} />
+            <p className="hint section-description">{settingsCopy.mcp.description}</p>
+          </div>
+          <button className="approve" onClick={() => setMcpOpen(true)}><Pencil size={14} />{settingsCopy.mcp.edit}</button>
         </div>
+        <DataTable
+          className="mcp-server-table"
+          columns={mcpColumns}
+          rows={mcpServers}
+          empty={settingsCopy.mcp.noServers}
+          gridTemplateColumns="minmax(140px,.8fr) minmax(280px,2fr) 110px"
+        />
       </section>
       <section className="panel app-settings app-data-settings">
         <PanelHeader title={<SectionInfo title={settingsCopy.storage.title} description={sectionDetails.applicationData} />} />
@@ -370,6 +417,25 @@ export function SettingsPage({
         <p className="setting-prompt-preview">{prompt || l.empty}</p>
       </section>
       <OrbitLogs logs={logs} locale={locale} />
+      <Modal open={mcpOpen} title={settingsCopy.mcp.title} onClose={() => setMcpOpen(false)}>
+        <div className="modal-form">
+          <JsonEditor value={mcpConfig} onChange={setMcpConfig} label={settingsCopy.mcp.title} />
+          <div className="modal-actions">
+            <button className="ghost" onClick={() => setMcpConfig(defaultMcpConfig)}>
+              <RotateCcw size={14} />
+              {settingsCopy.mcp.reset}
+            </button>
+            <button className="ghost" onClick={() => api("/api/assistant-mcp-config/open-vscode", "POST").catch((error) => pushToast(error.message))}>
+              <ExternalLink size={14} />
+              {settingsCopy.mcp.openInVsCode}
+            </button>
+            <button className="approve" onClick={saveMcpConfig}>
+              <Save size={14} />
+              {settingsCopy.mcp.save}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <Modal open={open} title={l.title} onClose={() => setOpen(false)}>
         <div className="modal-form">
           <label className="modal-setting-row">
