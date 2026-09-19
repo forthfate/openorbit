@@ -14,7 +14,14 @@ const interpolate = (template: string, value: number) => template.replace(/\{(?:
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const hydrateMessages = (messages: Record<string, any>) => ({
   ...messages,
-  ui: { ...messages.ui, itemsPerPageValue: (size: number) => interpolate(messages.ui.itemsPerPageValue, size) },
+  ui: {
+    ...messages.ui,
+    itemsPerPageValue: (size: number) => interpolate(messages.ui.itemsPerPageValue, size),
+    runsDeleted: (count: number) =>
+      count === 1 ? messages.ui.runDeleted : interpolate(messages.ui.runsDeleted, count),
+    settingsTestSucceeded: (response: string) =>
+      messages.ui.settingsTestSucceeded.replace("{response}", response),
+  },
   runUi: {
     ...messages.runUi,
     selected: (count: number) => interpolate(messages.runUi.selected, count),

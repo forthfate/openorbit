@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
+from pathlib import Path
 from typing import Any
 
 
@@ -60,6 +61,11 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--url", default=os.environ.get("ORBIT_URL", "http://127.0.0.1:8787"))
     commands = root.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Start the local OpenOrbit web server.")
+    run.add_argument(
+        "path",
+        nargs="?",
+        help="Store OpenOrbit data in PATH/.orbit instead of the default application-data directory.",
+    )
     run.add_argument("--host", default=os.environ.get("ORBIT_HOST", "127.0.0.1"))
     run.add_argument("--port", type=int, default=int(os.environ.get("ORBIT_PORT", "3000")))
     run.add_argument("--reload", action="store_true", help="Reload the server when Python sources change.")
@@ -122,6 +128,12 @@ def main() -> None:
         if not 1 <= args.port <= 65535:
             print("error: --port must be an integer from 1 through 65535.", file=sys.stderr)
             raise SystemExit(2)
+        if args.path:
+            root = Path(args.path).expanduser().resolve()
+            if root.exists() and not root.is_dir():
+                print(f"error: PATH must be a directory: {root}", file=sys.stderr)
+                raise SystemExit(2)
+            os.environ["ORBIT_APP_DATA"] = str(root / ".orbit")
         if args.open:
             webbrowser.open(f"http://{args.host}:{args.port}")
         import uvicorn

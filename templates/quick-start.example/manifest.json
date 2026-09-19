@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "id": "example-quick-start",
+  "version": "1.0.0",
+  "name": "Example Quick Start",
+  "description": "A minimal portable Quick Start package with a node-based runner.",
+  "publisher": {"name": "OpenOrbit"},
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Example evaluation",
+      "placeholder": "e.g. My first evaluation",
+      "tooltip": "Name used for the created OpenOrbit assets."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Minimal node-based example runner.",
+      "template_id": "example-quick-start-runner",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Review the structured evidence produced by this example evaluation."
+    },
+    "test_case_set": {
+      "name": "${build_name} cases",
+      "description": "A minimal fixed example case.",
+      "cases": [{"id": "example", "name": "Example case", "path": "/", "prompt": "Run the example.", "acceptance": "The runner publishes structured evidence."}]
+    },
+    "execution_environment": {"name": "${build_name} execution", "executor_type": "local"},
+    "target_environment": {"name": "${build_name} target"}
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Demonstrate a portable Quick Start package.",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 60,
+    "run_limit": 1,
+    "approval_score": 7,
+    "enabled": true
+  }
+}

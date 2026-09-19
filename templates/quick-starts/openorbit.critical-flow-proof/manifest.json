@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.critical-flow-proof",
+  "version": "1.0.4",
+  "name": "Critical flow proof",
+  "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Critical flow proof",
+      "placeholder": "e.g. Production journey evaluation",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "base_url",
+      "label": "Browser base URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence."
+    },
+    {
+      "key": "journey_name",
+      "label": "Critical flow name",
+      "type": "string",
+      "required": true,
+      "default": "Complete a critical task",
+      "placeholder": "e.g. Sign in and complete checkout",
+      "tooltip": "Short, stable name shown for this fixed evaluation case."
+    },
+    {
+      "key": "journey_path",
+      "label": "Start path",
+      "type": "string",
+      "required": true,
+      "default": "/",
+      "placeholder": "e.g. /checkout",
+      "tooltip": "Path opened first by the browser journey, relative to the browser base URL."
+    },
+    {
+      "key": "journey_prompt",
+      "label": "User actions",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. Sign in, add an item, and complete checkout.",
+      "tooltip": "The exact user actions or request used to exercise the target."
+    },
+    {
+      "key": "acceptance",
+      "label": "Success condition",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. The confirmation page shows the completed order.",
+      "tooltip": "Observable evidence required for this case to be considered successful."
+    },
+    {
+      "key": "focus",
+      "label": "Review focus",
+      "type": "string",
+      "required": true,
+      "default": "completion, recovery, and user-visible evidence",
+      "placeholder": "e.g. clear recovery from a failed checkout",
+      "tooltip": "The product behavior or experience that the repeated journey should prioritize."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile, or create one for this build."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
+      "template_id": "playwright-continuous-journey",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Review rendered evidence for ${focus}. Preserve user safety, explain evidence, and propose only reversible improvements."
+    },
+    "test_case_set": {
+      "name": "${build_name} journeys",
+      "description": "A bounded recurring user journey.",
+      "cases": [
+        {
+          "id": "critical-flow",
+          "name": "${journey_name}",
+          "path": "${journey_path}",
+          "prompt": "${journey_prompt}",
+          "acceptance": "${acceptance}"
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local",
+      "environment_variables": {}
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "browser_base_url": "${base_url}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Continuously prove one important user flow with rendered browser evidence and prompt retries when it fails.",
+    "browser_base_url": "${base_url}",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
+    "enabled": true
+  }
+}

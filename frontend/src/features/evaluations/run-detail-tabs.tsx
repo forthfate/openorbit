@@ -2,23 +2,21 @@ import type { ReactNode } from "react";
 import { TooltipBox } from "../../components/ui/tooltip-box";
 
 export type RunDetailTab =
-  | "workflow"
   | "logs"
   | "supervisor"
-  | "prompt"
   | "commits"
   | "result";
 
-type Tab = { id: RunDetailTab; label: string };
+type Tab<T extends string> = { id: T; label: string };
 
-export function RunDetailTabs({
+export function RunDetailTabs<T extends string>({
   tabs,
   activeTab,
   onSelect,
 }: {
-  tabs: Tab[];
-  activeTab: RunDetailTab;
-  onSelect: (tab: RunDetailTab) => void;
+  tabs: Tab<T>[];
+  activeTab: T;
+  onSelect: (tab: T) => void;
 }) {
   return (
     <div className="run-tabs" role="tablist">

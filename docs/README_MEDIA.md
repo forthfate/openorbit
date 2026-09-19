@@ -32,7 +32,7 @@ English and the following draft message entered, but not sent:
 
 ### Capture steps
 
-1. Open `http://127.0.0.1:3080/#dashboard`.
+1. Open `http://127.0.0.1:3080/dashboard`.
 2. Set `orbit.locale` in local storage to `en`, clear the stored Assistant
    position values, and reload. This keeps the default Assistant placement
    reproducible.

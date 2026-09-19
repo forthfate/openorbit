@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.continuous-user-journey",
+  "version": "2.0.2",
+  "name": "Continuous user journey",
+  "description": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Continuous user journey",
+      "placeholder": "e.g. Production journey evaluation",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "base_url",
+      "label": "Browser base URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence."
+    },
+    {
+      "key": "persona",
+      "label": "User perspective",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. a first-time small-business owner",
+      "tooltip": "The user perspective that guides the simulated journey and its decisions."
+    },
+    {
+      "key": "goal",
+      "label": "Ongoing goal",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. understand whether I can complete my first task safely",
+      "tooltip": "The concrete outcome the critical flow should prove with retained evidence."
+    },
+    {
+      "key": "focus",
+      "label": "What to learn",
+      "type": "string",
+      "required": true,
+      "default": "clarity, safe next actions, and friction",
+      "placeholder": "e.g. clear recovery from a failed checkout",
+      "tooltip": "The product behavior or experience that the repeated journey should prioritize."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile, or create one for this build."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} autonomous persona runner",
+      "description": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
+      "template_id": "autonomous-persona-journey",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Review rendered evidence for ${focus}. Preserve user safety, explain evidence, and propose only reversible improvements."
+    },
+    "test_case_set": {
+      "name": "${build_name} journeys",
+      "description": "A bounded recurring user journey.",
+      "cases": [
+        {
+          "id": "persona-journey",
+          "name": "${persona}",
+          "path": "/",
+          "prompt": "As ${persona}, pursue this goal over repeated visits: ${goal}. ${focus}.",
+          "acceptance": "Retain rendered evidence and a specific next check; do not claim success without a visible result."
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local",
+      "environment_variables": {}
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "browser_base_url": "${base_url}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Let a persistent persona observe, choose one safe next action, retain evidence and feelings, and evolve its intent across visits.",
+    "browser_base_url": "${base_url}",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
+    "enabled": true
+  }
+}

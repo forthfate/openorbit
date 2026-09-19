@@ -46,6 +46,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - uses: astral-sh/setup-uv@v6
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter agent-improvement-console-ui run lint
       - run: pnpm run docs:build
       - run: pnpm --filter agent-improvement-console-ui run build
       - name: Verify bundled release version

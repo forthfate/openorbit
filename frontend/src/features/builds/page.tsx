@@ -3,16 +3,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  FileUp,
-  Languages,
   Play,
   Plus,
   Sparkles,
+  Star,
   TestTube2,
   Trash2,
   Wrench,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { Modal } from "../../components/ui/modal";
 import { PanelHeader } from "../../components/ui/page-header";
@@ -23,12 +23,13 @@ import type {
   Build,
   ExecutionEnvironment,
   PromptTemplate,
-  QuickStart,
+  Persona,
   Run,
   RunnerAsset,
   Settings,
   TargetEnvironment,
   TargetTestCaseSet,
+  WorkflowGraphDefinition,
 } from "../../domain/models";
 import {
   intlLocales,
@@ -37,19 +38,20 @@ import {
   type Locale,
 } from "../../locales";
 import { api } from "../../services/api";
-import { useTemplateTranslations } from "../../services/use-template-translation";
 import { EvaluationsPage } from "../evaluations/page";
 
 type Draft = {
   id: string;
   name: string;
   runner_id: string;
+  runner_version: number | null;
   execution_environment_id: string;
   target_environment_id: string;
   purpose: string;
   manager_template_id: string;
   model_profile_name: string;
   test_case_set_id: string;
+  persona_ids: string[];
   timezone: string;
   repeat_interval_minutes: number;
   run_limit: number;
@@ -66,26 +68,26 @@ type Draft = {
   enabled: boolean;
 };
 
-type QuickStartTranslation = {
-  name: string;
-  description: string;
-  parameters?: {
-    label: string;
-    description?: string;
-    placeholder?: string;
-    options?: { label: string }[];
-  }[];
-};
 type LabelCopy = { label: string; hint: string };
 export type ProfileFormCopy = {
   profileName: LabelCopy;
   provider: LabelCopy;
   modelDeployment: LabelCopy;
+  azureEndpoint: LabelCopy;
+  region: LabelCopy;
+  awsProfile: LabelCopy;
+  secretEnv: LabelCopy;
+  createNewAiProfile: LabelCopy;
 };
 type BuildWizardCopy = {
+  basics: string;
+  evaluationSetup: string;
+  schedule: string;
+  decisionPolicy: string;
   buildId: LabelCopy;
   buildName: LabelCopy;
   runner: LabelCopy;
+  runnerVersion: LabelCopy & { latest: string };
   targetEnvironment: LabelCopy;
   executionEnvironment: LabelCopy;
   purpose: LabelCopy;
@@ -95,6 +97,7 @@ type BuildWizardCopy = {
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
   iterationTiming: LabelCopy;
+  overrunPolicy: LabelCopy;
   iterationTimingAfterCompletion: string;
   iterationTimingFixed: string;
   iterationTimingWait: string;
@@ -111,27 +114,6 @@ type BuildWizardCopy = {
   next: string;
 };
 
-const withQuickStartTranslation = (
-  item: QuickStart,
-  translation: QuickStartTranslation | null,
-  labels?: { name: string; description: string },
-): QuickStart =>
-  translation || labels
-    ? {
-        ...item,
-        name: translation?.name ?? labels?.name ?? item.name,
-        description:
-          translation?.description ?? labels?.description ?? item.description,
-        parameters: item.parameters.map((parameter, index) => ({
-          ...parameter,
-          ...translation?.parameters?.[index],
-          options: parameter.options?.map((option, optionIndex) => ({
-            ...option,
-            ...translation?.parameters?.[index]?.options?.[optionIndex],
-          })),
-        })),
-      }
-    : item;
 const formatDate = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -143,12 +125,14 @@ const empty: Draft = {
   id: "",
   name: "",
   runner_id: "",
+  runner_version: null,
   execution_environment_id: "",
   target_environment_id: "",
   purpose: "",
   manager_template_id: "",
   model_profile_name: "",
   test_case_set_id: "",
+  persona_ids: [],
   timezone: "Asia/Tokyo",
   repeat_interval_minutes: 30,
   run_limit: 1,
@@ -171,12 +155,14 @@ const draftOf = (b: Build, copy = false): Draft => ({
   id: copy ? "" : b.id,
   name: copy ? `${b.name} copy` : b.name,
   runner_id: b.runner_id,
+  runner_version: b.runner_version ?? null,
   execution_environment_id: b.execution_environment_id ?? "",
   target_environment_id: b.target_environment_id ?? "",
   purpose: b.purpose,
   manager_template_id: b.manager_template_id ?? "",
   model_profile_name: b.model_profile_name ?? "",
   test_case_set_id: b.test_case_set_id ?? "",
+  persona_ids: b.persona_ids ?? [],
   timezone: b.timezone,
   repeat_interval_minutes: b.repeat_interval_minutes,
   run_limit: b.run_limit,
@@ -197,12 +183,16 @@ const Field = ({
   label,
   description,
   children,
+  as = "label",
 }: {
   label: string;
   description?: string;
   children: ReactNode;
-}) => (
-  <label className="modal-setting-row">
+  as?: "div" | "label";
+}) => {
+  const Container = as;
+  return (
+  <Container className="modal-setting-row">
     <span>
       {description ? (
         <SectionInfo title={label} description={description} />
@@ -211,15 +201,15 @@ const Field = ({
       )}
     </span>
     {children}
-  </label>
-);
+  </Container>
+  );
+};
 export function ProfileForm({
   settings,
   setSettings,
   test,
   save,
   tested,
-  onClose,
   t,
   help,
 }: {
@@ -228,7 +218,6 @@ export function ProfileForm({
   test: () => void;
   save: () => void;
   tested: boolean;
-  onClose: () => void;
   t: typeof locales.en.evaluation;
   help: ProfileFormCopy;
 }) {
@@ -261,7 +250,7 @@ export function ProfileForm({
       </Field>
       {settings.provider === "azure-openai" ? (
         <>
-          <Field label={t.azureEndpoint}>
+          <Field label={t.azureEndpoint} description={help.azureEndpoint.hint}>
             <input
               type="url"
               placeholder="https://your-resource.openai.azure.com"
@@ -271,7 +260,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.secretEnv}>
+          <Field label={t.secretEnv} description={help.secretEnv.hint}>
             <input
               placeholder="AZURE_OPENAI_API_KEY"
               value={settings.secret_env}
@@ -283,7 +272,7 @@ export function ProfileForm({
         </>
       ) : (
         <>
-          <Field label={t.region}>
+          <Field label={t.region} description={help.region.hint}>
             <input
               placeholder="us-east-1"
               value={settings.region}
@@ -292,7 +281,7 @@ export function ProfileForm({
               }
             />
           </Field>
-          <Field label={t.awsProfile}>
+          <Field label={t.awsProfile} description={help.awsProfile.hint}>
             <input
               placeholder="default"
               value={settings.aws_profile ?? ""}
@@ -304,9 +293,6 @@ export function ProfileForm({
         </>
       )}
       <div className="modal-actions">
-        <button className="ghost" onClick={onClose}>
-          {t.cancel}
-        </button>
         <button className="ghost" onClick={test}>
           <Bot size={15} />
           {t.test}
@@ -329,7 +315,6 @@ function Direct({
   executions,
   targets,
   onSave,
-  onClose,
   locale,
 }: {
   d: Draft;
@@ -341,17 +326,21 @@ function Direct({
   executions: ExecutionEnvironment[];
   targets: TargetEnvironment[];
   onSave: () => void;
-  onClose: () => void;
   locale: Locale;
 }) {
   const t = locales[locale],
     copy = localeMessages<BuildWizardCopy>(locale, "buildWizard");
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  useEffect(() => {
+    void api<Persona[]>("/api/personas").then(setPersonas).catch(() => setPersonas([]));
+  }, []);
+  const selectedRunner = runners.find((runner) => runner.id === d.runner_id);
   const scheduleCopy = locale === "ko" ? { label: "실행 시간 창", hint: "선택한 요일과 시간에만 실행합니다. 그 외 시간에는 대기합니다.", enable: "실행 시간 창 사용", start: "시작", end: "종료", days: ["월", "화", "수", "목", "금", "토", "일"] } : locale === "ja" ? { label: "実行時間帯", hint: "選択した曜日と時間帯だけ実行します。時間外は待機します。", enable: "実行時間帯を使用", start: "開始", end: "終了", days: ["月", "火", "水", "木", "金", "土", "日"] } : { label: "Execution window", hint: "Run only on the selected days and time range. Outside the window, the run waits.", enable: "Enable execution window", start: "Start", end: "End", days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
   const [step, setStep] = useState(1);
   return (
     <div className="build-wizard">
       <ol className="wizard-steps">
-        {[t.common.build, t.evaluation.criteria, t.ui.review].map(
+        {[copy.basics, copy.evaluationSetup, copy.schedule, copy.decisionPolicy, t.ui.review].map(
           (x, i) => (
             <li key={x} className={step === i + 1 ? "current" : ""}>
               <button onClick={() => setStep(i + 1)}>
@@ -375,10 +364,16 @@ function Direct({
               onChange={(e) => setD({ ...d, name: e.target.value })}
             />
           </Field>
+          <Field label={copy.purpose.label} description={copy.purpose.hint}>
+            <textarea
+              value={d.purpose}
+              onChange={(e) => setD({ ...d, purpose: e.target.value })}
+            />
+          </Field>
           <Field label={copy.runner.label} description={copy.runner.hint}>
             <select
               value={d.runner_id}
-              onChange={(e) => setD({ ...d, runner_id: e.target.value })}
+              onChange={(e) => setD({ ...d, runner_id: e.target.value, runner_version: null })}
             >
               <option value="" />
               {runners.map((x) => (
@@ -388,6 +383,13 @@ function Direct({
               ))}
             </select>
           </Field>
+          <Field label={copy.runnerVersion.label} description={copy.runnerVersion.hint}>
+            <select value={d.runner_version ?? "latest"} onChange={(e) => setD({ ...d, runner_version: e.target.value === "latest" ? null : Number(e.target.value) })} disabled={!d.runner_id}>
+              <option value="latest">{copy.runnerVersion.latest}</option>
+              {(runners.find((item) => item.id === d.runner_id)?.versions ?? []).slice().sort((a, b) => b.version - a.version).map((version) => <option key={version.version} value={version.version}>v{version.version}</option>)}
+            </select>
+          </Field>
+          {selectedRunner && <RunnerWorkflowPreview key={`${selectedRunner.id}-${d.runner_version ?? "latest"}`} runnerId={selectedRunner.id} version={d.runner_version} locale={locale} />}
           <Field
             label={copy.targetEnvironment.label}
             description={copy.targetEnvironment.hint}
@@ -423,12 +425,6 @@ function Direct({
                 </option>
               ))}
             </select>
-          </Field>
-          <Field label={copy.purpose.label} description={copy.purpose.hint}>
-            <textarea
-              value={d.purpose}
-              onChange={(e) => setD({ ...d, purpose: e.target.value })}
-            />
           </Field>
         </div>
       )}
@@ -466,6 +462,24 @@ function Direct({
               ))}
             </select>
           </Field>
+          <Field
+            label="Personas"
+            description="Optional reusable user perspectives supplied to this runner. Select more than one for multi-persona simulations."
+          >
+            <select
+              multiple
+              value={d.persona_ids}
+              onChange={(event) =>
+                setD({ ...d, persona_ids: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })
+              }
+            >
+              {personas.map((persona) => (
+                <option key={persona.id} value={persona.id}>
+                  {persona.name} · {persona.locale}
+                </option>
+              ))}
+            </select>
+          </Field>
           <Field label={copy.aiProfile.label} description={copy.aiProfile.hint}>
             <select
               value={d.model_profile_name}
@@ -480,6 +494,10 @@ function Direct({
               ))}
             </select>
           </Field>
+        </div>
+      )}
+      {step === 3 && (
+        <div className="modal-form">
           <Field label={copy.timezone.label} description={copy.timezone.hint}>
             <input
               value={d.timezone}
@@ -500,8 +518,8 @@ function Direct({
           </Field>
           <Field label={copy.iterationTiming.label} description={copy.iterationTiming.hint}>
             <select value={d.cadence_mode} onChange={(e) => setD({ ...d, cadence_mode: e.target.value as Draft["cadence_mode"] })}><option value="after_completion">{copy.iterationTimingAfterCompletion}</option><option value="fixed">{copy.iterationTimingFixed}</option></select>
-            {d.cadence_mode === "fixed" && <select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select>}
           </Field>
+          {d.cadence_mode === "fixed" && <Field label={copy.overrunPolicy.label} description={copy.overrunPolicy.hint}><select value={d.overrun_policy} onChange={(e) => setD({ ...d, overrun_policy: e.target.value as Draft["overrun_policy"] })}><option value="wait">{copy.iterationTimingWait}</option><option value="interrupt_eval">{copy.iterationTimingInterrupt}</option></select></Field>}
           <Field label={copy.runLimit.label} description={copy.runLimit.hint}>
             <input
               type="number"
@@ -515,6 +533,10 @@ function Direct({
             <label className="build-schedule-toggle"><input type="checkbox" checked={d.schedule_enabled} onChange={(e) => setD({ ...d, schedule_enabled: e.target.checked })} /> {scheduleCopy.enable}</label>
             {d.schedule_enabled && <div className="build-schedule-fields"><div className="build-schedule-days">{scheduleCopy.days.map((day, index) => <label key={day}><input type="checkbox" checked={d.schedule_weekdays.includes(index)} onChange={() => setD({ ...d, schedule_weekdays: d.schedule_weekdays.includes(index) ? d.schedule_weekdays.filter((value) => value !== index) : [...d.schedule_weekdays, index] })} />{day}</label>)}</div><label>{scheduleCopy.start}<input type="time" value={d.schedule_start_time} onChange={(e) => setD({ ...d, schedule_start_time: e.target.value })} /></label><label>{scheduleCopy.end}<input type="time" value={d.schedule_end_time} onChange={(e) => setD({ ...d, schedule_end_time: e.target.value })} /></label></div>}
           </Field>
+        </div>
+      )}
+      {step === 4 && (
+        <div className="modal-form">
           <Field label={copy.iterationStrategy.label} description={copy.iterationStrategy.hint}>
             <select value={d.iteration_strategy} onChange={(e) => setD({ ...d, iteration_strategy: e.target.value as Draft["iteration_strategy"] })}>
               <option value="linear">{copy.iterationStrategyLinear}</option>
@@ -558,9 +580,8 @@ function Direct({
           </Field>
         </div>
       )}
-      {step === 3 && (
+      {step === 5 && (
         <div className="wizard-review">
-          <p>{t.ui.review}</p>
           <dl>
             <dt>{copy.name}</dt>
             <dd>{d.name || "—"}</dd>
@@ -576,7 +597,7 @@ function Direct({
             {t.ui.back}
           </button>
         )}
-        {step < 3 ? (
+        {step < 5 ? (
           <button className="approve" onClick={() => setStep(step + 1)}>
             {copy.next}
             <ChevronRight size={15} />
@@ -586,171 +607,36 @@ function Direct({
             {t.ui.save}
           </button>
         )}
-        <button className="ghost" onClick={onClose}>
-          {t.ui.cancel}
-        </button>
       </div>
     </div>
   );
 }
 
-function Quick({
-  item,
-  profiles,
-  create,
-  back,
-  close,
-  locale,
-}: {
-  item: QuickStart;
-  profiles: Settings[];
-  create: (id: string, v: Record<string, string>) => Promise<unknown>;
-  back: () => void;
-  close: () => void;
-  locale: Locale;
-}) {
+function RunnerWorkflowPreview({ runnerId, version, locale }: { runnerId: string; version: number | null; locale: Locale }) {
   const t = locales[locale].ui;
-  const display = item;
-  const [v, setV] = useState<Record<string, string>>(() =>
-      Object.fromEntries(
-        item.parameters.map((p) => [
-          p.key,
-          p.default ??
-            (p.type === "model_profile"
-              ? (profiles[0]?.profile_name ?? "")
-              : ""),
-        ]),
-      ),
-    ),
-    [review, setReview] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const submit = async () => {
-    setBusy(true);
-    try {
-      await create(item.id, v);
-      close();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Creation failed");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <div className="quick-start-form">
-      <button className="ghost" onClick={back}>
-        <ChevronLeft size={15} />
-        {t.quickStarts}
-      </button>
-      <div className="quick-start-form__heading">
-        <Sparkles size={19} />
-        <div>
-          <strong>{display.name}</strong>
-          <p>{display.description}</p>
-        </div>
-      </div>
-      {review ? (
-        <div className="quick-start-review">
-          <p>{t.quickStartReview}</p>
-          <dl>
-            {display.parameters.map((p) => (
-              <>
-                <dt key={`${p.key}a`}>{p.label}</dt>
-                <dd key={`${p.key}b`}>{v[p.key] || "—"}</dd>
-              </>
-            ))}
-          </dl>
-        </div>
-      ) : (
-        <div className="modal-form">
-          {display.parameters.map((p) => (
-            <Field key={p.key} label={p.label}>
-              {p.type === "select" ? (
-                <select
-                  value={v[p.key]}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                >
-                  {p.options?.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              ) : p.type === "model_profile" ? (
-                <select
-                  value={v[p.key]}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                >
-                  {profiles.map((x) => (
-                    <option key={x.profile_name} value={x.profile_name}>
-                      {x.profile_name}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={p.type === "url" ? "url" : "text"}
-                  value={v[p.key]}
-                  placeholder={p.placeholder}
-                  onChange={(e) => setV({ ...v, [p.key]: e.target.value })}
-                />
-              )}
-            </Field>
-          ))}
-        </div>
-      )}
-      <div className="modal-actions">
-        {error && <small className="hint">{error}</small>}
-        {review ? (
-          <>
-            <button className="ghost" onClick={() => setReview(false)}>
-              {t.edit}
-            </button>
-            <button className="approve" disabled={busy} onClick={submit}>
-              {busy ? t.creating : t.createAssetsAndBuild}
-            </button>
-          </>
-        ) : (
-          <button className="approve" onClick={() => setReview(true)}>
-            {t.review}
-            <ChevronRight size={15} />
-          </button>
-        )}
-        <button className="ghost" onClick={close}>
-          {t.cancel}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function QuickStartCard({
-  item,
-  translation,
-  labels,
-  pick,
-}: {
-  item: QuickStart;
-  translation: QuickStartTranslation | null;
-  labels?: { name: string; description: string };
-  pick: (item: QuickStart) => void;
-}) {
-  const display = withQuickStartTranslation(item, translation, labels);
-  return (
-    <article className="quick-start-card">
-      <button className="quick-start-card__select" onClick={() => pick(item)}>
-        <Sparkles size={18} />
-        <span>
-          <strong>{display.name}</strong>
-          <small>{display.description}</small>
-          <em>
-            {item.publisher?.name ?? "Community"} · v{item.version}
-          </em>
-        </span>
-        <ChevronRight size={16} />
-      </button>
-    </article>
-  );
+  const [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null);
+  const [graphLoading, setGraphLoading] = useState(true);
+  const [graphError, setGraphError] = useState("");
+  useEffect(() => {
+    let active = true;
+    const query = version === null ? "" : `?version=${encodeURIComponent(version)}`;
+    api<WorkflowGraphDefinition | null>(`/api/runners/${encodeURIComponent(runnerId)}/preview-graph${query}`)
+      .then((graph) => {
+        if (active) setWorkflowGraph(graph);
+      })
+      .catch((graphError: Error) => {
+        if (active) setGraphError(graphError.message);
+      })
+      .finally(() => {
+        if (active) setGraphLoading(false);
+      });
+    return () => { active = false; };
+  }, [runnerId, version]);
+  return <section className="build-runner-workflow" aria-label={t.workflowGraph}>
+    <strong>{t.workflowGraph}</strong>
+    <p>{t.runnerWorkflowDescription}</p>
+    {graphLoading ? <p className="hint">{t.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || t.noWorkflowGraph}</p>}
+  </section>;
 }
 
 export function BuildsPage(props: {
@@ -766,14 +652,9 @@ export function BuildsPage(props: {
   onTest: (id: string) => Promise<Run>;
   onCreate: (v: Draft) => Promise<unknown>;
   onUpdate: (id: string, v: Draft) => Promise<unknown>;
+  onToggleStar: (id: string, starred: boolean) => Promise<unknown>;
   onDelete: (id: string) => void;
-  onQuickStartCreate: (
-    id: string,
-    v: Record<string, string>,
-  ) => Promise<unknown>;
-  quickStartRequest?: number;
-  quickStartSelection?: string;
-  onQuickStartRequestHandled?: () => void;
+  onOpenQuickStart: () => void;
 }) {
   const {
     locale,
@@ -788,35 +669,25 @@ export function BuildsPage(props: {
     onTest,
     onCreate,
     onUpdate,
+    onToggleStar,
     onDelete,
-    onQuickStartCreate,
-    quickStartRequest,
-    quickStartSelection,
-    onQuickStartRequestHandled,
+    onOpenQuickStart,
   } = props;
   const t = locales[locale],
     ui = t.ui;
   const [open, setOpen] = useState(false),
     [edit, setEdit] = useState<Build | null>(null),
     [d, setD] = useState(empty),
-    [mode, setMode] = useState<"chooser" | "quick" | "direct">("chooser"),
-    [items, setItems] = useState<QuickStart[]>([]),
-    [picked, setPicked] = useState<QuickStart | null>(null),
-    [error, setError] = useState(""),
+    [mode, setMode] = useState<"chooser" | "direct">("chooser"),
+    [, setError] = useState(""),
     [page, setPage] = useState(1),
     [size, setSize] = useState(15),
     [selected, setSelected] = useState(""),
-    [testRun, setTestRun] = useState<Run | null>(null),
-    file = useRef<HTMLInputElement>(null);
-  const translations = useTemplateTranslations<QuickStartTranslation>(
-    "quick-start",
-    items.map((item) => item.id),
-    locale,
-  );
-  const translationCopy = locales[locale].templateTranslation;
-  const quickStartLabels = localeMessages<
-    Record<string, { name: string; description: string }>
-  >(locale, "quickStartLabels");
+    [testRun, setTestRun] = useState<Run | null>(null);
+  const taskCount = (build: Build) =>
+    testCaseSets.find((set) => set.id === build.test_case_set_id)?.cases.length ??
+    build.test_cases?.length ??
+    0;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
@@ -831,7 +702,7 @@ export function BuildsPage(props: {
       .then(setTestRun)
       .catch((error) =>
         setError(
-          error instanceof Error ? error.message : "Test failed to start",
+          error instanceof Error ? error.message : ui.testFailedToStart,
         ),
       );
   };
@@ -843,43 +714,11 @@ export function BuildsPage(props: {
       ).catch(() => undefined);
     setTestRun(null);
   };
-  const start = (
-    initialMode: "chooser" | "quick" = "chooser",
-    initialQuickStartId?: string,
-  ) => {
+  const start = () => {
     setEdit(null);
     setD(empty);
-    setMode(initialMode);
-    setPicked(null);
+    setMode("chooser");
     setOpen(true);
-    api<QuickStart[]>("/api/quick-starts")
-      .then((next) => {
-        setItems(next);
-        setPicked(
-          initialQuickStartId
-            ? (next.find((item) => item.id === initialQuickStartId) ?? null)
-            : null,
-        );
-      })
-      .catch((e) => setError(e.message));
-  };
-  useEffect(() => {
-    if (!quickStartRequest) return;
-    queueMicrotask(() => {
-      start("quick", quickStartSelection);
-      onQuickStartRequestHandled?.();
-    });
-  }, [quickStartRequest, quickStartSelection, onQuickStartRequestHandled]);
-  const importItem = async (f: File | undefined) => {
-    if (!f) return;
-    try {
-      await api("/api/quick-starts/import", "POST", {
-        manifest: JSON.parse(await f.text()),
-      });
-      setItems(await api("/api/quick-starts"));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Import failed");
-    }
   };
   const cols: Column<Build>[] = [
       {
@@ -898,8 +737,30 @@ export function BuildsPage(props: {
       {
         id: "name",
         header: locales[locale].evaluation.name,
-        render: (b) => b.name,
+        render: (b) => (
+          <span className="build-name">
+            <button
+              className={`build-star${b.starred ? " build-star--active" : ""}`}
+              type="button"
+              aria-label={b.starred ? `Unstar ${b.name}` : `Star ${b.name}`}
+              title={b.starred ? `Unstar ${b.name}` : `Star ${b.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                void onToggleStar(b.id, !b.starred);
+              }}
+            >
+              <Star size={16} fill={b.starred ? "currentColor" : "none"} />
+            </button>
+            {b.name}
+          </span>
+        ),
         sortValue: (b) => b.name,
+      },
+      {
+        id: "tasks",
+        header: t.evaluation.tasks,
+        render: (b) => taskCount(b),
+        sortValue: taskCount,
       },
       {
         id: "repository",
@@ -1007,7 +868,7 @@ export function BuildsPage(props: {
             setOpen(true);
           }}
           className="build-table"
-          gridTemplateColumns="36px 1fr 1fr 180px 180px 110px"
+          gridTemplateColumns="36px 1fr 90px 1fr 180px 180px 110px"
         />
         <Pagination
           locale={locale}
@@ -1045,7 +906,10 @@ export function BuildsPage(props: {
           <div className="create-mode-picker">
             <button
               className="create-mode-card"
-              onClick={() => setMode("quick")}
+              onClick={() => {
+                setOpen(false);
+                onOpenQuickStart();
+              }}
             >
               <Sparkles size={22} />
               <span>
@@ -1067,74 +931,6 @@ export function BuildsPage(props: {
             </button>
           </div>
         )}
-        {mode === "quick" && !picked && (
-          <div className="quick-start-picker">
-            <div className="quick-start-picker__head">
-              <button className="ghost" onClick={() => setMode("chooser")}>
-                <ChevronLeft size={15} />
-                {ui.back}
-              </button>
-              <input
-                className="visually-hidden"
-                ref={file}
-                type="file"
-                accept="application/json,.json"
-                onChange={(e) => importItem(e.target.files?.[0])}
-              />
-              <div className="template-picker-actions">
-                <button
-                  className="ghost"
-                  type="button"
-                  disabled={translations.loading}
-                  onClick={
-                    translations.content(items[0]?.id ?? "")
-                      ? () => translations.showOriginal()
-                      : () => translations.translate()
-                  }
-                >
-                  <Languages size={15} />
-                  {translations.loading
-                    ? translationCopy.translating
-                    : translations.content(items[0]?.id ?? "")
-                      ? translationCopy.showOriginal
-                      : translationCopy.translate}
-                </button>
-                <button className="ghost" onClick={() => file.current?.click()}>
-                  <FileUp size={15} />
-                  {ui.importQuickStart}
-                </button>
-              </div>
-            </div>
-            <div className="quick-start-list">
-              {items.map((item) => (
-                <QuickStartCard
-                  key={item.id}
-                  item={item}
-                  translation={translations.content(item.id)}
-                  labels={quickStartLabels[item.id]}
-                  pick={setPicked}
-                />
-              ))}
-            </div>
-            {(error || translations.error) && (
-              <small className="hint">{error || translationCopy.failed}</small>
-            )}
-          </div>
-        )}
-        {mode === "quick" && picked && (
-          <Quick
-            item={withQuickStartTranslation(
-              picked,
-              translations.content(picked.id),
-              quickStartLabels[picked.id],
-            )}
-            profiles={profiles}
-            create={onQuickStartCreate}
-            back={() => setPicked(null)}
-            close={() => setOpen(false)}
-            locale={locale}
-          />
-        )}{" "}
         {mode === "direct" && (
           <Direct
             d={d}
@@ -1146,7 +942,6 @@ export function BuildsPage(props: {
             executions={executionEnvironments}
             targets={targetEnvironments}
             onSave={save}
-            onClose={() => setOpen(false)}
             locale={locale}
           />
         )}

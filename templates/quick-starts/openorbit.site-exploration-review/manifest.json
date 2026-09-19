@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.site-exploration-review",
+  "version": "1.0.3",
+  "name": "Site exploration review",
+  "description": "Explore a site through safe links and leave evidence-backed product feedback. Requires a running app, Playwright browser, and LangGraph.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Site exploration review",
+      "placeholder": "e.g. Production site exploration review",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "base_url",
+      "label": "Browser base URL",
+      "type": "url",
+      "required": true,
+      "placeholder": "http://localhost:3000",
+      "tooltip": "Public URL that Playwright opens while collecting browser evidence. Leave blank only when this Quick Start does not use a browser."
+    },
+    {
+      "key": "review_focus",
+      "label": "Review focus",
+      "type": "string",
+      "required": true,
+      "default": "clarity, usefulness, and friction",
+      "placeholder": "e.g. first-time visitor experience",
+      "tooltip": "Product experience, route, or concern the site review should prioritize."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile, or create one for this build."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "LangGraph site exploration runner created by Quick Start.",
+      "template_id": "site-exploration",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Review the site-exploration evidence for ${review_focus}. Give an evidence-backed product opinion and report reproducible friction or defects only."
+    },
+    "test_case_set": {
+      "name": "${build_name} exploration",
+      "description": "Bounded site exploration created by Quick Start.",
+      "cases": [
+        {
+          "id": "site-exploration",
+          "name": "Explore site",
+          "path": "/",
+          "prompt": "Follow safe same-site links.",
+          "acceptance": "Capture rendered page evidence."
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local"
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "browser_base_url": "${base_url}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Explore a site and assess the rendered experience.",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 30,
+    "run_limit": 1,
+    "approval_score": 8,
+    "enabled": true
+  }
+}

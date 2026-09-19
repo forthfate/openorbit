@@ -1,0 +1,6 @@
+{
+  "id": "json-agent-cycle",
+  "name": "User journey simulation",
+  "description": "Runs one bounded agent simulation per iteration while OpenOrbit retains fixed inputs, evidence, and supervision.",
+  "entrypoint": "runner.py"
+}

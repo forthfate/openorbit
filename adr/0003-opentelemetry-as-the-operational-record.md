@@ -8,7 +8,7 @@ OpenTelemetry spans correlate workflow, process and model operations with a run 
 
 ## Current implementation
 
-Orbit exports workflow, step, remote-invocation and model spans to a local JSONL OTEL exporter. Run metadata, console output and evidence are retained with the local run record.
+Orbit exports workflow, step, remote-invocation, supervisor evaluation and cycle-review model spans to a local JSONL OTEL exporter. It includes redaction-safe request/response fingerprints and lengths, lifecycle metadata and outcomes. Run metadata, console output and full prompt/response evidence are retained with the local run record.
 
 ## Planned work
 

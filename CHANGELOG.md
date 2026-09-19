@@ -5,6 +5,71 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-09-15
+
+### Added
+
+- Quick Start packages can be imported from ZIP archives, and the bundled Quick Starts and Runner templates are available as file-based packages.
+- Builds can preview saved Runner-revision workflows, show their Run counts, and Runs identify records whose Build has been deleted.
+- Run detail summaries show the current iteration and configured iteration limit.
+- Deleting an Asset now requires confirmation.
+
+### Changed
+
+- Opening a Quick Start from the dashboard keeps the user on the dashboard until the Build is created.
+- Quick Start setup removes unused inputs and lets users select an existing AI model profile or create a new one during setup.
+- Quick Start and Runner creation apply cached translations immediately and improve English, Korean, and Japanese labels.
+- Browser-path navigation prevents Improvements views from retaining stale state after navigating to another page.
+
+### Fixed
+
+- Quick Start creation errors use the shared toast notification without duplicate inline messages.
+- Runner child-process output is forwarded to the Run-detail target-log stream.
+- Quick Start workflow guidance, input hints, and the new model-profile layout are clearer and more reliable.
+
+## [0.10.0] - 2026-09-15
+
+### Added
+
+- Issue management now supports pagination, multi-select status and severity filters, bulk selection, and a recoverable deleted management state.
+- Improvements now show runs for the selected Build alongside a persona journey timeline. Journey events are grouped by persona, ordered over time, and open the corresponding run detail; the timeline supports horizontal drag scrolling.
+- Proposal decision history is grouped by persona so repeated decisions are easier to compare in context.
+- Runner templates and Quick Starts forward target process output to the Run detail target-log stream, including external browser and AI-agent activity.
+
+### Changed
+
+- Issue detail views show the supervisor decision rationale directly and use the same outside-click popover behavior as Run history.
+- Dashboard run status uses localized label-style metadata, and the task operations section no longer includes the redundant Improvement Results eyebrow.
+- Persisted runner state keeps persona-scoped journey handoff information for subsequent checks.
+
+### Fixed
+
+- Target logs from external executions are retained and visible in the Run detail Logs tab.
+- Issue filtering and selection interactions now use the correct collection state.
+
+## [0.9.0] - 2026-09-14
+
+### Added
+
+- Runner versions are retained immutably, and Builds can use either the latest Runner or a selected Runner version.
+- Run records retain the Runner version and source hash used for execution.
+- Runs display Runner workflow graphs, lifecycle progress, and function-level trace information.
+- Projects can use a project-local application-data directory.
+- Added Autonomous Persona Journey and browser automation Runner templates.
+
+### Changed
+
+- Assets and Settings now share the same AI model-profile catalog.
+- Asset catalogs default to newest-first ordering and provide common table headers and scrollable lists.
+- The Improvements build selector is ordered by most recent run time.
+- Runs table status placement and iteration display are clearer.
+
+### Fixed
+
+- Runs no longer count the finalization step as an extra iteration (for example, `2/1` now displays as `1/1`).
+- Runner process-group cleanup and workflow function-state reporting are more reliable.
+- Prompt draft version switching and localized discard confirmation behavior were improved.
+
 ## [0.8.0] - 2026-09-10
 
 ### Added
@@ -195,3 +260,6 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.4.0]: https://github.com/forthfate/openorbit/releases/tag/v0.4.0
 [0.4.1]: https://github.com/forthfate/openorbit/releases/tag/v0.4.1
 [0.8.0]: https://github.com/forthfate/openorbit/releases/tag/v0.8.0
+[0.9.0]: https://github.com/forthfate/openorbit/releases/tag/v0.9.0
+[0.10.0]: https://github.com/forthfate/openorbit/releases/tag/v0.10.0
+[0.11.0]: https://github.com/forthfate/openorbit/releases/tag/v0.11.0

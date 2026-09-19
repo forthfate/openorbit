@@ -1,0 +1,6 @@
+{
+  "id": "example-runner",
+  "name": "Example runner",
+  "description": "A minimal portable runner template.",
+  "entrypoint": "runner.py"
+}

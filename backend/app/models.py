@@ -15,12 +15,22 @@ PHASE_ALIASES = {
     "teardown": "after_each",
     "finalize": "after_all",
 }
-LIFECYCLE_PHASES = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
+LIFECYCLE_PHASES = (
+    "before_all",
+    "before_each",
+    "execute",
+    "verify",
+    "after_supervision",
+    "after_each",
+    "after_all",
+)
 
 
 class Step(BaseModel):
     id: str
-    phase: Literal["before_all", "before_each", "execute", "verify", "after_each", "after_all"]
+    phase: Literal[
+        "before_all", "before_each", "execute", "verify", "after_supervision", "after_each", "after_all"
+    ]
     name: str
     command: list[str]
     working_directory: str
@@ -28,6 +38,7 @@ class Step(BaseModel):
     approval: Literal["not_required", "required"] = "not_required"
     on_failure: Literal["stop", "continue"] = "stop"
     minimum_interval_seconds: int = Field(default=0, ge=0, le=86_400)
+    after_supervision: bool = False
 
     @field_validator("phase", mode="before")
     @classmethod
@@ -45,6 +56,7 @@ class Workflow(BaseModel):
     risk: Literal["low", "medium", "high"]
     tags: list[str] = []
     runner_id: str | None = None
+    runner_version: int | None = None
     steps: list[Step]
     test_steps: list[Step] | None = None
 
@@ -58,6 +70,16 @@ class Workflow(BaseModel):
         return phases in (
             ["before_all", "before_each", "execute", "verify", "after_each"],
             ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_each", "execute", "verify", "after_supervision", "after_each"],
+            [
+                "before_all",
+                "before_each",
+                "execute",
+                "verify",
+                "after_supervision",
+                "after_each",
+                "after_all",
+            ],
         )
 
 
@@ -65,10 +87,13 @@ class Run(BaseModel):
     id: str
     workflow_id: str
     workflow_name: str
+    runner_version: int | None = None
+    runner_source_sha256: str | None = None
     build_id: str | None = None
     build_name: str | None = None
     repository: str | None = None
     supervisor_profile_name: str | None = None
+    output_locale: str | None = None
     prompt_source: str | None = None
     prompt_snapshot: str | None = None
     execution_mode: Literal["run", "test"] = "run"
@@ -106,6 +131,7 @@ class Run(BaseModel):
     supervisor_response: dict[str, Any] | None = None
     supervisor_error: str | None = None
     supervisor_results: list[dict[str, Any]] = Field(default_factory=list)
+    workflow_graph: dict[str, Any] | None = None
     runner_output: str = ""
     step_results: list[dict] = []
     approval_reason: str | None = None

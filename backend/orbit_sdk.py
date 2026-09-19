@@ -11,13 +11,19 @@ import base64
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
+import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Iterator, Literal
+
+from coding_agents import build_coding_agent_command
 
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
@@ -29,6 +35,7 @@ PHASE_ALIASES = {
     "setup": "before_each",
     "run": "execute",
     "eval": "verify",
+    "post_supervision": "after_supervision",
     "teardown": "after_each",
     "finalize": "after_all",
 }
@@ -49,6 +56,7 @@ class GraphNode:
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
     description: str | None = None
+    after_supervision: bool = False
 
 
 @dataclass(frozen=True)
@@ -84,6 +92,7 @@ class Graph:
         inputs: tuple[str, ...] | list[str] = (),
         outputs: tuple[str, ...] | list[str] = (),
         description: str | None = None,
+        after_supervision: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Annotate one function as a visual workflow node.
 
@@ -95,17 +104,33 @@ class Graph:
             node_id = id or handler.__name__
             if not node_id or node_id in self._nodes:
                 raise ValueError(f"graph node ID must be unique: {node_id!r}")
+            node_phase = canonical_phase(phase or getattr(handler, "__orbit_phase__", "")) or None
             node = GraphNode(
                 id=node_id,
                 title=title or handler.__name__.replace("_", " ").title(),
-                phase=phase,
+                phase=node_phase,
                 inputs=tuple(inputs),
                 outputs=tuple(outputs),
                 description=description,
+                after_supervision=after_supervision,
             )
             self._nodes[node_id] = node
             setattr(handler, "__orbit_graph_node__", node)
-            return handler
+
+            @wraps(handler)
+            def instrumented(*args: Any, **kwargs: Any) -> Any:
+                context = next(
+                    (value for value in (*args, *kwargs.values()) if isinstance(value, RunnerContext)),
+                    None,
+                )
+                if context is None:
+                    return handler(*args, **kwargs)
+                with context.function(node_id):
+                    return handler(*args, **kwargs)
+
+            setattr(instrumented, "__orbit_graph_node__", node)
+            setattr(handler, "__orbit_graph_wrapper__", instrumented)
+            return instrumented
 
         return register
 
@@ -135,6 +160,7 @@ class Graph:
                     "inputs": list(node.inputs),
                     "outputs": list(node.outputs),
                     "description": node.description,
+                    **({"after_supervision": True} if node.after_supervision else {}),
                 }
                 for node in self._nodes.values()
             ],
@@ -201,6 +227,12 @@ def _proposal_history_path(project_root: Path) -> Path:
     return ORBIT_APP_DATA / "proposal-history" / project_key / "decisions.json"
 
 
+def _state_name(name: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}", name):
+        raise ValueError("state name must be 1-64 letters, numbers, underscores, or hyphens")
+    return name
+
+
 def _repository_snapshot_paths(project_root: Path) -> tuple[Path, Path]:
     """Return the private manifest location for Git-object repository snapshots."""
     project_key = _sha256(str(project_root).encode("utf-8"))
@@ -229,9 +261,73 @@ class RunnerContext:
     mode: str
     loop_index: int
     environment: dict[str, str] = field(default_factory=lambda: dict(os.environ))
+    _active_workflow_functions: set[str] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.phase = canonical_phase(self.phase)
+
+    @contextmanager
+    def function(self, function_id: str) -> Iterator[None]:
+        """Record one graph-annotated function's outcome within this lifecycle phase.
+
+        Args:
+            function_id: Stable graph function identifier shown in retained run evidence.
+
+        Yields:
+            Control to the wrapped function body.
+        """
+        if not function_id.strip():
+            raise ValueError("function_id must not be empty")
+        if function_id in self._active_workflow_functions:
+            yield
+            return
+        self._active_workflow_functions.add(function_id)
+        started = datetime.now(UTC)
+        self.log(f"workflow function started: {function_id}")
+        self.emit_result(
+            {
+                "workflow_functions": [
+                    {
+                        "id": function_id,
+                        "status": "running",
+                        "started_at": started.isoformat(),
+                    }
+                ]
+            }
+        )
+        try:
+            yield
+        except BaseException:
+            self.log(f"workflow function failed: {function_id}")
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "failed",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
+            raise
+        else:
+            self.log(f"workflow function succeeded: {function_id}")
+            self.emit_result(
+                {
+                    "workflow_functions": [
+                        {
+                            "id": function_id,
+                            "status": "succeeded",
+                            "started_at": started.isoformat(),
+                            "ended_at": datetime.now(UTC).isoformat(),
+                        }
+                    ]
+                }
+            )
+        finally:
+            self._active_workflow_functions.discard(function_id)
 
     @property
     def resources(self) -> dict[str, object]:
@@ -240,6 +336,9 @@ class RunnerContext:
         The snapshot can contain the workflow, build, fixed test
         cases, model profile, and execution-environment settings. Prefer the
         typed convenience properties when one is available.
+
+        Returns:
+            Immutable resource values supplied for this invocation.
         """
         encoded = self.environment.get("ORBIT_RUNNER_RESOURCES", "")
         if not encoded:
@@ -248,12 +347,20 @@ class RunnerContext:
 
     @property
     def project_root(self) -> Path:
-        """Evaluation target root; use this instead of a machine-specific path."""
+        """Evaluation target root; use this instead of a machine-specific path.
+
+        Returns:
+            Resolved root directory of the evaluated target.
+        """
         return self.target_repository.resolve()
 
     @property
     def app_data(self) -> Path:
-        """Orbit's per-user writable data directory."""
+        """Orbit's per-user writable data directory.
+
+        Returns:
+            Writable Orbit AppData directory.
+        """
         return ORBIT_APP_DATA
 
     def project_path(self, *parts: str) -> Path:
@@ -271,12 +378,97 @@ class RunnerContext:
         return ORBIT_PROJECT_PATH(*parts)
 
     def managed_asset_dir(self, name: str) -> Path:
-        """Return a private, runner-managed AppData directory for a named asset set."""
+        """Return a private, runner-managed AppData directory for a named asset set.
+
+        Args:
+            name: Non-empty relative name for the runner-owned asset set.
+
+        Returns:
+            Writable AppData directory isolated from the target repository.
+        """
         if not name or any(part in {"", ".", ".."} for part in Path(name).parts):
             raise ValueError("managed asset name must be a relative, non-empty path")
         directory = self.app_data / "runner-assets" / _sha256(str(self.project_root).encode()) / name
         directory.mkdir(parents=True, exist_ok=True)
         return directory
+
+    def _state_path(self, name: str, scope: str) -> Path:
+        state_name = _state_name(name)
+        build_id = _state_name(str(self.build.get("id") or _sha256(str(self.project_root).encode())[:16]))
+        if scope not in {"build", "runner"}:
+            raise ValueError("state scope must be 'build' or 'runner'")
+        directory = self.app_data / "runner-state" / build_id / "build"
+        if scope == "runner":
+            runner_id = _state_name(
+                str(self.build.get("runner_id") or self.environment.get("ORBIT_RUNNER_ID") or "manual")
+            )
+            directory = self.app_data / "runner-state" / build_id / "runners" / runner_id
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{state_name}.json"
+
+    def load_state(self, name: str, default: object = None, *, scope: str = "runner") -> object:
+        """Load mutable runner- or build-scoped state from Orbit AppData.
+
+        State is separate from immutable run evidence. Use it only for bounded
+        continuation data required by a later run, such as a persona's last
+        observation or next check. State values must be JSON-safe.
+
+        Args:
+            name: Stable state name containing letters, numbers, underscores, or hyphens.
+            default: Value returned when no saved state exists.
+            scope: ``"runner"`` for runner-isolated state (the default), or
+                ``"build"`` for state shared by every runner in this build.
+
+        Returns:
+            The saved JSON value or ``default`` when the named state is absent.
+        """
+        path = self._state_path(name, scope)
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return default
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"Orbit runner state is invalid: {name}") from error
+        if not isinstance(document, dict) or document.get("schema_version") != 1:
+            raise RuntimeError(f"Orbit runner state is invalid: {name}")
+        return document.get("value", default)
+
+    def save_state(self, name: str, value: object, *, scope: str = "runner") -> dict[str, object]:
+        """Atomically save mutable runner- or build-scoped state in Orbit AppData.
+
+        The value is not copied into run evidence. Emit a bounded summary with
+        :meth:`emit_result` when a particular state transition needs auditing.
+
+        Args:
+            name: Stable state name containing letters, numbers, underscores, or hyphens.
+            value: JSON-safe value to retain for a later invocation of this build.
+            scope: ``"runner"`` for runner-isolated state (the default), or
+                ``"build"`` for state shared by every runner in this build.
+
+        Returns:
+            State name, update timestamp, and JSON byte size.
+        """
+        path = self._state_path(name, scope)
+        try:
+            encoded_value = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        except (TypeError, ValueError) as error:
+            raise ValueError("state value must be JSON serializable") from error
+        document = {
+            "schema_version": 1,
+            "updated_at": datetime.now(UTC).isoformat(),
+            "run_id": self.environment.get("ORBIT_RUN_ID") or None,
+            "iteration": self.loop_index,
+            "scope": scope,
+            "value": json.loads(encoded_value),
+        }
+        payload = json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+        _atomic_write(path, payload)
+        return {
+            "name": _state_name(name),
+            "scope": scope,
+            "updated_at": document["updated_at"],
+            "size": len(payload),
+        }
 
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
         """Atomically materialize runner-owned files outside the target repository.
@@ -424,7 +616,11 @@ class RunnerContext:
         return result
 
     def git_head(self) -> str | None:
-        """Return the checked-out commit, or None when the target is not a Git repository."""
+        """Return the checked-out commit, or None when the target is not a Git repository.
+
+        Returns:
+            Checked-out commit SHA, or ``None`` when no HEAD is available.
+        """
         result = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD"],
             cwd=self.project_root,
@@ -608,7 +804,11 @@ class RunnerContext:
         return record
 
     def repository_snapshots(self) -> list[dict[str, object]]:
-        """List retained repository snapshots, newest first."""
+        """List retained repository snapshots, newest first.
+
+        Returns:
+            Retained snapshot metadata ordered newest first.
+        """
         _, _, manifest = self._snapshot_manifest()
         snapshots = manifest["snapshots"]
         assert isinstance(snapshots, list)
@@ -660,6 +860,12 @@ class RunnerContext:
         recorded state. It also removes files created after the snapshot,
         including ignored and untracked files inside the target repository.
         Call this only while Orbit exclusively owns the target repository.
+
+        Args:
+            snapshot_id: Identifier returned by :meth:`snapshot_repository`.
+
+        Returns:
+            Restored snapshot metadata and restoration timestamp.
         """
         self._git_repository_root()
         _, _, manifest = self._snapshot_manifest()
@@ -702,13 +908,21 @@ class RunnerContext:
         return result
 
     def save_before_each_snapshot(self) -> dict[str, object]:
-        """Save this run's baseline once from a ``before_each`` handler."""
+        """Save this run's baseline once from a ``before_each`` handler.
+
+        Returns:
+            Baseline snapshot metadata, reusing an existing baseline for this run.
+        """
         if self.phase != "before_each":
             raise ValueError("baseline snapshots may only be saved during before_each")
         return self.snapshot_repository("baseline", once=True)
 
     def save_first_after_each_snapshot(self) -> dict[str, object] | None:
-        """Save the first completed iteration from an ``after_each`` handler."""
+        """Save the first completed iteration from an ``after_each`` handler.
+
+        Returns:
+            First-iteration snapshot metadata, or ``None`` after iteration one.
+        """
         if self.phase != "after_each":
             raise ValueError("iteration snapshots may only be saved during after_each")
         if self.loop_index != 1:
@@ -716,7 +930,11 @@ class RunnerContext:
         return self.snapshot_repository("iteration-1", once=True)
 
     def restore_before_each_snapshot(self) -> dict[str, object]:
-        """Restore the baseline saved by :meth:`save_before_each_snapshot` in ``after_all``."""
+        """Restore the baseline saved by :meth:`save_before_each_snapshot` in ``after_all``.
+
+        Returns:
+            Restored baseline metadata.
+        """
         if self.phase != "after_all":
             raise ValueError("baseline restoration may only be performed during after_all")
         baseline = next(
@@ -739,7 +957,14 @@ class RunnerContext:
     restore_setup_snapshot = restore_before_each_snapshot
 
     def record_commit_change(self, before: str | None) -> dict[str, object] | None:
-        """Retain commit-range evidence when a runner phase advances the target HEAD."""
+        """Retain commit-range evidence when a runner phase advances the target HEAD.
+
+        Args:
+            before: Commit SHA observed before the runner action.
+
+        Returns:
+            Commit-range evidence when HEAD changed, otherwise ``None``.
+        """
         after = self.git_head()
         if not before or not after or before == after:
             return None
@@ -787,7 +1012,14 @@ class RunnerContext:
         return result
 
     def windows_path(self, value: str | Path) -> str:
-        """Convert a WSL-mounted path to a Windows path for a Windows child process."""
+        """Convert a WSL-mounted path to a Windows path for a Windows child process.
+
+        Args:
+            value: Path below a WSL ``/mnt/<drive>`` mount.
+
+        Returns:
+            Equivalent Windows drive path.
+        """
         path = Path(value)
         parts = path.parts
         if len(parts) >= 4 and parts[1] == "mnt" and len(parts[2]) == 1:
@@ -891,6 +1123,14 @@ class RunnerContext:
         with the runner iteration, phase, run ID, timestamp, and SHA-256 hashes.
         Use :meth:`file_versions` to inspect retained versions and
         :meth:`rollback_file` to restore a selected one.
+
+        Args:
+            relative_path: Target-repository-relative file path to update.
+            content: UTF-8 text or raw bytes to write.
+            encoding: Encoding used when ``content`` is text.
+
+        Returns:
+            Change status, content hash, target path, and retained version metadata.
         """
         target, relative, directory, manifest_path, manifest = self._load_file_history(relative_path)
         build = self.build
@@ -936,7 +1176,14 @@ class RunnerContext:
         return {"changed": True, "path": relative, "sha256": _sha256(next_content), "version": record}
 
     def file_versions(self, relative_path: str | Path) -> list[dict[str, object]]:
-        """List retained pre-update versions for a project file, newest first."""
+        """List retained pre-update versions for a project file, newest first.
+
+        Args:
+            relative_path: Target-repository-relative file path.
+
+        Returns:
+            Retained version metadata ordered newest first.
+        """
         _, _, _, _, manifest = self._load_file_history(relative_path)
         return list(reversed(manifest["history"]))
 
@@ -946,6 +1193,13 @@ class RunnerContext:
         Rolling back first snapshots the current file as a new version. This
         makes a rollback reversible: call this method again using that newly
         returned version ID to return to the state before the rollback.
+
+        Args:
+            relative_path: Target-repository-relative file path to restore.
+            version_id: Retained version identifier to restore.
+
+        Returns:
+            Restored path, selected version ID, and metadata for the new rollback version.
         """
         target, relative, directory, manifest_path, manifest = self._load_file_history(relative_path)
         version = next((item for item in manifest["history"] if item.get("id") == version_id), None)
@@ -982,7 +1236,11 @@ class RunnerContext:
         return {"path": relative, "restored_version": version_id, "version": record}
 
     def proposal_decisions(self) -> list[dict[str, object]]:
-        """Return recorded accepted/rejected proposals for this target, newest first."""
+        """Return recorded accepted/rejected proposals for this target, newest first.
+
+        Returns:
+            Proposal decision and application events ordered newest first.
+        """
         path = _proposal_history_path(self.project_root)
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
@@ -1009,6 +1267,15 @@ class RunnerContext:
         Repeating the same decision for unchanged proposal content is idempotent,
         while a changed decision is appended as a new event. This produces a
         compact event stream for a future proposal-review UI.
+
+        Args:
+            proposal: JSON-safe proposal payload being decided.
+            decision: ``"accepted"`` or ``"rejected"``.
+            proposal_id: Optional stable external identifier for the proposal.
+            rationale: Optional human-readable decision reason.
+
+        Returns:
+            Whether an event was newly recorded and its decision record.
         """
         if not proposal:
             raise ValueError("proposal must not be empty")
@@ -1077,6 +1344,13 @@ class RunnerContext:
         This is an append-only lifecycle event. It lets a review UI traverse
         from a decision to an exact prompt snapshot and its rollback version
         without mutating the original decision record.
+
+        Args:
+            proposal_ids: Accepted proposal identifiers linked to the file update.
+            file_update: Metadata returned by :meth:`update_file`.
+
+        Returns:
+            Newly recorded proposal-application events.
         """
         version = file_update.get("version")
         if not isinstance(version, dict) or not version.get("id"):
@@ -1135,7 +1409,16 @@ class RunnerContext:
     def accept_proposal(
         self, proposal: dict[str, object], *, proposal_id: str | None = None, rationale: str = ""
     ) -> dict[str, object]:
-        """Record that a proposal was selected for this target's improvement history."""
+        """Record that a proposal was selected for this target's improvement history.
+
+        Args:
+            proposal: JSON-safe proposal payload to accept.
+            proposal_id: Optional stable external proposal identifier.
+            rationale: Optional human-readable acceptance reason.
+
+        Returns:
+            Whether an event was newly recorded and its decision record.
+        """
         return self.record_proposal_decision(
             proposal, "accepted", proposal_id=proposal_id, rationale=rationale
         )
@@ -1143,24 +1426,45 @@ class RunnerContext:
     def reject_proposal(
         self, proposal: dict[str, object], *, proposal_id: str | None = None, rationale: str = ""
     ) -> dict[str, object]:
-        """Record that a proposal was not selected for this target's improvement history."""
+        """Record that a proposal was not selected for this target's improvement history.
+
+        Args:
+            proposal: JSON-safe proposal payload to reject.
+            proposal_id: Optional stable external proposal identifier.
+            rationale: Optional human-readable rejection reason.
+
+        Returns:
+            Whether an event was newly recorded and its decision record.
+        """
         return self.record_proposal_decision(
             proposal, "rejected", proposal_id=proposal_id, rationale=rationale
         )
 
     @property
     def workflow(self) -> dict[str, object]:
-        """Return the workflow snapshot supplied by Orbit for this invocation."""
+        """Return the workflow snapshot supplied by Orbit for this invocation.
+
+        Returns:
+            Immutable workflow metadata, or an empty mapping when unavailable.
+        """
         return dict(self.resources.get("workflow", {}))
 
     @property
     def build(self) -> dict[str, object]:
-        """Return the build snapshot supplied by Orbit."""
+        """Return the build snapshot supplied by Orbit.
+
+        Returns:
+            Immutable build metadata, or an empty mapping when unavailable.
+        """
         return dict(self.resources.get("build", {}))
 
     @property
     def test_cases(self) -> list[dict[str, object]]:
-        """Return the fixed target test cases selected for this build."""
+        """Return the fixed target test cases selected for this build.
+
+        Returns:
+            Selected fixed test-case definitions.
+        """
         return list(self.resources.get("test_cases", []))
 
     def resource(self, name: str, default: object = None) -> object:
@@ -1169,6 +1473,9 @@ class RunnerContext:
         Args:
             name: Resource name, such as ``"model_profile"``.
             default: Value returned when the resource is absent.
+
+        Returns:
+            The requested resource value or ``default`` when it is absent.
         """
         return self.resources.get(name, default)
 
@@ -1177,6 +1484,12 @@ class RunnerContext:
 
         The profile contains provider settings only; its credential remains in
         the configured environment variable and is never emitted as evidence.
+
+        Args:
+            prompt: Target-AI input to send using the configured model profile.
+
+        Returns:
+            Profile name, resolved model name, and target-AI response text.
         """
         profile = self.resource("model_profile", {})
         if not isinstance(profile, dict) or not str(profile.get("model", "")).strip():
@@ -1192,10 +1505,21 @@ class RunnerContext:
             aws_profile=str(profile.get("aws_profile", "")),
         )
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+        self.log(f"target model request started: {settings.provider}/{settings.model}")
+        self.target_log(
+            f"Model request started: {settings.provider}/{settings.model}",
+            source="target-model",
+        )
+        response = provider.complete(settings, prompt)
+        self.log(f"target model request completed: {settings.provider}/{settings.model}")
+        self.target_log(
+            f"Model request completed: {settings.provider}/{settings.model}",
+            source="target-model",
+        )
         return {
             "profile_name": str(profile.get("profile_name", "")),
             "model": settings.model,
-            "response": provider.complete(settings, prompt),
+            "response": response,
         }
 
     @property
@@ -1205,6 +1529,9 @@ class RunnerContext:
         Runner phases run in separate subprocesses.  Reading the retained run
         record lets the next iteration use the previous iteration's feedback
         without coupling a runner to a target-specific state file.
+
+        Returns:
+            Latest completed supervisor response, or an empty mapping when unavailable.
         """
         run_id = self.environment.get("ORBIT_RUN_ID", "").strip()
         if not run_id:
@@ -1242,9 +1569,59 @@ class RunnerContext:
                         f"{run_id}:{iteration}:{index}"
                         for index, proposal in enumerate(improvements)
                         if isinstance(proposal, dict)
-                        and str(proposal.get("status") or "").lower() in {"adopted", "accepted"}
+                        and str(proposal.get("status") or "").lower() == "accepted"
                     ]
                 return feedback
+        return {}
+
+    @property
+    def current_issue_assessment(self) -> dict[str, object]:
+        """Return this iteration's first supervisor-assessed actionable issue.
+
+        The post-supervision agent phase uses this as its sole objective.  A
+        rejected issue is deliberately returned too, so the runner can record
+        an explicit skip rather than treating absence as approval.
+        """
+        run_id = self.environment.get("ORBIT_RUN_ID", "").strip()
+        if not run_id:
+            return {}
+        try:
+            values = json.loads(
+                (self.app_data / "data" / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return {}
+        for record in reversed(values.get("supervisor_results", [])):
+            if not isinstance(record, dict) or record.get("stage") != "issue_assessment":
+                continue
+            if int(record.get("iteration", 0)) != self.loop_index:
+                continue
+            response = record.get("response")
+            if not isinstance(response, dict):
+                continue
+            issues = response.get("reported_issues")
+            improvements = response.get("improvements")
+            # Manager templates commonly express a discovered product problem
+            # as an improvement proposal.  It is still an Issue for this
+            # lifecycle once the supervisor has scored and decided it. Prefer
+            # that user-facing proposal so the agent changes the same Issue
+            # shown in Issue Management rather than creating a parallel row.
+            candidates = [
+                {**improvement, "_orbit_issue_id": f"{run_id}:{self.loop_index}:{index}"}
+                for index, improvement in enumerate(improvements)
+                if isinstance(improvements, list) and isinstance(improvement, dict)
+            ]
+            candidates.extend(
+                {**issue, "_orbit_issue_id": f"{run_id}:{self.loop_index}:issue:{index}"}
+                for index, issue in enumerate(issues)
+                if isinstance(issues, list) and isinstance(issue, dict)
+            )
+            if candidates:
+                for issue in candidates:
+                    assessment = issue.get("evaluation")
+                    if not isinstance(assessment, dict) or assessment.get("approval") != "rejected":
+                        return issue
+                return candidates[0] if candidates else {}
         return {}
 
     def log(self, message: str) -> None:
@@ -1253,6 +1630,12 @@ class RunnerContext:
         This is for runner lifecycle and adapter progress. It is intentionally
         different from :meth:`target_log`, which records events emitted by the
         evaluated target and appears separately in the run's Logs tab.
+
+        Args:
+            message: Human-readable lifecycle progress message.
+
+        Returns:
+            ``None``. The message is written to runner output.
         """
         print(f"[orbit:{self.phase}] {message}", flush=True)
 
@@ -1276,6 +1659,9 @@ class RunnerContext:
             level: One of ``debug``, ``info``, ``warn``, ``warning``, or ``error``.
             source: Optional stable target-service name, trimmed to 256 characters.
             timestamp: Optional ISO-8601 timestamp. UTC time is used when omitted.
+
+        Returns:
+            ``None``. The target log entry is attached to current-step evidence.
 
         Raises:
             ValueError: If the message is empty, level is unsupported, or timestamp
@@ -1311,14 +1697,175 @@ class RunnerContext:
         proposal records. Values must be JSON serializable. Repeated result
         objects are merged by key, so prefer a single object for related data;
         use :meth:`target_log` for append-only target logging.
+
+        Args:
+            values: JSON-safe evidence object to attach to the current step.
+
+        Returns:
+            ``None``. The evidence is emitted to Orbit's runner protocol.
         """
         print("__ORBIT_RESULT__" + json.dumps(values, ensure_ascii=False), flush=True)
+
+    def register_evaluation(
+        self,
+        feedback: str,
+        *,
+        subject: str = "agent_change",
+        changed_files: list[str] | None = None,
+        validation: str = "",
+        improvement_fingerprint: str = "",
+    ) -> dict[str, object]:
+        """Register an AI-agent result that should receive a supervisor evaluation.
+
+        Register only after the agent has completed a meaningful change or
+        produced actionable feedback.  Merely running an iteration does not
+        create an evaluation, score, or approval decision.
+
+        Args:
+            feedback: Concise account of the agent's completed work and its evidence.
+            subject: Stable evaluation subject.  ``agent_change`` is the supported
+                default for autonomous SDK agents.
+            changed_files: Repository-relative files changed by the agent, if any.
+            validation: Verification performed by the agent after its work.
+
+        Returns:
+            The structured evaluation request emitted for the current step.
+        """
+        normalized_feedback = feedback.strip()
+        if not normalized_feedback:
+            raise ValueError("evaluation feedback must not be empty")
+        if subject != "agent_change":
+            raise ValueError("evaluation subject must be agent_change")
+        normalized_files = [
+            str(path).strip() for path in (changed_files or []) if isinstance(path, str) and path.strip()
+        ]
+        request = {
+            "subject": subject,
+            "feedback": normalized_feedback,
+            "changed_files": list(dict.fromkeys(normalized_files)),
+            "validation": validation.strip(),
+            "improvement_fingerprint": improvement_fingerprint.strip(),
+        }
+        self.emit_result({"evaluation_request": request})
+        return request
+
+    def run_ai_agent(
+        self,
+        prompt: str,
+        *,
+        provider: str,
+        options: str = "",
+        timeout: int = 1_800,
+    ) -> dict[str, object]:
+        """Run a locally installed coding agent and retain its completion evidence.
+
+        The agent must print ``ORBIT_AGENT_FEEDBACK: <summary>`` as its final
+        feedback line to opt its work into evaluation.  This keeps a silent or
+        no-op agent run from creating a score for the iteration.
+        """
+        normalized_prompt = prompt.strip()
+        if not normalized_prompt:
+            raise ValueError("AI agent prompt must not be empty")
+        # Agent edits are proposals, never writes to the evaluated repository.
+        # A proposal branch/worktree gives the coding agent a real Git checkout while
+        # preserving the operator's working tree and its uncommitted changes.
+        self._git_repository_root()
+        run_id = str(self.environment.get("ORBIT_RUN_ID") or "manual")
+        worktree_id = f"{run_id}-{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        worktree = ORBIT_APP_DATA / "agent-worktrees" / worktree_id
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        base_revision = self.git_head()
+        if not base_revision:
+            raise ValueError("AI agent proposals require a checked-out Git revision")
+        branch = f"orbit/agent-proposal/{run_id}/{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        self.exec(
+            ["git", "worktree", "add", "-b", branch, str(worktree), base_revision],
+            cwd=self.project_root,
+            target_log_source="ai-agent",
+        )
+        output = ""
+        changed_files: list[str] = []
+        patch = ""
+        keep_worktree = False
+        try:
+            output = self.exec(
+                build_coding_agent_command(provider, options=options, prompt=normalized_prompt),
+                cwd=worktree,
+                timeout=timeout,
+                target_log_source="ai-agent",
+            )
+            # Include newly-created files in the review patch without creating
+            # a commit.  Intent-to-add is local to this disposable proposal
+            # worktree and is finalized only after Issue approval.
+            self.exec(["git", "add", "--intent-to-add", "--all"], cwd=worktree)
+            changed_files = [
+                line
+                for line in self.exec(["git", "diff", "--name-only", "--"], cwd=worktree).splitlines()
+                if line
+            ]
+            patch = self.exec(["git", "diff", "--binary", "--"], cwd=worktree)
+            feedback = next(
+                (
+                    line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                    for line in reversed(output.splitlines())
+                    if line.startswith("ORBIT_AGENT_FEEDBACK:")
+                    and line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                ),
+                "",
+            )
+            keep_worktree = bool(feedback and patch)
+        finally:
+            if not keep_worktree:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree)],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        artifact = (
+            self.write_artifact(f"agent-proposals/{worktree_id}.patch", patch, content_type="text/x-diff")
+            if patch
+            else None
+        )
+        result = {
+            "provider": provider,
+            "feedback": feedback,
+            "changed_files": changed_files,
+            "output": output[-12_000:],
+            "proposal": {
+                "worktree_id": worktree_id,
+                "base_revision": base_revision,
+                "branch": branch if keep_worktree else "",
+                "worktree_path": str(worktree) if keep_worktree else "",
+                "diff": patch,
+                "fingerprint": _sha256(patch.encode("utf-8")) if patch else "",
+                "diff_artifact": artifact,
+            },
+        }
+        self.emit_result({"agent_run": result})
+        return result
 
     def playwright_journey(self, cases: list[dict[str, object]] | None = None) -> dict[str, object]:
         """Run bounded, read-only Playwright page checks for the supplied cases.
 
         The browser process is short lived.  Scheduling, locking, and any
         application-server lifecycle remain Orbit's responsibility.
+
+        Args:
+            cases: Optional fixed cases to run. The build's selected cases are used when omitted.
+
+        Returns:
+            Per-case pass/fail evidence, screenshots, page HTML, and artifact directory metadata.
         """
         build = self.build
         base_url = str(
@@ -1329,6 +1876,11 @@ class RunnerContext:
         selected_cases = cases if cases is not None else self.test_cases
         if not selected_cases:
             raise ValueError("at least one fixed test case is required for a Playwright journey")
+        self.log(f"browser journey started: {len(selected_cases)} case(s) against {base_url}")
+        self.target_log(
+            f"Playwright journey started: {len(selected_cases)} case(s)",
+            source="playwright",
+        )
         artifacts = (
             self.app_data
             / "artifacts"
@@ -1348,7 +1900,7 @@ class RunnerContext:
         }
         script = r"""const fs=require('fs'); const { chromium }=require(process.argv[1]); const input=JSON.parse(process.argv[2]);
 (async()=>{const launch={headless:input.headless}; if(input.executablePath)launch.executablePath=input.executablePath; else if(process.env.SIM_BROWSER_BIN)launch.executablePath=process.env.SIM_BROWSER_BIN; const browser=await chromium.launch(launch); const results=[];
-for(const item of input.cases){const page=await browser.newPage();const path=String(item.path||'/');const url=new URL(path,input.baseUrl).toString();const id=String(item.id||'case').replace(/[^a-zA-Z0-9_-]/g,'-');const screenshot=`${input.artifacts}/${id}.png`;try{await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});const expected=String(item.expected_text||'').trim();const passed=!expected||await page.getByText(expected,{exact:false}).first().isVisible({timeout:5000});await page.screenshot({path:screenshot,fullPage:true});results.push({id:item.id,name:item.name,url,passed,expected_text:expected,screenshot});}catch(error){try{await page.screenshot({path:screenshot,fullPage:true});}catch{}results.push({id:item.id,name:item.name,url,passed:false,error:String(error),screenshot});}finally{await page.close();}}
+for(const item of input.cases){const page=await browser.newPage();const path=String(item.path||'/');const url=new URL(path,input.baseUrl).toString();const id=String(item.id||'case').replace(/[^a-zA-Z0-9_-]/g,'-');const screenshot=`${input.artifacts}/${id}.png`;const html=`${input.artifacts}/${id}.html`;try{await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});const expected=String(item.expected_text||'').trim();const passed=!expected||await page.getByText(expected,{exact:false}).first().isVisible({timeout:5000});await page.screenshot({path:screenshot,fullPage:true});await fs.promises.writeFile(html,await page.content());results.push({id:item.id,name:item.name,url,passed,expected_text:expected,screenshot,html});}catch(error){try{await page.screenshot({path:screenshot,fullPage:true});await fs.promises.writeFile(html,await page.content());}catch{}results.push({id:item.id,name:item.name,url,passed:false,error:String(error),screenshot,html});}finally{await page.close();}}
 await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,results}));})().catch(error=>{console.error(error);process.exit(1)});"""
         environment = dict(self.environment)
         library_path = str(build.get("browser_library_path", "")).strip()
@@ -1371,6 +1923,13 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         except (json.JSONDecodeError, IndexError) as error:
             raise RuntimeError("Playwright did not return structured journey evidence") from error
         evidence["artifacts_directory"] = str(artifacts)
+        passed = sum(bool(item.get("passed")) for item in evidence.get("results", []))
+        self.log(f"browser journey completed: {passed}/{len(selected_cases)} case(s) passed")
+        self.target_log(
+            f"Playwright journey completed: {passed}/{len(selected_cases)} case(s) passed",
+            level="info" if passed == len(selected_cases) else "warn",
+            source="playwright",
+        )
         self.emit_result({"browser_journey": evidence})
         return evidence
 
@@ -1381,6 +1940,9 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         cwd: Path | None = None,
         timeout: int | None = None,
         env: dict[str, str] | None = None,
+        input: str | None = None,
+        target_log_source: str | None = None,
+        target_log_exclude_prefixes: tuple[str, ...] = (),
     ) -> str:
         """Run one bounded child command and return its captured output.
 
@@ -1393,6 +1955,12 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             cwd: Child working directory; defaults to the target repository.
             timeout: Maximum duration in seconds; no timeout when omitted.
             env: Environment values that supplement the runner environment.
+            input: Optional standard input sent to the child before its output
+                is collected.
+            target_log_source: When set, forward bounded child-output lines to
+                the target-log stream under this source name.
+            target_log_exclude_prefixes: Output prefixes retained for the caller
+                but excluded from target logs, for structured child results.
 
         Returns:
             Combined standard output and standard error from the child.
@@ -1407,16 +1975,24 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             cwd=cwd or self.target_repository,
             env={**self.environment, **(env or {})},
             text=True,
+            stdin=subprocess.PIPE if input is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
         lines: list[str] = []
+
+        if input is not None:
+            assert process.stdin is not None
+            process.stdin.write(input)
+            process.stdin.close()
 
         def forward_output() -> None:
             assert process.stdout is not None
             for line in process.stdout:
                 lines.append(line)
                 print(line, end="", flush=True)
+                if target_log_source and line.strip() and not line.startswith(target_log_exclude_prefixes):
+                    self.target_log(line.strip(), source=target_log_source)
 
         reader = threading.Thread(target=forward_output, daemon=True)
         reader.start()
@@ -1430,7 +2006,9 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             reader.join()
         output = "".join(lines)
         if process.returncode:
+            self.log(f"exec failed with exit code {process.returncode}: {' '.join(command)}")
             raise SystemExit(process.returncode)
+        self.log(f"exec completed: {' '.join(command)}")
         return output
 
 
@@ -1441,7 +2019,7 @@ class Runner:
         self._handlers: dict[str, Callable[[RunnerContext], None]] = {}
 
     def phase(
-        self, name: str
+        self, name: str, *, step_id: str | None = None
     ) -> Callable[[Callable[[RunnerContext], None]], Callable[[RunnerContext], None]]:
         """Register a function as a handler for one runner lifecycle phase.
 
@@ -1455,7 +2033,10 @@ class Runner:
         """
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
-            self._handlers[canonical_phase(name)] = handler
+            phase = canonical_phase(name)
+            key = f"{phase}:{step_id}" if step_id else phase
+            self._handlers[key] = handler
+            setattr(handler, "__orbit_phase__", phase)
             return handler
 
         return register
@@ -1466,12 +2047,22 @@ class Runner:
         Place ``runner.main()`` behind an ``if __name__ == "__main__"`` guard
         in every runner asset. Orbit supplies the ``--phase`` argument and
         process environment; callers should not invoke this method directly.
+
+        Returns:
+            ``None``. The process exits after dispatching the requested phase.
         """
         parser = argparse.ArgumentParser(description="Orbit runner phase")
-        parser.add_argument("--phase", required=True)
+        command = parser.add_mutually_exclusive_group(required=True)
+        command.add_argument("--phase")
+        parser.add_argument("--step")
+        command.add_argument("--graph", action="store_true")
         args = parser.parse_args()
+        if args.graph:
+            print(json.dumps(graph.definition(), ensure_ascii=False))
+            return
         phase = canonical_phase(args.phase)
-        handler = self._handlers.get(phase)
+        handler = self._handlers.get(f"{phase}:{args.step}") if args.step else None
+        handler = handler or self._handlers.get(phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
         context = RunnerContext(
@@ -1480,6 +2071,7 @@ class Runner:
             os.environ.get("ORBIT_EXECUTION_MODE", "run"),
             int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
         )
+        handler = getattr(handler, "__orbit_graph_wrapper__", handler)
         before = context.git_head()
         try:
             handler(context)

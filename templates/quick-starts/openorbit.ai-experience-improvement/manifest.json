@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.ai-experience-improvement",
+  "version": "1.0.1",
+  "name": "AI experience improvement",
+  "description": "Repeatedly observe a real AI experience through a bounded adapter and retain structured evidence for supervised improvements.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "AI experience improvement",
+      "placeholder": "e.g. Production journey evaluation",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "repository",
+      "label": "Evaluator workspace",
+      "type": "workspace",
+      "required": true,
+      "placeholder": "/absolute/path/to/your-ai-evaluator",
+      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
+    },
+    {
+      "key": "agent_command",
+      "label": "AI adapter command",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. uv run product-agent",
+      "tooltip": "Command OpenOrbit invokes for one bounded AI-adapter action. It must return before OpenOrbit schedules another iteration."
+    },
+    {
+      "key": "experience_goal",
+      "label": "User experience goal",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. help users resolve a billing question safely",
+      "tooltip": "The user outcome that the external AI adapter should evaluate or improve."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile, or create one for this build."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Bounded external AI experience runner.",
+      "template_id": "json-agent-cycle",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Review the retained AI experience evidence for ${experience_goal}. Identify only evidence-backed user harm, friction, or regressions and propose reversible improvements."
+    },
+    "test_case_set": {
+      "name": "${build_name} goal",
+      "description": "One recurring AI experience goal.",
+      "cases": [
+        {
+          "id": "ai-experience",
+          "name": "${experience_goal}",
+          "path": "/",
+          "prompt": "Assess ${experience_goal}.",
+          "acceptance": "Return structured evidence, risks, and an explicit next check."
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local",
+      "environment_variables": {
+        "ORBIT_AGENT_COMMAND": "${agent_command}"
+      }
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "repository": "${repository}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Continuously learn from a real AI experience: ${experience_goal}.",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 60,
+    "run_limit": 24,
+    "approval_score": 7,
+    "enabled": true
+  }
+}

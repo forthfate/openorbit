@@ -6,6 +6,7 @@ import sys
 from base64 import b64encode
 
 import orbit_sdk as sdk
+import pytest
 
 
 def test_graph_declarations_export_nodes_and_typed_edges():
@@ -41,6 +42,151 @@ def test_graph_declarations_export_nodes_and_typed_edges():
     }
 
 
+def test_graph_step_inherits_its_zone_from_runner_phase():
+    graph = sdk.Graph()
+    runner = sdk.Runner()
+
+    @graph.step("collect")
+    @runner.phase("setup")
+    def collect() -> None:
+        pass
+
+    assert graph.definition()["nodes"][0]["phase"] == "before_each"
+
+
+def test_graph_exports_after_supervision_only_when_enabled():
+    graph = sdk.Graph()
+
+    @graph.step("propose", phase="after_each", after_supervision=True)
+    def propose() -> None:
+        pass
+
+    assert graph.definition()["nodes"][0]["after_supervision"] is True
+
+
+def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
+    ctx = context(tmp_path, iteration=1)
+
+    with ctx.function("collect-source-evidence"):
+        pass
+
+    assert "collect-source-evidence" in capsys.readouterr().out
+
+
+def test_register_evaluation_emits_an_agent_change_request(tmp_path, capsys):
+    result = context(tmp_path, iteration=2).register_evaluation(
+        "Updated the retry behavior after reproducing the timeout.",
+        changed_files=["src/retry.py", "src/retry.py", "tests/test_retry.py"],
+        validation="pytest tests/test_retry.py",
+    )
+
+    emitted = [
+        json.loads(line.removeprefix("__ORBIT_RESULT__"))
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("__ORBIT_RESULT__")
+    ]
+    assert result["subject"] == "agent_change"
+    assert result["changed_files"] == ["src/retry.py", "tests/test_retry.py"]
+    assert emitted[-1]["evaluation_request"] == result
+
+
+def test_register_evaluation_requires_actionable_feedback(tmp_path):
+    with pytest.raises(ValueError, match="feedback"):
+        context(tmp_path, iteration=1).register_evaluation("   ")
+
+
+def test_run_ai_agent_uses_the_selected_cli_and_only_marker_feedback(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(["git", "init"], cwd=project, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, check=True)
+    subprocess.run(["git", "config", "user.name", "Orbit Test"], cwd=project, check=True)
+    (project / "README.md").write_text("test\n", encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project, check=True, capture_output=True)
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    ctx = context(project, iteration=1)
+    commands: list[list[str]] = []
+
+    def fake_exec(command, **_kwargs):
+        commands.append(command)
+        if command[0] == "codex":
+            return "completed work\nORBIT_AGENT_FEEDBACK: Updated retry behavior\n"
+        if command[:3] == ["git", "diff", "--name-only"]:
+            return "src/retry.py\n"
+        if command[:3] == ["git", "diff", "--binary"]:
+            return "diff --git a/src/retry.py b/src/retry.py\n"
+        return ""
+
+    monkeypatch.setattr(ctx, "exec", fake_exec)
+
+    result = ctx.run_ai_agent("Fix the retry behavior", provider="codex", options="--model gpt-5")
+
+    assert commands[0][:4] == ["git", "worktree", "add", "-b"]
+    assert commands[0][5].startswith(str(tmp_path / "orbit-data" / "agent-worktrees"))
+    assert commands[1:] == [
+        [
+            "codex",
+            "exec",
+            "--approve-for-me",
+            "--model",
+            "gpt-5",
+            "Fix the retry behavior",
+        ],
+        ["git", "add", "--intent-to-add", "--all"],
+        ["git", "diff", "--name-only", "--"],
+        ["git", "diff", "--binary", "--"],
+    ]
+    assert result["feedback"] == "Updated retry behavior"
+    assert result["changed_files"] == ["src/retry.py"]
+    assert result["proposal"]["diff"] == "diff --git a/src/retry.py b/src/retry.py\n"
+    assert result["proposal"]["base_revision"]
+    assert result["proposal"]["branch"].startswith("orbit/agent-proposal/run-123/")
+
+
+def test_graph_step_automatically_traces_its_execution(tmp_path, capsys):
+    graph = sdk.Graph()
+
+    @graph.step("collect-source-evidence")
+    def collect(ctx) -> None:
+        ctx.log("Collected source evidence")
+
+    collect(context(tmp_path, iteration=1))
+
+    output = capsys.readouterr().out
+    assert "workflow function started: collect-source-evidence" in output
+    assert "workflow function succeeded: collect-source-evidence" in output
+    assert '"status": "running"' in output
+    assert '"status": "succeeded"' in output
+
+
+def test_graph_step_automatically_traces_failures(tmp_path, capsys):
+    graph = sdk.Graph()
+
+    @graph.step("collect-source-evidence")
+    def collect(ctx) -> None:
+        raise RuntimeError("evidence unavailable")
+
+    with pytest.raises(RuntimeError, match="evidence unavailable"):
+        collect(context(tmp_path, iteration=1))
+
+    output = capsys.readouterr().out
+    assert "workflow function failed: collect-source-evidence" in output
+    assert '"status": "failed"' in output
+
+
+def test_nested_function_trace_for_the_same_node_is_emitted_once(tmp_path, capsys):
+    ctx = context(tmp_path, iteration=1)
+
+    with ctx.function("collect-source-evidence"):
+        with ctx.function("collect-source-evidence"):
+            pass
+
+    output = capsys.readouterr().out
+    assert output.count('"status": "running"') == 1
+    assert output.count('"status": "succeeded"') == 1
+
+
 def context(project, *, iteration: int, run_id: str = "run-123"):
     return sdk.RunnerContext(
         phase="execute",
@@ -73,6 +219,55 @@ def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatc
     snapshot = manifest.parent / version["previous"]["snapshot"]
     assert snapshot.read_bytes() == b"before"
     assert json.loads(manifest.read_text(encoding="utf-8"))["history"][0]["id"] == version["id"]
+
+
+def test_runner_state_is_scoped_and_retained_between_invocations(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    resources = {"build": {"id": "persona-quality", "runner_id": "persona-journey-runner"}}
+    encoded = b64encode(json.dumps(resources).encode()).decode()
+
+    saved = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded, "ORBIT_RUN_ID": "run-456"},
+    ).save_state("persona-journey", {"personas": {"haruka": {"stage": 2}}})
+    shared = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=2,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded, "ORBIT_RUN_ID": "run-456"},
+    ).save_state("shared-settings", {"enabled": True}, scope="build")
+
+    next_context = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=3,
+        environment={"ORBIT_RUNNER_RESOURCES": encoded},
+    )
+    assert saved["name"] == "persona-journey"
+    assert saved["scope"] == "runner"
+    assert shared["scope"] == "build"
+    assert next_context.load_state("persona-journey") == {"personas": {"haruka": {"stage": 2}}}
+    assert next_context.load_state("shared-settings", scope="build") == {"enabled": True}
+    assert next_context.load_state("missing", default={}) == {}
+    assert (
+        tmp_path
+        / "orbit-data"
+        / "runner-state"
+        / "persona-quality"
+        / "runners"
+        / "persona-journey-runner"
+        / "persona-journey.json"
+    ).exists()
+    assert (
+        tmp_path / "orbit-data" / "runner-state" / "persona-quality" / "build" / "shared-settings.json"
+    ).exists()
 
 
 def test_rollback_file_restores_a_version_and_can_be_undone(tmp_path, monkeypatch):

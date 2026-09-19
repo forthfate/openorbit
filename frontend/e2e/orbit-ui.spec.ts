@@ -6,7 +6,7 @@ test('shows the configured repositories and safely runs the approval-gated evalu
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Builds' }).click()
-  await expect(page).toHaveURL(/#builds/)
+  await expect(page).toHaveURL(/\/builds/)
   const insighta = page.locator('.tr').filter({ hasText: 'Insighta Daily Quality' })
   await expect(insighta).toContainText('/home/forth/projects/insighta-user-simulator')
   await expect(insighta.getByRole('button', { name: 'Run' })).toBeVisible()
@@ -19,7 +19,7 @@ test('shows the configured repositories and safely runs the approval-gated evalu
   await expect(page.getByRole('alert')).toContainText('Evaluation started')
 
   await page.getByRole('button', { name: 'Active evaluations' }).click()
-  await expect(page).toHaveURL(/#runs/)
+  await expect(page).toHaveURL(/\/runs/)
   const jgentRun = page.locator('.tr:not(.th)').filter({ hasText: 'Jgent' }).first()
   await expect(jgentRun).toContainText('awaiting_approval', { timeout: 10_000 })
   await page.getByRole('button', { name: 'Emergency stop' }).click()
@@ -27,7 +27,7 @@ test('shows the configured repositories and safely runs the approval-gated evalu
 })
 
 test('collapses the sidebar and preserves the preference after reload', async ({ page }) => {
-  await page.goto('/#dashboard')
+  await page.goto('/dashboard')
   const toggle = page.getByRole('button', { name: 'Collapse navigation' })
   await toggle.click()
   await expect(page.locator('main')).toHaveClass(/sidebar-collapsed/)
@@ -37,8 +37,21 @@ test('collapses the sidebar and preserves the preference after reload', async ({
   await page.getByRole('button', { name: 'Expand navigation' }).click()
 })
 
+test('uses the default local MCP connection through the Orbit assistant', async ({ page }) => {
+  await page.goto('/dashboard')
+  await page.getByRole('button', { name: 'Open Orbit assistant' }).click()
+  const assistant = page.getByLabel('Orbit assistant')
+  await assistant.getByRole('textbox', { name: 'Message' }).fill(
+    'Use the OpenOrbit MCP get_status tool and briefly report the local service health.',
+  )
+  await assistant.getByRole('button', { name: 'Send message' }).click()
+  const response = assistant.locator('.chat-message--assistant').last()
+  await expect(response).not.toContainText('Chat request failed.', { timeout: 30_000 })
+  await expect(response).toContainText(/health|healthy|status|ok/i, { timeout: 30_000 })
+})
+
 test('opens the build and profile editors with editable lifecycle fields', async ({ page }) => {
-  await page.goto('/#builds')
+  await page.goto('/builds')
   await expect(page.getByRole('heading', { name: 'Builds' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create', exact: true }).click()
@@ -62,7 +75,7 @@ test('opens the build and profile editors with editable lifecycle fields', async
 })
 
 test('shows the score-based iteration strategy in the Jgent build editor', async ({ page }) => {
-  await page.goto('/#builds')
+  await page.goto('/builds')
   const jgent = page.locator('.tr:not(.th)').filter({ hasText: 'Jgent paired evaluation quality' })
   await jgent.click()
   const dialog = page.getByRole('dialog')
@@ -78,7 +91,7 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
   const suffix = Date.now().toString().slice(-8)
   const buildId = `ui-smoke-${suffix}`
   const workflowId = `ui-workflow-${suffix}`
-  await page.goto('/#builds')
+  await page.goto('/builds')
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Create build' })
   const rowInput = (label: string) => dialog.getByText(label, { exact: true }).locator('..').getByRole('textbox')
@@ -114,7 +127,7 @@ test('creates a safe task in the UI, then completes Test and Run', async ({ page
 })
 
 test('persists the selected interface language across pages and reloads', async ({ page }) => {
-  await page.goto('/#settings')
+  await page.goto('/settings')
   const languageSelect = page.locator('select').first()
   await languageSelect.selectOption('ja')
   await expect(page.getByRole('button', { name: 'ナビゲーションを折りたたむ', exact: true })).toHaveAttribute('title', 'ナビゲーションを折りたたむ')
@@ -123,7 +136,7 @@ test('persists the selected interface language across pages and reloads', async 
   await expect(page.getByText('ビルド一覧')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: 'ビルド' })).toBeVisible()
-  await page.goto('/#settings')
+  await page.goto('/settings')
   await languageSelect.selectOption('ko')
   const collapse = page.getByRole('button', { name: '탐색 메뉴 접기', exact: true })
   await expect(collapse).toHaveAttribute('title', '탐색 메뉴 접기')

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
@@ -6,11 +6,39 @@ import { ToastProvider } from "./components/ui/toast";
 import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
-import { AssetsPage } from "./features/assets/page";
-import { BuildsPage } from "./features/builds/page";
-import { EvaluationsPage } from "./features/evaluations/page";
-import { ImprovementsPage } from "./features/improvements/page";
-import { SettingsPage } from "./features/settings/page";
+import { QuickStartModal } from "./components/quick-start-modal";
+import { AssistantUiProvider, useAssistantUiBridge } from "./components/assistant-ui-bridge";
+
+const AssetsPage = lazy(() =>
+  import("./features/assets/page").then((module) => ({
+    default: module.AssetsPage,
+  })),
+);
+
+const BuildsPage = lazy(() =>
+  import("./features/builds/page").then((module) => ({
+    default: module.BuildsPage,
+  })),
+);
+
+const EvaluationsPage = lazy(() =>
+  import("./features/evaluations/page").then((module) => ({
+    default: module.EvaluationsPage,
+  })),
+);
+
+const ImprovementsPage = lazy(() =>
+  import("./features/improvements/page").then((module) => ({
+    default: module.ImprovementsPage,
+  })),
+);
+
+const SettingsPage = lazy(() =>
+  import("./features/settings/page").then((module) => ({
+    default: module.SettingsPage,
+  })),
+);
+
 import { localeMessages, locales, resolveLocale, type Locale } from "./locales";
 import { api } from "./services/api";
 import { useControlRoom } from "./services/use-control-room";
@@ -32,9 +60,16 @@ const pages: Page[] = [
   "improvements",
   "settings",
 ];
-const pageFromHash = (): Page => {
-  const page = window.location.hash.slice(1);
-  return pages.includes(page as Page) ? (page as Page) : "dashboard";
+const pageFromLocation = (): Page => {
+  const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  if (path === "issues") return "improvements";
+  if (pages.includes(path as Page)) return path as Page;
+
+  // Preserve links saved before the browser-path migration, then normalize
+  // them on first render below.
+  const legacyHash = window.location.hash.slice(1);
+  if (legacyHash === "issues") return "improvements";
+  return pages.includes(legacyHash as Page) ? (legacyHash as Page) : "dashboard";
 };
 type ConfirmCopy = {
   title: string;
@@ -42,28 +77,43 @@ type ConfirmCopy = {
   cancel: string;
   confirm: string;
 };
+type AssetDeleteKind =
+  | "profile"
+  | "template"
+  | "test-set"
+  | "runner"
+  | "workflow"
+  | "execution-environment"
+  | "target-environment";
 
 export default function App() {
-  const [page, setPageState] = useState<Page>(pageFromHash);
+  const { register: registerAssistantUi } = useAssistantUiBridge();
+  const [page, setPageState] = useState<Page>(pageFromLocation);
   const [locale, setLocaleState] = useState<Locale>(savedLocale);
   const [theme, setThemeState] = useState(savedTheme);
   const [deletingBuild, setDeletingBuild] = useState<string | null>(null);
+  const [deletingAsset, setDeletingAsset] = useState<{
+    kind: AssetDeleteKind;
+    id: string;
+  } | null>(null);
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
-  const [quickStartRequest, setQuickStartRequest] = useState(0);
+  const [quickStartOpen, setQuickStartOpen] = useState(false);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
-  const room = useControlRoom();
+  const room = useControlRoom(page);
   const ui = locales[locale].ui;
   useEffect(() => {
-    const sync = () => setPageState(pageFromHash());
-    if (!window.location.hash)
-      window.history.replaceState(null, "", "#dashboard");
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
+    const sync = () => setPageState(pageFromLocation());
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+    if (!pages.includes(path as Page) || window.location.hash)
+      window.history.replaceState(null, "", `/${pageFromLocation()}`);
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
   }, []);
   const setPage = (next: Page) => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    if (window.location.hash === `#${next}`) setPageState(next);
-    else window.location.hash = next;
+    if (window.location.pathname !== `/${next}` || window.location.hash)
+      window.history.pushState(null, "", `/${next}`);
+    setPageState(next);
   };
   const setLocale = (value: Locale) => {
     localStorage.setItem(localeStorageKey, value);
@@ -73,16 +123,37 @@ export default function App() {
     localStorage.setItem(themeStorageKey, value);
     setThemeState(value);
   };
+  const navigationUi = useMemo(
+    () => ({
+      id: "app.navigation",
+      title: "Application navigation",
+      getState: () => ({ page }),
+      controls: [
+        {
+          id: "page",
+          label: "Current page",
+          kind: "select" as const,
+          value: page,
+          options: pages.map((value) => ({ value, label: locales[locale].common[value] })),
+          setValue: (value: unknown) => {
+            if (typeof value === "string" && pages.includes(value as Page)) setPage(value as Page);
+          },
+        },
+      ],
+    }),
+    [page, locale],
+  );
+  useEffect(() => registerAssistantUi(navigationUi), [navigationUi, registerAssistantUi]);
   const openQuickStart = (id?: string) => {
+    void room.loadProfiles();
     setQuickStartSelection(id);
-    setQuickStartRequest((value) => value + 1);
-    setPage("builds");
+    setQuickStartOpen(true);
   };
   const test = () =>
     api<{ response: string }>("/api/settings/hello", "POST", room.settings)
       .then((r) => {
         room.setSettingsTested(true);
-        room.setNotice(`Test succeeded: ${r.response}`, "success");
+        room.setNotice(ui.settingsTestSucceeded(r.response), "success");
       })
       .catch((e) => room.setNotice(e.message));
   const stop = () =>
@@ -106,7 +177,7 @@ export default function App() {
   const retryRun = (id: string, restartFromFirst: boolean) =>
     api(`/api/runs/${id}/retry`, "POST", { restart_from_first: restartFromFirst })
       .then(() => {
-        room.setNotice("Evaluation retry started.", "warning");
+        room.setNotice(ui.evaluationRetryStarted, "warning");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
@@ -116,7 +187,7 @@ export default function App() {
     )
       .then(() => {
         room.setNotice(
-          `${ids.length} run${ids.length === 1 ? "" : "s"} deleted`,
+          ui.runsDeleted(ids.length),
           "success",
         );
         return room.refresh();
@@ -147,14 +218,14 @@ export default function App() {
     });
   };
   const invoke = (id: string) =>
-    api(`/api/builds/${id}/runs`, "POST")
+    api(`/api/builds/${id}/runs`, "POST", { output_locale: locale })
       .then(() => {
         room.setNotice(ui.evaluationStarted, "success");
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
   const testBuild = (id: string) =>
-    api<Run>(`/api/builds/${id}/tests`, "POST")
+    api<Run>(`/api/builds/${id}/tests`, "POST", { output_locale: locale })
       .then((run) => {
         room.setNotice(ui.evaluationTestStarted, "success");
         return run;
@@ -189,17 +260,14 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
-  const deleteAsset = (
-    kind:
-      | "profile"
-      | "template"
-      | "test-set"
-      | "runner"
-      | "workflow"
-      | "execution-environment"
-      | "target-environment",
-    id: string,
-  ) => {
+  const toggleBuildStar = (id: string, starred: boolean) =>
+    api(`/api/builds/${id}/star`, "PATCH", { starred })
+      .then(() => room.refresh())
+      .catch((e) => {
+        room.setNotice(e.message);
+        throw e;
+      });
+  const deleteAsset = (kind: AssetDeleteKind, id: string) => {
     const path = {
       profile: `/api/settings/profiles/${encodeURIComponent(id)}`,
       template: `/api/prompt-templates/${id}`,
@@ -215,6 +283,12 @@ export default function App() {
         room.refresh();
       })
       .catch((e) => room.setNotice(e.message));
+  };
+  const confirmDeleteAsset = () => {
+    if (!deletingAsset) return;
+    const { kind, id } = deletingAsset;
+    setDeletingAsset(null);
+    deleteAsset(kind, id);
   };
   const deleteBuild = (id: string) => setDeletingBuild(id);
   const confirmDeleteBuild = () => {
@@ -246,6 +320,7 @@ export default function App() {
     assets: (
       <AssetsPage
         locale={locale}
+        builds={room.builds}
         workflows={room.workflows}
         runners={room.runners}
         promptTemplates={room.promptTemplates}
@@ -262,7 +337,7 @@ export default function App() {
         onRefresh={room.refresh}
         onCreateWorkflow={createWorkflow}
         onUpdateWorkflow={updateWorkflow}
-        onDelete={deleteAsset}
+        onDelete={(kind, id) => setDeletingAsset({ kind, id })}
       />
     ),
     builds: (
@@ -279,14 +354,9 @@ export default function App() {
         onTest={testBuild}
         onCreate={createBuild}
         onUpdate={updateBuild}
+        onToggleStar={toggleBuildStar}
         onDelete={deleteBuild}
-        onQuickStartCreate={createQuickStart}
-        quickStartRequest={quickStartRequest}
-        quickStartSelection={quickStartSelection}
-        onQuickStartRequestHandled={() => {
-          setQuickStartRequest(0);
-          setQuickStartSelection(undefined);
-        }}
+        onOpenQuickStart={() => openQuickStart()}
       />
     ),
     runs: (
@@ -299,9 +369,17 @@ export default function App() {
         onReject={rejectRun}
         onEmergencyStop={() => setConfirmingEmergencyStop(true)}
         onDeleteRuns={deleteRuns}
+        knownBuilds={room.builds}
       />
     ),
-    improvements: <ImprovementsPage />,
+    improvements: <ImprovementsPage
+      runs={room.runs}
+      onStop={stopRun}
+      onRetry={retryRun}
+      onApprove={approveRun}
+      onReject={rejectRun}
+      onNotice={(message, tone) => room.setNotice(message, tone)}
+    />,
     settings: (
       room.loading ? <>
         <SectionSkeleton rows={2} />
@@ -322,15 +400,17 @@ export default function App() {
         save={save}
         tested={room.settingsTested}
         logs={room.orbitLogs}
-        onDeleteProfile={(id) => deleteAsset("profile", id)}
+        onDeleteProfile={(id) => setDeletingAsset({ kind: "profile", id })}
       />
     ),
   }[page];
   const confirmations = localeMessages<{
     deleteBuild: ConfirmCopy;
+    deleteAsset: ConfirmCopy;
     emergencyStop: ConfirmCopy;
   }>(locale, "confirmations");
   const confirmation = confirmations.deleteBuild;
+  const assetConfirmation = confirmations.deleteAsset;
   const emergencyConfirmation = confirmations.emergencyStop;
   return (
     <AppShell
@@ -338,13 +418,29 @@ export default function App() {
       setPage={setPage}
       locale={locale}
       theme={theme}
+      readiness={room.readiness}
       activeRunCount={
         room.runs.filter((run) =>
           ["queued", "awaiting_approval", "running"].includes(run.status),
         ).length
       }
     >
-      <div className="page-stack">{content}</div>
+     <Suspense fallback={<SectionSkeleton rows={6} />}>
+  <div className="page-stack">{content}</div>
+</Suspense>
+      <QuickStartModal
+        key={`${quickStartOpen}:${quickStartSelection ?? ""}`}
+        open={quickStartOpen}
+        initialQuickStartId={quickStartSelection}
+        profiles={room.profiles}
+        locale={locale}
+        create={createQuickStart}
+        onClose={() => {
+          setQuickStartOpen(false);
+          setQuickStartSelection(undefined);
+        }}
+        onCreated={() => setPage("builds")}
+      />
       <ConfirmDialog
         open={deletingBuild !== null}
         title={confirmation.title}
@@ -353,6 +449,15 @@ export default function App() {
         confirmLabel={confirmation.confirm}
         onCancel={() => setDeletingBuild(null)}
         onConfirm={confirmDeleteBuild}
+      />
+      <ConfirmDialog
+        open={deletingAsset !== null}
+        title={assetConfirmation.title}
+        description={assetConfirmation.description}
+        cancelLabel={assetConfirmation.cancel}
+        confirmLabel={assetConfirmation.confirm}
+        onCancel={() => setDeletingAsset(null)}
+        onConfirm={confirmDeleteAsset}
       />
       <ConfirmDialog
         open={confirmingEmergencyStop}
@@ -369,6 +474,8 @@ export default function App() {
 
 createRoot(document.getElementById("root")!).render(
   <ToastProvider>
-    <App />
+    <AssistantUiProvider>
+      <App />
+    </AssistantUiProvider>
   </ToastProvider>,
 );

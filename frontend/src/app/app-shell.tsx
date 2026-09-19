@@ -7,12 +7,13 @@ import {
   FileCode2,
   PanelLeftClose,
   Play,
+  TriangleAlert,
   Settings,
   Sparkles,
 } from "lucide-react";
 import { SiGithub } from "react-icons/si";
 import { useEffect, useState, type ReactNode } from "react";
-import type { Page } from "../domain/models";
+import type { Page, SystemReadiness } from "../domain/models";
 import type { Locale } from "../locales";
 import { localeMessages, locales } from "../locales";
 import { ChatAssistant } from "../components/chat-assistant";
@@ -26,6 +27,7 @@ export function AppShell({
   theme,
   headerAction,
   activeRunCount = 0,
+  readiness,
   children,
 }: {
   page: Page;
@@ -34,6 +36,7 @@ export function AppShell({
   theme: string;
   headerAction?: ReactNode;
   activeRunCount?: number;
+  readiness: SystemReadiness | null;
   children: ReactNode;
 }) {
   const t = locales[locale];
@@ -118,6 +121,13 @@ export function AppShell({
     githubLabel: string;
     githubTitle: string;
   }>(locale, "navigationAccessibility");
+  const readinessCopy = localeMessages<{
+    title: string;
+    description: string;
+    openSettings: string;
+    checks: Record<string, { title: string; details: Record<string, string> }>;
+  }>(locale, "systemReadiness");
+  const blockedChecks = readiness?.checks.filter((check) => check.status === "blocked") ?? [];
   const sidebarLabel = collapsed
     ? navigationLabels.expandNavigation
     : navigationLabels.collapseNavigation;
@@ -190,6 +200,26 @@ export function AppShell({
             {headerAction}
           </div>
         </header>
+        {blockedChecks.length > 0 && (
+          <section className="system-readiness-alert" role="alert" aria-live="polite">
+            <TriangleAlert size={20} aria-hidden="true" />
+            <div className="system-readiness-alert__copy">
+              <strong>{readinessCopy.title}</strong>
+              <p>{readinessCopy.description}</p>
+              <ul>
+                {blockedChecks.map((check) => {
+                  const copy = readinessCopy.checks[check.id];
+                  return <li key={check.id}><b>{copy?.title ?? check.id}</b>: {copy?.details[check.detail] ?? check.detail}</li>;
+                })}
+              </ul>
+            </div>
+            {blockedChecks.some((check) => check.settings_page === "settings") && (
+              <button className="system-readiness-alert__action" type="button" onClick={() => setPage("settings")}>
+                {readinessCopy.openSettings}
+              </button>
+            )}
+          </section>
+        )}
         {children}
         <footer>
           <span>© insighta cloud Inc.</span>

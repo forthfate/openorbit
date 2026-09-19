@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import net from 'node:net'
 import { platform } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 
 const root = new URL('..', import.meta.url).pathname
@@ -32,13 +32,20 @@ async function nextAvailablePort(startPort, host) {
 }
 
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
-  console.log('Usage: orbit run')
+  console.log('Usage: orbit run [PATH]')
   process.exit(0)
 }
-if (process.argv[2] !== 'run') {
-  console.log('Usage: orbit run')
+if (process.argv[2] !== 'run' || process.argv.length > 4) {
+  console.log('Usage: orbit run [PATH]')
   process.exit(1)
 }
+
+const dataPath = process.argv[3]
+const dataRoot = dataPath ? resolve(dataPath) : undefined
+if (dataRoot && existsSync(dataRoot) && !statSync(dataRoot).isDirectory()) {
+  throw new Error(`PATH must be a directory: ${dataRoot}`)
+}
+const appData = dataRoot ? join(dataRoot, '.orbit') : undefined
 
 if (!existsSync(venvPython)) {
   console.log('Creating Python virtual environment…')
@@ -66,7 +73,11 @@ if (port !== requestedPort) {
 if (process.env.ORBIT_PUBLIC_URL) {
   console.log(`Public URL: ${process.env.ORBIT_PUBLIC_URL.replace('{port}', String(port))}`)
 }
-const server = spawn(venvPython, ['-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend', '--host', host, '--port', port], { cwd: root, stdio: 'inherit' })
+const server = spawn(venvPython, ['-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend', '--host', host, '--port', port], {
+  cwd: root,
+  stdio: 'inherit',
+  env: { ...process.env, ...(appData ? { ORBIT_APP_DATA: appData } : {}) },
+})
 process.on('SIGINT', () => server.kill('SIGINT'))
 process.on('SIGTERM', () => server.kill('SIGTERM'))
 server.on('exit', code => process.exit(code ?? 0))

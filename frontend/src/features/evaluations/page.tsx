@@ -1,9 +1,10 @@
-import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleStop, Info, Languages, ListFilter, RotateCcw, Trash2, Unlink, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Build,
   Run,
-  CommitChange,
-  PromptRevision,
+  WorkflowGraphNode,
+  IssueManagementItem,
   RunTelemetry,
   SupervisorRecord,
 } from "../../domain/models";
@@ -15,6 +16,7 @@ import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Tooltip } from "../../components/ui/tooltip";
+import { WorkflowGraph } from "../../components/workflow-graph";
 import { intlLocales, localeMessageMap, locales, type Locale } from "../../locales";
 import { api } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
@@ -24,12 +26,10 @@ import {
   type RunDetailTab,
 } from "./run-detail-tabs";
 import {
-  CommitChangesPanel,
-  PromptChangesPanel,
+  WorktreePanel,
 } from "./run-detail-change-panels";
 import {
   CombinedLogPanel,
-  WorkflowLogPanel,
 } from "./run-detail-log-panels";
 import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
@@ -39,9 +39,12 @@ const phases = [
   "before_each",
   "execute",
   "verify",
+  "after_supervision",
   "after_each",
   "after_all",
 ] as const;
+const phaseLabel = (phase: string) =>
+  phase.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const time = (locale: Locale, value?: string) =>
   value
     ? new Intl.DateTimeFormat(intlLocales[locale], {
@@ -72,11 +75,18 @@ const elapsed = (start?: string, end?: string) => {
   );
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 };
+const displayedIteration = (run: Run) => {
+  const observed = Math.max(
+    0,
+    ...(run.step_results ?? []).map((step) => step.loop_index ?? 0),
+  );
+  return run.loop_limit ? Math.min(observed, run.loop_limit) : observed;
+};
 const copy = localeMessageMap<Record<string,string>>("evaluations");
 type SupervisorResultTranslation = {
   prompt?: string;
   response: {
-    evaluation: { behavior_summary?: string; behavior_trace?: { purpose: string; rationale: string; observation: string; decision: string; next_action: string }; summary?: string };
+    evaluation: { behavior_summary?: string; behavior_trace?: { persona_goal?: string; current_action?: string; next_action?: string; evidence?: string; expectation?: string; interpretation?: string; impact?: string; next_step?: string; purpose?: string; rationale?: string; observation?: string; decision?: string }; summary?: string };
     improvements: Record<string, string>[];
     reported_issues: Record<string, string>[];
   };
@@ -102,8 +112,10 @@ export function EvaluationsPage({
   onEmergencyStop,
   onDeleteRuns,
   locale,
+  knownBuilds,
   initialSelectedRun,
   onSelectedRunClose,
+  detailOnly = false,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
@@ -113,20 +125,20 @@ export function EvaluationsPage({
   onEmergencyStop: () => void;
   onDeleteRuns: (ids: string[]) => Promise<unknown>;
   locale: Locale;
+  knownBuilds?: Build[];
   initialSelectedRun?: Run | null;
   onSelectedRunClose?: () => void;
+  detailOnly?: boolean;
 }) {
   const t = locales[locale].common,
     l = copy[locale],
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<RunDetailTab>("result"),
-    [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("before_all"),
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
-    [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
-    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
+    [worktrees, setWorktrees] = useState<IssueManagementItem[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -169,13 +181,26 @@ export function EvaluationsPage({
     [draftResultImprovementStatus, setDraftResultImprovementStatus] = useState("all"),
     [draftResultIssueSeverity, setDraftResultIssueSeverity] = useState("all"),
     [draftResultIssueStatus, setDraftResultIssueStatus] = useState("all");
+  const orphanedBuildIds = useMemo(
+    () => knownBuilds === undefined
+      ? null
+      : new Set(
+          runs
+            .map((run) => run.build_id)
+            .filter((buildId): buildId is string => Boolean(buildId) && !knownBuilds.some((build) => build.id === buildId)),
+        ),
+    [knownBuilds, runs],
+  );
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set()),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
     [retryingRun, setRetryingRun] = useState<Run | null>(null);
-  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도", cancel: "취소" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行", cancel: "キャンセル" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration", cancel: "Cancel" };
-  const selected = initialSelectedRun ?? selectedInternal;
+  const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration" };
+  const selectedSource = initialSelectedRun ?? selectedInternal;
+  const selected = selectedSource
+    ? runs.find((run) => run.id === selectedSource.id) ?? selectedSource
+    : null;
   const supervisorTranslationIds = useMemo(
     () =>
       (selected?.supervisor_results ?? [])
@@ -252,15 +277,9 @@ export function EvaluationsPage({
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
-    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
-      .then(setCommitChanges)
-      .catch(() => setCommitChanges([]));
-  }, [selected]);
-  useEffect(() => {
-    if (!selected) return;
-    api<PromptRevision[]>(`/api/runs/${selected.id}/prompt-revisions`)
-      .then(setPromptRevisions)
-      .catch(() => setPromptRevisions([]));
+    api<IssueManagementItem[]>("/api/v1/issue-management")
+      .then((items) => setWorktrees(items.filter((item) => item.run_id === selected.id)))
+      .catch(() => setWorktrees([]));
   }, [selected]);
   const label = (status: string) =>
     ({
@@ -275,7 +294,9 @@ export function EvaluationsPage({
     if (run.status === "succeeded") return l.complete;
     if (run.status === "cancelled") return l.cancelled;
     if (run.status === "failed") return l.failed;
-    return run.current_phase === "waiting" ? l.waiting : (run.current_phase ?? "—");
+    return run.current_phase === "waiting"
+      ? l.waiting
+      : (run.current_phase ? phaseLabel(run.current_phase) : "—");
   };
   const builds = useMemo(
     () => [
@@ -440,7 +461,18 @@ export function EvaluationsPage({
       header: t.build,
       render: (r) => (
         <span className="run-build">
-          <strong>{r.build_name ?? r.build_id}</strong>
+          <strong className="run-build__name">
+            {r.build_name ?? r.build_id}
+            {r.build_id && orphanedBuildIds?.has(r.build_id) && (
+              <span
+                className="run-build__orphan"
+                aria-label={l.orphanedBuild}
+                title={l.orphanedBuild}
+              >
+                <Unlink size={14} aria-hidden="true" />
+              </span>
+            )}
+          </strong>
           <code>{r.id}</code>
         </span>
       ),
@@ -465,13 +497,15 @@ export function EvaluationsPage({
         : 0,
     },
     {
+      id: "status",
+      header: t.status,
+      render: (r) => <StatusBadge value={r.status} label={label(r.status)} />,
+      sortValue: (r) => label(r.status),
+    },
+    {
       id: "phase",
       header: t.phase,
-      render: (r) => (
-        <span className={`run-phase run-phase--${r.status}`}>
-          {finalPhase(r)}
-        </span>
-      ),
+      render: (r) => <StatusBadge value={r.status} label={finalPhase(r)} />,
       sortValue: (r) => finalPhase(r),
     },
     { id: "pid", header: t.pid, render: (r) => r.pid ?? r.last_pid ?? "—", sortValue: (r) => r.pid ?? r.last_pid ?? -1 },
@@ -488,12 +522,6 @@ export function EvaluationsPage({
       sortValue: (r) => r.approved_improvements ?? 0,
     },
     { id: "issues", header: t.issues, render: (r) => r.reported_issues ?? 0, sortValue: (r) => r.reported_issues ?? 0 },
-    {
-      id: "status",
-      header: t.status,
-      render: (r) => <StatusBadge value={r.status} label={label(r.status)} />,
-      sortValue: (r) => label(r.status),
-    },
     {
       id: "actions",
       header: locales[locale].evaluation.action,
@@ -519,7 +547,7 @@ export function EvaluationsPage({
               </button>
             </>
           )}
-          {["failed", "cancelled"].includes(r.status) && r.execution_type === "pipeline" && (
+          {terminal(r.status) && r.execution_type === "pipeline" && (
             <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} onClick={(event) => { event.stopPropagation(); setRetryingRun(r); }}>
               <RotateCcw size={16} />
             </button>
@@ -540,22 +568,20 @@ export function EvaluationsPage({
     },
   ];
   columns[1].header = l.task;
-  columns.splice(4, 0, {
+  columns.splice(5, 0, {
     id: "iteration",
     header: l.iteration,
     render: (r) => {
-      const current = Math.max(
-        0,
-        ...(r.step_results ?? []).map((step) => step.loop_index ?? 0),
-      );
+      const current = displayedIteration(r);
       return current ? `${current}/${r.loop_limit ?? current}` : "—";
     },
-    sortValue: (r) => Math.max(0, ...(r.step_results ?? []).map((step) => step.loop_index ?? 0)),
+    sortValue: displayedIteration,
   });
-  const steps = selected?.step_results ?? [],
+  const steps = useMemo(() => selected?.step_results ?? [], [selected?.step_results]);
+  const iterations =
     // `after_all` is bookkeeping after the last loop. It must not become the
     // default detail iteration because supervisor results belong to execute/verify.
-    iterations = [
+    [
       ...new Set([
         ...steps
           .filter((step) => ["execute", "verify"].includes(step.phase ?? step.step_id ?? ""))
@@ -563,25 +589,69 @@ export function EvaluationsPage({
           .filter((index) => index > 0),
         ...(selected?.supervisor_results ?? []).map((item) => item.iteration ?? 0).filter((index) => index > 0),
       ]),
-    ].sort((a, b) => a - b),
+    ].sort((a, b) => a - b);
     // `before_all` and `after_all` are process-level steps, not iterations.
     // Include them beside the relevant iteration so their evidence remains
     // visible without inventing a separate, misleading iteration.
-    selectedSteps = steps.filter(
+  const selectedSteps = steps.filter(
       (step) =>
         (!candidateTab || step.candidate_id === candidateTab) &&
         (step.loop_index === iterationTab ||
           ((step.phase ?? step.step_id) === "before_all" && iterationTab === iterations[0]) ||
           ((step.phase ?? step.step_id) === "after_all" && iterationTab === iterations.at(-1))),
-    ),
-    availablePhases = phases.filter((phase) =>
-      selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
-    ),
-    supervision = selected?.supervisor_results?.find(
-      (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
-    ),
-    result = supervision?.response,
-    evaluation = result?.evaluation;
+    );
+  const availablePhases = phases.filter((phase) =>
+    selectedSteps.some((step) => (step.phase ?? step.step_id) === phase),
+  );
+  const supervision = selected?.supervisor_results?.find(
+    (item) => item.iteration === iterationTab && (!candidateTab || item.candidate_id === candidateTab),
+  );
+  const result = supervision?.response;
+  const evaluation = result?.evaluation;
+  const selectedIteration = selected ? displayedIteration(selected) : 0;
+  const iterationSummary = selectedIteration
+    ? `${selectedIteration}/${selected?.loop_limit ?? selectedIteration}`
+    : "—";
+  const workflowGraph = useMemo(() => {
+    const definition = selected?.workflow_graph;
+    if (!definition?.nodes.length) return null;
+    return {
+      ...definition,
+      nodes: definition.nodes.map((node) => {
+        const phaseSteps = steps.filter((step) => (step.phase ?? step.step_id) === node.phase);
+        const latestStep = phaseSteps.at(-1);
+        const phaseHasFunctionTrace = phaseSteps.some((step) => Array.isArray(step.result?.workflow_functions));
+        const firstNodeInPhase = definition.nodes.find((candidate) => candidate.phase === node.phase);
+        const functionTrace = [...steps].reverse().flatMap((step) => {
+          const traces = step.result?.workflow_functions;
+          return Array.isArray(traces) ? [...traces].reverse() : [];
+        }).find((trace) => typeof trace === "object" && trace !== null && trace.id === node.id) as { status?: WorkflowGraphNode["status"] } | undefined;
+        const supervisingEvidence = selected?.status === "running"
+          && selected.current_phase === "verify"
+          && selected.supervisor_status === "pending"
+          && node.phase === "verify"
+          && functionTrace?.status === "succeeded";
+        const interruptedFunction = selected && terminal(selected.status) && functionTrace?.status === "running";
+        const status: WorkflowGraphNode["status"] = interruptedFunction
+            ? "skipped"
+          : functionTrace?.status
+            && !supervisingEvidence
+            ? functionTrace.status
+          : supervisingEvidence
+            ? "running"
+          : selected?.status === "running" && node.phase === selected.current_phase && !phaseHasFunctionTrace && firstNodeInPhase?.id === node.id
+            ? "running"
+          : latestStep?.in_progress
+            ? "idle"
+          : latestStep?.error || (latestStep?.exit_code ?? 0) !== 0
+            ? phaseHasFunctionTrace ? "idle" : "failed"
+          : latestStep
+              ? "succeeded"
+              : "idle";
+        return { ...node, status };
+      }),
+    };
+  }, [selected, steps]);
   const resultFilterOptions = useMemo(() => {
     const improvementStatuses = new Set<string>(),
       issueSeverities = new Set<string>(),
@@ -632,8 +702,8 @@ export function EvaluationsPage({
         resultAttemptFilter === "all" ||
         improvements.some((improvement) =>
           resultAttemptFilter === "attempted"
-            ? improvement.attempted === true || improvement.status === "adopted"
-            : improvement.attempted !== true && improvement.status !== "adopted",
+            ? improvement.attempted === true || ["adopted", "accepted"].includes(String(improvement.status))
+            : improvement.attempted !== true && !["adopted", "accepted"].includes(String(improvement.status)),
         );
       const improvementStatusMatches =
         resultImprovementStatus === "all" ||
@@ -714,7 +784,7 @@ export function EvaluationsPage({
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
   const iterationNavigator =
-    tab !== "result" && tab !== "prompt" && iterations.length > 0 ? (
+    tab !== "result" && iterations.length > 0 ? (
       <div className="iteration-navigator" aria-label={l.iteration}>
         <button className="ghost icon-button" type="button" aria-label={ui.previousIteration} title={ui.previousIteration} disabled={previousIteration === undefined} onClick={() => {
           if (previousIteration !== undefined) {
@@ -736,7 +806,8 @@ export function EvaluationsPage({
       </div>
     ) : undefined;
   return (
-    <section className="panel active-evaluation-panel">
+    <>
+      {!detailOnly && <section className="panel active-evaluation-panel">
       <div className="panel-title-action">
         <div className="panel-title-action__copy">
           <PanelHeader
@@ -838,7 +909,7 @@ export function EvaluationsPage({
                 </option>
                 {availablePhases.map((phase) => (
                   <option key={phase} value={phase}>
-                    {phase}
+                    {phaseLabel(phase)}
                   </option>
                 ))}
                 <option value="waiting">{l.waiting}</option>
@@ -865,7 +936,6 @@ export function EvaluationsPage({
       </div>
       <div className="run-history-actions">
         <span>{ui.selected(selectedRunIds.size)}</span>
-        <button className="ghost" onClick={() => setSelectedRunIds(new Set())} disabled={!selectedRunIds.size}>{ui.deselect}</button>
         <button className="icon-button danger" aria-label={ui.deleteSelected} title={ui.deleteSelected} onClick={deleteSelected} disabled={!selectedRunIds.size}><Trash2 size={15}/></button>
       </div>
       <DataTable
@@ -881,16 +951,16 @@ export function EvaluationsPage({
           );
           setSelected(r);
           setTab("result");
-          setPhaseTab("before_all");
           setIterationTab(latest);
           setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
         className="active-evaluation-table"
-        gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 90px 72px 96px 96px 82px 94px 72px 72px"
+        gridTemplateColumns="36px minmax(220px,2fr) minmax(145px,1fr) 82px 72px 90px 72px 96px 96px 82px 94px 72px"
         empty={t.noRuns}
       />
       <Pagination locale={locale} page={currentPage} totalPages={totalPages} totalItems={filteredRuns.length} pageSize={pageSize} onPageChange={setPage}/>
       <ConfirmDialog open={deleteSelectionOpen} title={ui.deleteSelectedTitle} description={ui.deleteSelectedDescription(selectedRunIds.size)} cancelLabel={l.cancel} confirmLabel={ui.delete} onCancel={()=>setDeleteSelectionOpen(false)} onConfirm={confirmDeleteSelected}/>
+      </section>}
       {selected && (
         <Modal
           open
@@ -900,6 +970,10 @@ export function EvaluationsPage({
             onSelectedRunClose?.();
           }}
           className="modal--run-detail"
+          headerActions={<>
+            <button className="icon-button" title={retryCopy.title} aria-label={retryCopy.title} disabled={!terminal(selected.status) || selected.execution_type !== 'pipeline'} onClick={() => setRetryingRun(selected)}><RotateCcw size={16} /></button>
+            <button className="icon-button danger" title={t.stop} aria-label={t.stop} disabled={!activeStatuses.has(selected.status)} onClick={() => onStop(selected.id)}><CircleStop size={16} /></button>
+          </>}
         >
           <div className="run-detail-evaluation">
             <strong>
@@ -919,7 +993,11 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.phase}</small>
-              <strong>{finalPhase(selected)}</strong>
+              <StatusBadge value={selected.status} label={finalPhase(selected)} />
+            </div>
+            <div>
+              <small>{l.iteration}</small>
+              <strong>{iterationSummary}</strong>
             </div>
             <div>
               <small>{t.elapsed}</small>
@@ -938,22 +1016,32 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.decision}</small>
-              <strong>{evaluation?.approval ?? "—"}</strong>
+              <strong
+                title={evaluation?.summary || undefined}
+                aria-label={evaluation?.summary ? `${evaluation.approval}: ${evaluation.summary}` : undefined}
+              >
+                {evaluation?.approval ?? "—"}
+              </strong>
             </div>
           </div>
+          <section className="run-detail-workflow-graph" aria-label={l.workflowGraph}>
+            {workflowGraph ? (
+              <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} />
+            ) : (
+              <p className="hint">{l.noWorkflowGraph}</p>
+            )}
+          </section>
           <RunDetailTabs
             activeTab={tab}
             onSelect={setTab}
             tabs={[
               { id: "result", label: l.result },
-              { id: "prompt", label: l.promptChanges },
-              { id: "commits", label: l.commitChanges },
+              { id: "commits", label: l.worktrees },
               { id: "supervisor", label: l.supervisor },
-              { id: "workflow", label: l.workflow },
               { id: "logs", label: l.logs },
             ]}
           />
-          {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
+          {tab !== "result" && iterations.length > 0 && (
             <>
             {selected.iteration_strategy === "score_select" && (
               <div className="iteration-candidates">
@@ -966,28 +1054,6 @@ export function EvaluationsPage({
             )}
             </>
           )}
-          {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint} action={iterationNavigator}>
-              <div className="run-tabs phase-tabs">
-                {phases.map((phase) => (
-                  <button
-                    key={phase}
-                    className={phaseTab === phase ? "active" : ""}
-                    onClick={() => setPhaseTab(phase)}
-                  >
-                    {phase}
-                  </button>
-                ))}
-              </div>
-              <WorkflowLogPanel
-                locale={locale}
-                steps={selectedSteps.filter(
-                  (step) => (step.phase ?? step.step_id) === phaseTab,
-                )}
-                empty={l.noCommandsForPhase}
-              />
-            </RunDetailTabPanel>
-          )}
           {tab === "logs" && (
             <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint} action={iterationNavigator}>
               <CombinedLogPanel
@@ -996,22 +1062,16 @@ export function EvaluationsPage({
                 empty={l.noLogs}
                 orbitLogs={l.orbitLogs}
                 targetLogs={l.targetLogs}
-              />
-            </RunDetailTabPanel>
-          )}
-          {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
-              <PromptChangesPanel
-                key={selected.id}
-                revisions={promptRevisions}
-                l={l}
-                renderLineOutput={(value) => <LineNumberedOutput value={value} />}
+                telemetry={telemetry}
+                openTelemetryTrace={l.openTelemetryTrace}
+                loadingOpenTelemetryTrace={l.loadingOpenTelemetryTrace}
+                noOpenTelemetrySpans={l.noOpenTelemetrySpans}
               />
             </RunDetailTabPanel>
           )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint} action={iterationNavigator}>
-              <CommitChangesPanel changes={commitChanges} l={l} />
+            <RunDetailTabPanel description={l.worktreesDescription} hint={l.worktreesDataHint}>
+              <WorktreePanel items={worktrees} empty={l.noWorktrees} branch={l.worktreeBranch} path={l.worktreePath} diffLabel={l.worktreeDiff} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (
@@ -1041,8 +1101,6 @@ export function EvaluationsPage({
               <SupervisorPanel
                 record={translateSupervisorRecord(supervision)}
                 l={l}
-                telemetry={telemetry}
-                iteration={iterationTab}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
             </RunDetailTabPanel>
@@ -1234,6 +1292,8 @@ export function EvaluationsPage({
                 error={resultTranslations.error && <small className="hint">{translationCopy.failed}</small>}
                 records={resultRecords}
                 summaries={resultBehaviorTraces}
+                runId={selected.id}
+                steps={steps}
                 improvements={resultImprovements}
                 issues={resultIssues}
                 l={l}
@@ -1248,12 +1308,11 @@ export function EvaluationsPage({
         <div className="modal-form retry-confirmation">
           <p className="confirm-description">{retryCopy.warning}</p>
           <div className="modal-actions">
-            <button className="ghost" onClick={() => setRetryingRun(null)}>{retryCopy.cancel}</button>
             <button className="reject" onClick={() => { if (retryingRun) onRetry(retryingRun.id, false); setRetryingRun(null); }}>{retryCopy.resume}</button>
             <button className="approve" onClick={() => { if (retryingRun) onRetry(retryingRun.id, true); setRetryingRun(null); }}>{retryCopy.restart}</button>
           </div>
         </div>
       </Modal>
-    </section>
+    </>
   );
 }

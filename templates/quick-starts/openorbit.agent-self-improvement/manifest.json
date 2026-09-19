@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "openorbit.agent-self-improvement",
+  "version": "1.2.0",
+  "name": "Agent self-improvement",
+  "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
+  "publisher": {
+    "name": "OpenOrbit"
+  },
+  "parameters": [
+    {
+      "key": "build_name",
+      "label": "Evaluation name",
+      "type": "string",
+      "required": true,
+      "default": "Agent self-improvement",
+      "placeholder": "e.g. Support agent prompt improvement",
+      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+    },
+    {
+      "key": "repository",
+      "label": "Git repository",
+      "type": "workspace",
+      "required": true,
+      "placeholder": "/absolute/path/to/your-git-repository",
+      "tooltip": "Absolute path to the local repository or workspace that this evaluation may inspect."
+    },
+    {
+      "key": "managed_prompt_path",
+      "label": "Agent prompt file path",
+      "type": "string",
+      "required": true,
+      "default": "examples/agent-improvement-sample-prompt.md",
+      "placeholder": "e.g. prompts/system.md",
+      "tooltip": "Path relative to the repository for the prompt file managed by the improvement cycle."
+    },
+    {
+      "key": "journey_name",
+      "label": "Test case name",
+      "type": "string",
+      "required": true,
+      "default": "Missing refund context",
+      "placeholder": "e.g. Missing order details",
+      "tooltip": "Short, stable name shown for this fixed evaluation case."
+    },
+    {
+      "key": "journey_prompt",
+      "label": "User request",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. I need a refund, but I do not have my order number.",
+      "tooltip": "The exact user request or task supplied to the evaluated target."
+    },
+    {
+      "key": "acceptance",
+      "label": "Success condition",
+      "type": "string",
+      "required": true,
+      "placeholder": "e.g. The response is complete, grounded, and has no error.",
+      "tooltip": "Observable evidence required for this case to be considered successful."
+    },
+    {
+      "key": "model_profile_name",
+      "label": "AI model profile",
+      "type": "model_profile",
+      "required": true,
+      "tooltip": "Select an existing AI model profile, or create one for this build."
+    },
+    {
+      "key": "agent_provider",
+      "label": "AI coding agent",
+      "type": "select",
+      "required": true,
+      "default": "codex",
+      "options": [
+        {"value": "codex", "label": "Codex"},
+        {"value": "claude-code", "label": "Claude Code"},
+        {"value": "kiro", "label": "Kiro"}
+      ],
+      "tooltip": "Select the locally installed coding agent that will inspect, modify, and validate the managed prompt."
+    },
+    {
+      "key": "agent_options",
+      "label": "Agent CLI options",
+      "type": "string",
+      "default": "",
+      "placeholder": "e.g. --model ...",
+      "tooltip": "Optional command-line arguments passed to the selected agent."
+    }
+  ],
+  "assets": {
+    "runner": {
+      "name": "${build_name} runner",
+      "description": "Agent self-improvement runner created by Quick Start.",
+      "template_id": "native-improvement-cycle",
+      "source_file": "runner.py"
+    },
+    "prompt_template": {
+      "name": "${build_name} policy",
+      "version": 1,
+      "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met."
+    },
+    "test_case_set": {
+      "name": "${build_name} validation",
+      "description": "A fixed agent validation journey created by Quick Start.",
+      "cases": [
+        {
+          "id": "agent-journey",
+          "name": "${journey_name}",
+          "prompt": "${journey_prompt}",
+          "acceptance": "${acceptance}"
+        }
+      ]
+    },
+    "execution_environment": {
+      "name": "${build_name} execution",
+      "executor_type": "local"
+    },
+    "target_environment": {
+      "name": "${build_name} target",
+      "repository": "${repository}",
+      "managed_prompt_path": "${managed_prompt_path}"
+    }
+  },
+  "build": {
+    "name": "${build_name}",
+    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
+    "model_profile_name": "${model_profile_name}",
+    "timezone": "Asia/Tokyo",
+    "repeat_interval_minutes": 30,
+    "run_limit": 3,
+    "approval_score": 8,
+    "enabled": true
+  }
+}

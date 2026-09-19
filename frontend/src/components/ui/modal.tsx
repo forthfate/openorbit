@@ -8,12 +8,14 @@ export function Modal({
   onClose,
   children,
   className = "",
+  headerActions,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
   className?: string;
+  headerActions?: ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -37,9 +39,12 @@ export function Modal({
       >
         <header className="modal-header">
           <h2>{title}</h2>
-          <button className="modal-close" aria-label={close} onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="modal-header-actions">
+            {headerActions}
+            <button className="modal-close" aria-label={close} onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </header>
         {children}
       </section>
