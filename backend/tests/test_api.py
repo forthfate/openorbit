@@ -2194,7 +2194,9 @@ def test_assistant_mcp_configuration_uses_a_valid_default_and_persists_json(tmp_
     monkeypatch.setattr(store_module, "ASSISTANT_MCP_CONFIG", mcp_config)
     store = store_module.ConsoleStore()
 
-    assert store.assistant_mcp_config()["content"] == '{\n  "mcpServers": {}\n}\n'
+    assert store.assistant_mcp_config()["content"] == (
+        '{\n  "mcpServers": {\n    "openorbit": {\n      "url": "http://127.0.0.1:3000/mcp/"\n    }\n  }\n}\n'
+    )
     saved = store.save_assistant_mcp_config('{"mcpServers": {"orbit": {"command": "uv"}}}')
 
     assert saved["content"] == '{\n  "mcpServers": {\n    "orbit": {\n      "command": "uv"\n    }\n  }\n}\n'

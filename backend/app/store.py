@@ -29,6 +29,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from orbit import load_bundle
 
+from .assistant_tools import DEFAULT_MCP_URL
 from .assistant_tools import normalize_settings as normalize_assistant_tools
 from .models import PHASE_ALIASES, Run, Step, Workflow
 from .observability import configure_telemetry
@@ -1131,7 +1132,14 @@ class ConsoleStore:
 
     def assistant_mcp_config(self) -> dict[str, str]:
         if not ASSISTANT_MCP_CONFIG.exists():
-            return {"path": str(ASSISTANT_MCP_CONFIG), "content": '{\n  "mcpServers": {}\n}\n'}
+            return {
+                "path": str(ASSISTANT_MCP_CONFIG),
+                "content": json.dumps(
+                    {"mcpServers": {"openorbit": {"url": DEFAULT_MCP_URL}}},
+                    indent=2,
+                )
+                + "\n",
+            }
         return {
             "path": str(ASSISTANT_MCP_CONFIG),
             "content": ASSISTANT_MCP_CONFIG.read_text(encoding="utf-8"),
@@ -1152,7 +1160,9 @@ class ConsoleStore:
 
     def open_assistant_mcp_config_in_vscode(self) -> dict[str, str]:
         if not ASSISTANT_MCP_CONFIG.exists():
-            self.save_assistant_mcp_config('{"mcpServers": {}}')
+            self.save_assistant_mcp_config(
+                json.dumps({"mcpServers": {"openorbit": {"url": DEFAULT_MCP_URL}}})
+            )
         self._open_in_vscode(ASSISTANT_MCP_CONFIG)
         return {"status": "opened"}
 

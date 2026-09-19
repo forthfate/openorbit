@@ -163,12 +163,22 @@
         "select": "코딩 에이전트",
         "none": "미선택",
         "save": "저장",
-        "saved": "코딩 에이전트를 저장했습니다.",
-        "mcpConfig": "MCP 설정",
-        "mcpConfigDescription": "로컬 코딩 에이전트 MCP 연결에 사용하는 JSON 설정 파일을 편집합니다.",
+        "saved": "코딩 에이전트를 저장했습니다."
+      },
+      "mcp": {
+        "title": "MCP 연결",
+        "description": "로컬 코딩 에이전트가 사용할 MCP 서버를 관리합니다.",
+        "edit": "편집",
+        "save": "저장",
+        "reset": "초기화",
         "openInVsCode": "VS Code에서 열기",
-        "saveMcpConfig": "MCP 설정 저장",
-        "mcpConfigSaved": "MCP 설정을 저장했습니다."
+        "name": "이름",
+        "url": "URL",
+        "status": "상태",
+        "enabled": "활성화됨",
+        "disabled": "비활성화됨",
+        "noServers": "구성된 서버 없음",
+        "saved": "MCP 설정을 저장했습니다."
       },
       "storage": {
         "title": "앱 데이터",
