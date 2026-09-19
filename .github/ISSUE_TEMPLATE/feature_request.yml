@@ -1,0 +1,41 @@
+name: Feature Request
+description: Propose a new idea, enhancement, or capability for OpenOrbit
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please provide details about what problem this feature solves and how it should work.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement / Motivation
+      description: Is your feature request related to a problem or limitation? Please describe.
+      placeholder: A clear and concise description of what the problem or use case is...
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution & Expected Behavior
+      description: A clear and concise description of what you want to happen and how it should look or behave.
+      placeholder: Describe your proposed design, UI behavior, or API capability...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any alternative solutions or workarounds you have considered.
+      placeholder: Optional description of other approaches evaluated...
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, mockup screenshots, or implementation suggestions here.
+      placeholder: Optional mockups, architectural notes, or links...
+    validations:
+      required: false
