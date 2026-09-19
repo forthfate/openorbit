@@ -802,24 +802,26 @@ export function ProfileCatalog({
           {copy.profiles.create}
         </button>
       </div>
-      <AssetCatalog locale={locale} loading={loading} emptyHint={copy.profiles.empty}>
-        {profiles.map((profile) => (
-            <AssetRow
-              key={profile.profile_name}
-              name={profile.profile_name}
-              detail={`${profile.provider} · ${profile.model || "—"}`}
-              createdAt={profile.created_at}
-              usageCount={usage?.get(profile.profile_name) ?? 0}
-              locale={locale}
-              onClick={() => {
-                setSettings(profile);
-                setOpen(true);
-              }}
-              onDelete={() => onDelete(profile.profile_name)}
-              deleteLabel={`${copy.profiles.delete} ${profile.profile_name}`}
-            />
+      <div className="settings-section-content">
+        <AssetCatalog locale={locale} loading={loading} emptyHint={copy.profiles.empty}>
+          {profiles.map((profile) => (
+              <AssetRow
+                key={profile.profile_name}
+                name={profile.profile_name}
+                detail={`${profile.provider} · ${profile.model || "—"}`}
+                createdAt={profile.created_at}
+                usageCount={usage?.get(profile.profile_name) ?? 0}
+                locale={locale}
+                onClick={() => {
+                  setSettings(profile);
+                  setOpen(true);
+                }}
+                onDelete={() => onDelete(profile.profile_name)}
+                deleteLabel={`${copy.profiles.delete} ${profile.profile_name}`}
+              />
           ))}
-      </AssetCatalog>
+        </AssetCatalog>
+      </div>
       <Modal
         open={open}
         title={
