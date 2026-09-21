@@ -1368,8 +1368,10 @@ class ConsoleStore:
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
-            dates = [run.created_at for run in runs if run.build_id == build["id"]]
+            build_runs = [run for run in runs if run.build_id == build["id"]]
+            dates = [run.created_at for run in build_runs]
             build["last_run_at"] = max(dates).isoformat() if dates else None
+            build["run_count"] = len(build_runs)
         return builds
 
     def _hydrate_build_environment(self, build: dict[str, Any]) -> None:

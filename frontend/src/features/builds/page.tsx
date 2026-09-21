@@ -690,10 +690,7 @@ export function BuildsPage(props: {
     [size, setSize] = useState(15),
     [selected, setSelected] = useState(""),
     [testRun, setTestRun] = useState<Run | null>(null);
-  const taskCount = (build: Build) =>
-    testCaseSets.find((set) => set.id === build.test_case_set_id)?.cases.length ??
-    build.test_cases?.length ??
-    0;
+  const taskCount = (build: Build) => build.run_count ?? 0;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {
