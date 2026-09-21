@@ -17,14 +17,15 @@
       "tabRunSetup": "実行設定",
       "personas": "ペルソナ",
       "persona": "ペルソナ",
-      "personaDescription": "ユーザーの特性、目標、制約を定義し、実際のユーザージャーニーを検証します。",
+      "personaDescription": "ユーザーの特性と意図を定義し、実際のユーザージャーニーを検証します。",
       "emptyPersonas": "ペルソナはまだありません。",
       "locale": "ロケール",
       "timezone": "タイムゾーン",
-      "goals": "目標",
-      "goalsHint": "1 行に 1 つ",
-      "constraints": "制約",
-      "constraintsHint": "1 行に 1 つ",
+      "localeSearch": "ロケールを検索…",
+      "timezoneSearch": "タイムゾーンを検索…",
+      "noMatchingOptions": "一致する選択肢はありません。",
+      "definition": "ペルソナ定義",
+      "definitionPlaceholder": "# 目標\n\n- ユーザーが達成したい結果\n\n# 制約\n\n- 守るべき境界",
       "activityContext": "アクティビティ時間 / コンテキスト",
       "activityContextHint": "JSON",
       "invalidPersonaJson": "アクティビティ時間とコンテキストは有効な JSON である必要があります。",
@@ -247,8 +248,8 @@
         "hint": "評価対象のアプリケーションまたはサービスです。"
       },
       "executionEnvironment": {
-        "label": "実行環境",
-        "hint": "Orbit が選択したランナーを実行する場所です。"
+        "label": "実行環境（任意）",
+        "hint": "選択したランナーに必要なブラウザーランタイムと設定です。"
       },
       "purpose": {
         "label": "目的",
@@ -261,6 +262,11 @@
       "testCaseSet": {
         "label": "テストケースセット",
         "hint": "対象 AI 向けの再利用可能な固定入力と承認根拠です。"
+      },
+      "persona": {
+        "label": "ペルソナ（任意）",
+        "hint": "ランナーに渡す再利用可能なユーザー視点です。",
+        "none": "選択しない"
       },
       "aiProfile": {
         "label": "AIモデルプロファイル",
@@ -812,7 +818,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "エージェントの自己改善",
-        "description": "実際の対象 AI から保持した応答を基に、管理対象プロンプトを改善します。Git リポジトリ、プロンプトファイル、設定済みモデルプロファイルが必要です。"
+        "description": "管理対象 AI プロンプトを評価し、エージェントが隔離された worktree でレビュー可能な自己改善を 1 件作成します。ソースリポジトリは自動変更されません。"
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO と挙動ドリフトの監視",
@@ -930,7 +936,7 @@
       "assetTemplates": "テンプレートはバージョン管理される再利用可能な指示です。ビルドで選択しても保存済みの元データは変更されません。",
       "assetTests": "テストケースセットは、複数のビルドで再利用できる固定プロンプトと承認根拠を提供します。",
       "assetRunners": "ランナーにはプロジェクト固有の自動化が含まれ、複数のビルドで共有できます。",
-      "executionEnvironment": "ここでローカルまたはリモート実行を設定します。各ランナーはビルドで選択された実行環境を使用します。",
+      "executionEnvironment": "選択したランナーに必要なブラウザーランタイムと設定を指定します。",
       "targetEnvironment": "リポジトリ・ブラウザーURL・管理プロンプトパスは、この対象を選択したビルドにのみ適用されます。",
       "applicationSettings": "言語はコンソールと管理者結果の表示に適用され、テーマ変更はこのブラウザーにローカル保存されます。",
       "applicationData": "保存先の変更は今後のローカル状態と証跡に適用されます。既存データは自動移動されません。",

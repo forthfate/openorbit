@@ -11,6 +11,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { Children, isValidElement, useEffect, useMemo, useRef, useState } from "react";
+import localeCodes from "locale-codes";
+import Select from "react-select";
+import TimezoneSelect from "react-timezone-select";
 import type {
   Build,
   ExecutionEnvironment,
@@ -39,6 +42,8 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
+import { JsonEditor } from "../../components/ui/json-editor";
+import { MarkdownEditor } from "../../components/ui/markdown-editor";
 import { WorkflowGraph } from "../../components/workflow-graph";
 import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api, upload } from "../../services/api";
@@ -60,6 +65,18 @@ const testBlank: TargetTestCaseSet = {
   description: "",
   cases: [{ id: "case-1", name: "", prompt: "", acceptance: "" }],
 };
+
+const personaLocaleOptions = Array.from(
+  new Map(
+    localeCodes.all.map((item) => [
+      item.tag,
+      {
+        value: item.tag,
+        label: `${item.name}${item.location ? ` (${item.location})` : ""}${item.local && item.local !== item.name ? ` — ${item.local}` : ""}`,
+      },
+    ]),
+  ).values(),
+).sort((left, right) => left.label.localeCompare(right.label));
 
 function CatalogSkeleton() {
   return <SectionSkeleton rows={3} />;
@@ -1477,7 +1494,7 @@ function EnvironmentAssets({
             <AssetRow
               key={item.id}
               name={item.name}
-              detail={`${item.id} · ${item.executor.type}`}
+              detail={item.id}
               createdAt={item.created_at}
               onClick={() => {
                 setExecution({
@@ -1557,25 +1574,6 @@ function EnvironmentAssets({
             {field("Name", execution.name, (value) =>
               setExecution({ ...execution, name: value }),
             )}
-            <label className="modal-setting-row">
-              <span>Executor</span>
-              <select
-                value={execution.executor_type}
-                onChange={(event) =>
-                  setExecution({
-                    ...execution,
-                    executor_type: event.target.value,
-                  })
-                }
-              >
-                <option value="local">Local</option>
-                <option value="remote-http">Remote HTTP</option>
-              </select>
-            </label>
-            {execution.executor_type === "remote-http" &&
-              field("Endpoint", execution.remote_endpoint, (value) =>
-                setExecution({ ...execution, remote_endpoint: value }),
-              )}
             {field(
               "Browser executable (optional)",
               execution.browser_executable_path,
@@ -1758,7 +1756,7 @@ function EnvironmentCatalog({
             <AssetRow
               key={item.id}
               name={item.name}
-              detail={`${item.id} · ${item.executor.type}`}
+              detail={item.id}
               createdAt={item.created_at}
               usageCount={usage.executionEnvironments.get(item.id) ?? 0}
               locale={locale}
@@ -1844,30 +1842,6 @@ function EnvironmentCatalog({
             {field(t.name, help.name, execution.name, (value) =>
               setExecution({ ...execution, name: value }),
             )}
-            <label className="modal-setting-row">
-              <FieldLabel label={t.executor} description={help.executor} />
-              <select
-                value={execution.executor_type}
-                onChange={(event) =>
-                  setExecution({
-                    ...execution,
-                    executor_type: event.target
-                      .value as EnvironmentDraft["executor_type"],
-                  })
-                }
-              >
-                <option value="local">Local</option>
-                <option value="remote-http">Remote HTTP</option>
-              </select>
-            </label>
-            {execution.executor_type === "remote-http" &&
-              field(
-                t.endpoint,
-                help.endpoint,
-                execution.remote_endpoint,
-                (value) =>
-                  setExecution({ ...execution, remote_endpoint: value }),
-              )}
             {field(
               t.executable,
               help.executable,
@@ -1944,7 +1918,10 @@ function PersonaCatalog({ builds, onRefresh, locale, loading }: { builds: Build[
       .then(() => { setDraft(null); setError(""); return Promise.all([load(), onRefresh()]); })
       .catch((value) => setError(value.message));
   };
-  return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], goals: [""], constraints: [], context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} loading={loading || itemsLoading} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone} · ${item.goals.length} ${t.goals.toLowerCase()}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><input value={draft.locale} onChange={(event) => setDraft({ ...draft, locale: event.target.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><input value={draft.timezone} onChange={(event) => setDraft({ ...draft, locale: draft.locale, timezone: event.target.value })} /></label><label className="modal-setting-row"><span>{t.goals} ({t.goalsHint})</span><textarea value={draft.goals.join("\n")} onChange={(event) => setDraft({ ...draft, goals: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.constraints} ({t.constraintsHint})</span><textarea value={draft.constraints.join("\n")} onChange={(event) => setDraft({ ...draft, constraints: event.target.value.split("\n").filter(Boolean) })} /></label><label className="modal-setting-row"><span>{t.activityContext} ({t.activityContextHint})</span><textarea value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(event) => { try { const value = JSON.parse(event.target.value); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} /></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
+  const selectedLocale =
+    personaLocaleOptions.find((option) => option.value === draft?.locale) ??
+    (draft ? { value: draft.locale, label: draft.locale } : null);
+  return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], definition: "", context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} loading={loading || itemsLoading} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><Select classNamePrefix="orbit-select" options={personaLocaleOptions} value={selectedLocale} placeholder={t.localeSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => option && setDraft({ ...draft, locale: option.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><TimezoneSelect classNamePrefix="orbit-select" value={draft.timezone} placeholder={t.timezoneSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => setDraft({ ...draft, timezone: option.value })} /></label><label className="modal-setting-row"><span>{t.definition}</span><div className="persona-definition-editor"><MarkdownEditor value={draft.definition} onChange={(definition) => setDraft({ ...draft, definition })} label={t.definition} placeholder={t.definitionPlaceholder} /></div></label><label className="modal-setting-row"><span>{t.activityContext}</span><div className="persona-context-editor"><JsonEditor value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(source) => { try { const value = JSON.parse(source); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} label={t.activityContext} height="260px" /></div></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
 }
 
 export function AssetsPage({

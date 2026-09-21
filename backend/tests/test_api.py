@@ -1137,6 +1137,19 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
     assert result["evaluation"]["score"] == 8.0
 
 
+def test_supervisor_result_accepts_supervisor_observed_persona_journeys():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"persona_journeys":[{"persona_id":"jp_nisa_beginner","behavior_trace":'
+        '{"persona_goal":"Understand my NISA portfolio",'
+        '"current_action":"I checked the rendered holdings",'
+        '"decision":"I did not record a trade while the values disagree",'
+        '"next_action":"I will verify the displayed allocation",'
+        '"evidence":"The visible ACWI holding is zero"}}],'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["persona_journeys"][0]["persona_id"] == "jp_nisa_beginner"
+
+
 def test_supervisor_result_accepts_a_persona_journey_trace():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
@@ -1329,9 +1342,9 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     compile(improvement, "native-improvement-cycle.py", "exec")
     compile(json_agent, "json-agent-cycle.py", "exec")
     compile(probe_gate, "evidence-gated-probe-cycle.py", "exec")
-    assert "RecurringBrowserJourney" in user_journey
+    assert "@runner.phase" in user_journey
+    assert "orbit_runner_kit" not in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
-    assert "RecurringBrowserJourney" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" in adapter
     assert "playwright_journey" not in improvement
     assert "complete_model" in improvement
@@ -1352,7 +1365,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "Jgent" not in probe_gate
 
 
-def test_site_exploration_quick_start_uses_the_high_level_recipe():
+def test_site_exploration_quick_start_declares_its_lifecycle():
     store = store_module.ConsoleStore()
     quick_start = next(
         item for item in store._built_in_quick_starts() if item["id"] == "openorbit.site-exploration-review"
@@ -1360,11 +1373,9 @@ def test_site_exploration_quick_start_uses_the_high_level_recipe():
     runner = quick_start["assets"]["runner"]
     assert "LangGraph" in quick_start["description"]
     assert runner["template_id"] == "site-exploration"
-    assert "SiteExplorationReview" in runner["source"]
-    assert (
-        "logout|signout|delete"
-        in (Path(store_module.__file__).parents[1] / "orbit_runner_kit.py").read_text()
-    )
+    assert "@runner.phase" in runner["source"]
+    assert "orbit_runner_kit" not in runner["source"]
+    assert "logout|signout|delete" in runner["source"]
 
 
 def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch):
@@ -1442,12 +1453,9 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
                 "before_all",
                 "before_all",
                 "before_each",
-                "before_each",
                 "execute",
-                "verify",
                 "after_each",
                 "after_each",
-                "after_all",
             ],
         ),
         (
@@ -1948,12 +1956,12 @@ def test_personas_are_managed_as_reusable_assets(tmp_path, monkeypatch):
         "locale": "en-US",
         "timezone": "America/New_York",
         "activity_windows": [{"days": ["mon"], "start": "08:00", "end": "18:00"}],
-        "goals": ["Understand the portfolio safely."],
-        "constraints": ["Never place a real order."],
+        "definition": "# Goals\n\n- Understand the portfolio safely.\n\n# Constraints\n\n- Never place a real order.",
         "context": {"plan": "free"},
     }
     created = store.create_persona(values)
     assert created["context"] == {"plan": "free"}
+    assert created["definition"].startswith("# Goals")
     updated = store.update_persona("careful-investor", {**values, "name": "Cautious investor"})
     assert updated["name"] == "Cautious investor"
 

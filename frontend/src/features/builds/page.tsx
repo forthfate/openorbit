@@ -93,6 +93,7 @@ type BuildWizardCopy = {
   purpose: LabelCopy;
   managerTemplate: LabelCopy;
   testCaseSet: LabelCopy;
+  persona: LabelCopy & { none: string };
   aiProfile: LabelCopy;
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
@@ -463,16 +464,21 @@ function Direct({
             </select>
           </Field>
           <Field
-            label="Personas"
-            description="Optional reusable user perspectives supplied to this runner. Select more than one for multi-persona simulations."
+            label={copy.persona.label}
+            description={copy.persona.hint}
           >
             <select
-              multiple
-              value={d.persona_ids}
+              value={d.persona_ids[0] ?? ""}
               onChange={(event) =>
-                setD({ ...d, persona_ids: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })
+                setD({
+                  ...d,
+                  persona_ids: event.currentTarget.value
+                    ? [event.currentTarget.value]
+                    : [],
+                })
               }
             >
+              <option value="">{copy.persona.none}</option>
               {personas.map((persona) => (
                 <option key={persona.id} value={persona.id}>
                   {persona.name} · {persona.locale}
@@ -684,10 +690,7 @@ export function BuildsPage(props: {
     [size, setSize] = useState(15),
     [selected, setSelected] = useState(""),
     [testRun, setTestRun] = useState<Run | null>(null);
-  const taskCount = (build: Build) =>
-    testCaseSets.find((set) => set.id === build.test_case_set_id)?.cases.length ??
-    build.test_cases?.length ??
-    0;
+  const taskCount = (build: Build) => build.run_count ?? 0;
   useEffect(() => {
     if (!testRun || !testIsActive(testRun.status)) return;
     const timer = window.setInterval(() => {

@@ -377,8 +377,7 @@ class PersonaUpdate(BaseModel):
     locale: str = Field(min_length=2, max_length=32)
     timezone: str = Field(min_length=1, max_length=64)
     activity_windows: list[dict] = Field(default_factory=list)
-    goals: list[str] = Field(min_length=1, max_length=30)
-    constraints: list[str] = Field(default_factory=list, max_length=30)
+    definition: str = Field(min_length=1, max_length=20_000)
     context: dict = Field(default_factory=dict)
 
 
@@ -513,6 +512,7 @@ class BuildCreate(BaseModel):
     manager_template_id: str = "manager-default-v1"
     model_profile_name: str = "Default"
     test_case_set_id: str = Field(min_length=1, max_length=64)
+    persona_ids: list[str] = Field(default_factory=list)
     browser_base_url: str = Field(default="", max_length=2_000)
     browser_executable_path: str = Field(default="", max_length=4_000)
     browser_library_path: str = Field(default="", max_length=4_000)

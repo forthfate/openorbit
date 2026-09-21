@@ -1368,8 +1368,10 @@ class ConsoleStore:
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
-            dates = [run.created_at for run in runs if run.build_id == build["id"]]
+            build_runs = [run for run in runs if run.build_id == build["id"]]
+            dates = [run.created_at for run in build_runs]
             build["last_run_at"] = max(dates).isoformat() if dates else None
+            build["run_count"] = len(build_runs)
         return builds
 
     def _hydrate_build_environment(self, build: dict[str, Any]) -> None:
@@ -1728,21 +1730,45 @@ class ConsoleStore:
         )
 
     def personas(self) -> list[dict[str, Any]]:
-        return yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+        values = yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+        return (
+            [
+                {**item, "definition": self._persona_definition(item)}
+                for item in values
+                if isinstance(item, dict)
+            ]
+            if isinstance(values, list)
+            else []
+        )
+
+    @staticmethod
+    def _persona_definition(values: dict[str, Any]) -> str:
+        """Migrate legacy goal/constraint arrays into one Markdown definition."""
+        definition = str(values.get("definition", "")).strip()
+        if definition:
+            return definition
+        sections = []
+        goals = [str(goal).strip() for goal in values.get("goals", []) if str(goal).strip()]
+        constraints = [
+            str(constraint).strip() for constraint in values.get("constraints", []) if str(constraint).strip()
+        ]
+        if goals:
+            sections.append("# Goals\n\n" + "\n".join(f"- {goal}" for goal in goals))
+        if constraints:
+            sections.append("# Constraints\n\n" + "\n".join(f"- {constraint}" for constraint in constraints))
+        return "\n\n".join(sections)
 
     @staticmethod
     def _validated_persona(values: dict[str, Any], persona_id: str) -> dict[str, Any]:
         name = str(values.get("name", "")).strip()
         locale, timezone = str(values.get("locale", "")).strip(), str(values.get("timezone", "")).strip()
-        goals, windows, context = (
-            values.get("goals", []),
+        definition, windows, context = (
+            str(values.get("definition", "")).strip(),
             values.get("activity_windows", []),
             values.get("context", {}),
         )
-        if not name or not locale or not timezone or not isinstance(goals, list) or not goals:
-            raise ValueError("persona requires a name, locale, timezone, and at least one goal")
-        if not all(isinstance(goal, str) and goal.strip() for goal in goals):
-            raise ValueError("persona goals must be non-empty strings")
+        if not name or not locale or not timezone or not definition:
+            raise ValueError("persona requires a name, locale, timezone, and Markdown definition")
         if not isinstance(windows, list) or not all(isinstance(window, dict) for window in windows):
             raise ValueError("persona activity windows must be a list of objects")
         if not isinstance(context, dict):
@@ -1753,8 +1779,7 @@ class ConsoleStore:
             "locale": locale,
             "timezone": timezone,
             "activity_windows": windows,
-            "goals": [goal.strip() for goal in goals],
-            "constraints": [str(item).strip() for item in values.get("constraints", []) if str(item).strip()],
+            "definition": definition,
             "context": context,
         }
 
@@ -3974,10 +3999,8 @@ class ConsoleStore:
             raise ValueError("supervisor did not return valid JSON") from error
         if not isinstance(result, dict) or not {"improvements", "reported_issues"}.issubset(result):
             raise ValueError("supervisor JSON must contain improvements and reported_issues")
-        if set(result) not in (
-            {"improvements", "reported_issues"},
-            {"evaluation", "improvements", "reported_issues"},
-        ):
+        allowed_keys = {"evaluation", "persona_journeys", "improvements", "reported_issues"}
+        if not set(result).issubset(allowed_keys):
             raise ValueError("supervisor JSON contains unsupported result fields")
         if not all(
             isinstance(result[key], list) and all(isinstance(item, dict) for item in result[key])
@@ -3989,6 +4012,17 @@ class ConsoleStore:
             raise ValueError("supervisor evaluation is required for a registered agent result")
         if evaluation is not None:
             ConsoleStore._validate_evaluation(evaluation)
+        journeys = result.get("persona_journeys", [])
+        if not isinstance(journeys, list) or not all(isinstance(item, dict) for item in journeys):
+            raise ValueError("supervisor persona_journeys must be an array of objects")
+        for journey in journeys:
+            if (
+                set(journey) != {"persona_id", "behavior_trace"}
+                or not isinstance(journey["persona_id"], str)
+                or not journey["persona_id"].strip()
+            ):
+                raise ValueError("supervisor persona journey is invalid")
+            ConsoleStore._validate_persona_journey_trace(journey["behavior_trace"])
         for issue in result["reported_issues"]:
             issue_evaluation = issue.get("evaluation")
             if issue_evaluation is not None:
@@ -4063,6 +4097,16 @@ class ConsoleStore:
                     or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
+
+    @staticmethod
+    def _validate_persona_journey_trace(trace: Any) -> None:
+        required = {"persona_goal", "current_action", "decision", "next_action", "evidence"}
+        if (
+            not isinstance(trace, dict)
+            or set(trace) != required
+            or not all(isinstance(trace[field], str) and trace[field].strip() for field in required)
+        ):
+            raise ValueError("supervisor persona journey behavior_trace is invalid")
 
     @staticmethod
     def _evaluation_request_for_iteration(
@@ -4220,6 +4264,18 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
+        supervisor_prompt += (
+            "\n\n# Persona journey timeline required\n"
+            "Always include a top-level persona_journeys array. For every active or processed "
+            "persona supported by this iteration's evidence, emit one object with its exact persona_id "
+            "and behavior_trace: {persona_goal, current_action, decision, next_action, evidence}. "
+            "Write the trace as the supervisor's evidence-backed observation of that persona, not as "
+            "the runner procedure or hidden reasoning. Do not invent a journey for a persona without "
+            "evidence; return [] when there is none. persona_journeys is independent of top-level "
+            "evaluation: include it even when no iteration score is allowed.\n"
+            "The only permitted top-level keys are evaluation (when explicitly requested), "
+            "persona_journeys, improvements, and reported_issues."
+        )
         if stage == "issue_assessment":
             supervisor_prompt += (
                 "\n\n# Issue assessment required\n"

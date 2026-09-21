@@ -18,14 +18,15 @@
       "tabRunSetup": "Run setup",
       "personas": "Personas",
       "persona": "Persona",
-      "personaDescription": "Define user characteristics, goals, and constraints to validate real user journeys.",
+      "personaDescription": "Define user characteristics and intent to validate real user journeys.",
       "emptyPersonas": "No personas yet.",
       "locale": "Locale",
       "timezone": "Timezone",
-      "goals": "Goals",
-      "goalsHint": "One per line",
-      "constraints": "Constraints",
-      "constraintsHint": "One per line",
+      "localeSearch": "Search locales…",
+      "timezoneSearch": "Search timezones…",
+      "noMatchingOptions": "No matching options.",
+      "definition": "Persona definition",
+      "definitionPlaceholder": "# Goals\n\n- The outcome this user wants\n\n# Constraints\n\n- A boundary that must be respected",
       "activityContext": "Activity windows / context",
       "activityContextHint": "JSON",
       "invalidPersonaJson": "Activity windows and context must be valid JSON",
@@ -253,8 +254,8 @@
         "hint": "The target application or service being evaluated."
       },
       "executionEnvironment": {
-        "label": "Execution environment",
-        "hint": "Where Orbit runs the selected runner."
+        "label": "Execution environment (optional)",
+        "hint": "Optional browser runtime and settings for the selected runner."
       },
       "purpose": {
         "label": "Purpose",
@@ -267,6 +268,11 @@
       "testCaseSet": {
         "label": "Test case set",
         "hint": "The reusable fixed inputs and acceptance evidence for the target AI."
+      },
+      "persona": {
+        "label": "Persona (optional)",
+        "hint": "A reusable user perspective supplied to the runner.",
+        "none": "None"
       },
       "aiProfile": {
         "label": "AI model profile",
@@ -818,7 +824,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "Agent self-improvement",
-        "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile."
+        "description": "Evaluate a managed AI prompt and let an agent create one reviewable self-improvement in an isolated worktree. The source repository is never changed automatically."
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO and behavior drift monitor",
@@ -936,7 +942,7 @@
       "assetTemplates": "Templates are versioned reusable instructions; selecting one in a build does not modify its saved source.",
       "assetTests": "A test-case set supplies fixed prompts and acceptance evidence that runners can reuse across builds.",
       "assetRunners": "Runners contain project-specific automation and can be shared by multiple builds.",
-      "executionEnvironment": "Choose local or remote execution details here; each runner uses the environment selected by its build.",
+      "executionEnvironment": "Set optional browser runtime and settings for the selected runner.",
       "targetEnvironment": "Repository, browser URL, and managed prompt path are used only by builds that select this target.",
       "applicationSettings": "Language affects the console and manager-result display; theme changes are saved locally in this browser.",
       "applicationData": "Changing the location affects future local state and evidence; existing data is not moved automatically.",
