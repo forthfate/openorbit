@@ -3999,10 +3999,8 @@ class ConsoleStore:
             raise ValueError("supervisor did not return valid JSON") from error
         if not isinstance(result, dict) or not {"improvements", "reported_issues"}.issubset(result):
             raise ValueError("supervisor JSON must contain improvements and reported_issues")
-        if set(result) not in (
-            {"improvements", "reported_issues"},
-            {"evaluation", "improvements", "reported_issues"},
-        ):
+        allowed_keys = {"evaluation", "persona_journeys", "improvements", "reported_issues"}
+        if not set(result).issubset(allowed_keys):
             raise ValueError("supervisor JSON contains unsupported result fields")
         if not all(
             isinstance(result[key], list) and all(isinstance(item, dict) for item in result[key])
@@ -4014,6 +4012,17 @@ class ConsoleStore:
             raise ValueError("supervisor evaluation is required for a registered agent result")
         if evaluation is not None:
             ConsoleStore._validate_evaluation(evaluation)
+        journeys = result.get("persona_journeys", [])
+        if not isinstance(journeys, list) or not all(isinstance(item, dict) for item in journeys):
+            raise ValueError("supervisor persona_journeys must be an array of objects")
+        for journey in journeys:
+            if (
+                set(journey) != {"persona_id", "behavior_trace"}
+                or not isinstance(journey["persona_id"], str)
+                or not journey["persona_id"].strip()
+            ):
+                raise ValueError("supervisor persona journey is invalid")
+            ConsoleStore._validate_persona_journey_trace(journey["behavior_trace"])
         for issue in result["reported_issues"]:
             issue_evaluation = issue.get("evaluation")
             if issue_evaluation is not None:
@@ -4088,6 +4097,16 @@ class ConsoleStore:
                     or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
+
+    @staticmethod
+    def _validate_persona_journey_trace(trace: Any) -> None:
+        required = {"persona_goal", "current_action", "decision", "next_action", "evidence"}
+        if (
+            not isinstance(trace, dict)
+            or set(trace) != required
+            or not all(isinstance(trace[field], str) and trace[field].strip() for field in required)
+        ):
+            raise ValueError("supervisor persona journey behavior_trace is invalid")
 
     @staticmethod
     def _evaluation_request_for_iteration(
@@ -4245,6 +4264,18 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
+        supervisor_prompt += (
+            "\n\n# Persona journey timeline required\n"
+            "Always include a top-level persona_journeys array. For every active or processed "
+            "persona supported by this iteration's evidence, emit one object with its exact persona_id "
+            "and behavior_trace: {persona_goal, current_action, decision, next_action, evidence}. "
+            "Write the trace as the supervisor's evidence-backed observation of that persona, not as "
+            "the runner procedure or hidden reasoning. Do not invent a journey for a persona without "
+            "evidence; return [] when there is none. persona_journeys is independent of top-level "
+            "evaluation: include it even when no iteration score is allowed.\n"
+            "The only permitted top-level keys are evaluation (when explicitly requested), "
+            "persona_journeys, improvements, and reported_issues."
+        )
         if stage == "issue_assessment":
             supervisor_prompt += (
                 "\n\n# Issue assessment required\n"

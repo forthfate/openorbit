@@ -234,10 +234,30 @@ function PersonaJourneyTimeline({
     for (const run of runs) {
       if (run.build_id !== buildId) continue;
       for (const record of run.supervisor_results ?? []) {
-        const trace = record.response?.evaluation?.behavior_trace;
-        if (!trace || !Object.values(trace).some(Boolean)) continue;
         const recordedAt = record.recorded_at ?? run.updated_at ?? run.created_at;
         if (rangeStart && recordedAt && (Date.parse(recordedAt) || 0) < rangeStart) continue;
+        const journeys = record.response?.persona_journeys ?? [];
+        if (journeys.length) {
+          for (const [index, journey] of journeys.entries()) {
+            const trace = journey.behavior_trace;
+            const event = {
+              id: `${run.id}:${record.iteration}:${index}`,
+              persona: journey.persona_id,
+              run,
+              iteration: record.iteration,
+              recordedAt,
+              goal: trace.persona_goal,
+              action: trace.current_action,
+              decision: trace.decision,
+              nextAction: trace.next_action,
+            };
+            groups.set(journey.persona_id, [...(groups.get(journey.persona_id) ?? []), event]);
+          }
+          continue;
+        }
+        // Retain existing timelines from evaluations created before persona_journeys.
+        const trace = record.response?.evaluation?.behavior_trace;
+        if (!trace || !Object.values(trace).some(Boolean)) continue;
         const personas = new Set<string>();
         for (const step of run.step_results ?? []) {
           if (step.loop_index !== record.iteration || step.phase !== "before_each") continue;

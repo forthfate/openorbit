@@ -1137,6 +1137,19 @@ def test_supervisor_result_normalizes_a_numeric_string_score():
     assert result["evaluation"]["score"] == 8.0
 
 
+def test_supervisor_result_accepts_supervisor_observed_persona_journeys():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"persona_journeys":[{"persona_id":"jp_nisa_beginner","behavior_trace":'
+        '{"persona_goal":"Understand my NISA portfolio",'
+        '"current_action":"I checked the rendered holdings",'
+        '"decision":"I did not record a trade while the values disagree",'
+        '"next_action":"I will verify the displayed allocation",'
+        '"evidence":"The visible ACWI holding is zero"}}],'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["persona_journeys"][0]["persona_id"] == "jp_nisa_beginner"
+
+
 def test_supervisor_result_accepts_a_persona_journey_trace():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":8,"approval":"pending","summary":"ok","behavior_trace":'
