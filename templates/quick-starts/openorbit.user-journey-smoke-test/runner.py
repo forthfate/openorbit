@@ -4,7 +4,6 @@ The runner validates the declared browser target and journey cases, retains the
 rendered evidence, and fails the run if any declared journey does not pass.
 """
 
-from orbit_runner_primitives import RunnerRequirements
 from orbit_sdk import graph, runner
 
 graph.connect("validate-browser-runtime", "validate-browser-journey")
@@ -22,7 +21,8 @@ graph.connect("verify-browser-evidence", "finalize-browser-evaluation")
 @runner.phase("before_all", step_id="validate-browser-runtime")
 def validate_runtime(ctx):
     """Validate the browser target before running the smoke test."""
-    RunnerRequirements(build_fields=("browser_base_url",)).validate_build_fields(ctx)
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("Set required build field(s): browser_base_url")
 
 
 @graph.step(
@@ -35,7 +35,8 @@ def validate_runtime(ctx):
 @runner.phase("before_all", step_id="validate-browser-journey")
 def validate_contract(ctx):
     """Require fixed browser journey cases."""
-    RunnerRequirements(require_test_cases=True).validate_test_cases(ctx)
+    if not ctx.test_cases:
+        raise ValueError("Select at least one fixed journey case before running this runner")
 
 
 @graph.step(

@@ -9,7 +9,6 @@ import json
 from pathlib import Path
 
 import orbit_sdk
-from orbit_runner_primitives import RunnerRequirements
 from orbit_sdk import graph, runner
 
 graph.connect("validate-site", "explore-site")
@@ -21,7 +20,10 @@ graph.connect("review-evidence", "finalize-review")
 @runner.phase("before_all", step_id="validate-site")
 def validate_site(ctx):
     """Validate the browser target before safely exploring it."""
-    RunnerRequirements(build_fields=("browser_base_url",)).validate(ctx)
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("Set required build field(s): browser_base_url")
+    if not ctx.test_cases:
+        raise ValueError("Select at least one fixed journey case before running this runner")
 
 
 @graph.step(

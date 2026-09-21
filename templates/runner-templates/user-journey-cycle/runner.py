@@ -7,7 +7,6 @@ review what happened without relying on hidden lifecycle helpers.
 
 import json
 
-from orbit_runner_primitives import RunnerRequirements, focused_cases
 from orbit_sdk import graph, runner
 
 NAMESPACE = "user_journey"
@@ -43,7 +42,8 @@ def state(ctx):
 @runner.phase("before_all", step_id="validate-user-journey-runtime")
 def validate_runtime(ctx):
     """Validate the browser base URL before the recurring journey starts."""
-    RunnerRequirements(build_fields=("browser_base_url",)).validate_build_fields(ctx)
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("Set required build field(s): browser_base_url")
     ctx.log("Validated the browser runtime target")
 
 
@@ -57,7 +57,8 @@ def validate_runtime(ctx):
 @runner.phase("before_all", step_id="validate-user-journey")
 def validate_contract(ctx):
     """Require fixed journey cases for reproducible coverage."""
-    RunnerRequirements(require_test_cases=True).validate_test_cases(ctx)
+    if not ctx.test_cases:
+        raise ValueError("Select at least one fixed journey case before running this runner")
     ctx.log("Validated the user journey contract")
 
 
@@ -86,7 +87,10 @@ def plan(ctx):
     """Choose failed cases first, then rotate through the fixed case set."""
     current = state(ctx)
     failed = bool(current.get("failed_case_ids"))
-    cases = focused_cases(ctx, current)
+    failed_ids = {str(case_id) for case_id in current.get("failed_case_ids", [])}
+    cases = [case for case in ctx.test_cases if str(case.get("id")) in failed_ids]
+    if not cases:
+        cases = [ctx.test_cases[int(current.get("next_case_index", 0)) % len(ctx.test_cases)]]
     rules = [
         "Preserve observable evidence for every browser action.",
         "Do not infer a result that the page did not expose.",
