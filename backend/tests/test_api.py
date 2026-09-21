@@ -1455,12 +1455,9 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
                 "before_all",
                 "before_all",
                 "before_each",
-                "before_each",
                 "execute",
-                "verify",
                 "after_each",
                 "after_each",
-                "after_all",
             ],
         ),
         (

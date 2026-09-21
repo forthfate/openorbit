@@ -824,7 +824,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "Agent self-improvement",
-        "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile."
+        "description": "Evaluate a managed AI prompt and let an agent create one reviewable self-improvement in an isolated worktree. The source repository is never changed automatically."
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO and behavior drift monitor",

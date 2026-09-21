@@ -818,7 +818,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "エージェントの自己改善",
-        "description": "実際の対象 AI から保持した応答を基に、管理対象プロンプトを改善します。Git リポジトリ、プロンプトファイル、設定済みモデルプロファイルが必要です。"
+        "description": "管理対象 AI プロンプトを評価し、エージェントが隔離された worktree でレビュー可能な自己改善を 1 件作成します。ソースリポジトリは自動変更されません。"
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO と挙動ドリフトの監視",
