@@ -1,4 +1,9 @@
-"""Validate a declared source contract before running rendered browser journeys."""
+"""Validate a declared source contract before running rendered browser journeys.
+
+Source matches provide implementation context only; rendered browser evidence
+remains the proof of user-visible behavior. The lifecycle keeps those two kinds
+of evidence distinct for supervisor review.
+"""
 
 import json
 import os
@@ -7,7 +12,17 @@ from orbit_sdk import graph, runner
 
 
 def source_contract(ctx):
-    """Return bounded source evidence without treating source as UI proof."""
+    """Return bounded source evidence without treating source as UI proof.
+
+    Args:
+        ctx: The active Orbit runner context.
+
+    Returns:
+        The configured expression and a bounded list of matching files.
+
+    Raises:
+        ValueError: If the source contract is absent or has no matching files.
+    """
     pattern = os.environ.get("ORBIT_SOURCE_CONTRACT_PATTERN", "").strip()
     if not pattern:
         raise ValueError("Set ORBIT_SOURCE_CONTRACT_PATTERN to a required source expression")
@@ -40,6 +55,7 @@ graph.connect(
 )
 @runner.phase("before_all", step_id="validate-source-contract")
 def validate_source_contract(ctx):
+    """Validate browser inputs and publish the source-side contract."""
     if not ctx.build.get("browser_base_url") or not ctx.test_cases:
         raise ValueError("A browser base URL and at least one fixed journey case are required")
     contract = source_contract(ctx)
@@ -56,6 +72,7 @@ def validate_source_contract(ctx):
 )
 @runner.phase("execute", step_id="run-browser-journey")
 def run_browser_journey(ctx):
+    """Run the rendered browser journey independently of source evidence."""
     evidence = ctx.playwright_journey()
     ctx.emit_result({"source_aware_journey": {"iteration": ctx.loop_index, "evidence": evidence}})
     ctx.save_data_file(
@@ -75,6 +92,7 @@ def run_browser_journey(ctx):
 )
 @runner.phase("verify", step_id="publish-rendered-evidence")
 def publish_rendered_evidence(ctx):
+    """Mark the combined source and browser evidence ready for review."""
     ctx.log("Published source context with rendered browser evidence")
 
 
@@ -87,6 +105,7 @@ def publish_rendered_evidence(ctx):
 )
 @runner.phase("after_each", step_id="close-source-aware-cycle")
 def close_source_aware_cycle(ctx):
+    """Close one bounded source-aware browser iteration."""
     ctx.log("Completed one bounded source-aware browser journey")
 
 
@@ -99,6 +118,7 @@ def close_source_aware_cycle(ctx):
 )
 @runner.phase("after_all", step_id="finalize-source-aware-journey")
 def finalize_source_aware_journey(ctx):
+    """Finalize the source-aware browser journey."""
     ctx.log("Finalized the source-aware browser evaluation")
 
 
