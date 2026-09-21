@@ -1342,9 +1342,9 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     compile(improvement, "native-improvement-cycle.py", "exec")
     compile(json_agent, "json-agent-cycle.py", "exec")
     compile(probe_gate, "evidence-gated-probe-cycle.py", "exec")
-    assert "RecurringBrowserJourney" in user_journey
+    assert "@runner.phase" in user_journey
+    assert "orbit_runner_kit" not in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
-    assert "RecurringBrowserJourney" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" in adapter
     assert "playwright_journey" not in improvement
     assert "complete_model" in improvement
@@ -1365,7 +1365,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "Jgent" not in probe_gate
 
 
-def test_site_exploration_quick_start_uses_the_high_level_recipe():
+def test_site_exploration_quick_start_declares_its_lifecycle():
     store = store_module.ConsoleStore()
     quick_start = next(
         item for item in store._built_in_quick_starts() if item["id"] == "openorbit.site-exploration-review"
@@ -1373,11 +1373,9 @@ def test_site_exploration_quick_start_uses_the_high_level_recipe():
     runner = quick_start["assets"]["runner"]
     assert "LangGraph" in quick_start["description"]
     assert runner["template_id"] == "site-exploration"
-    assert "SiteExplorationReview" in runner["source"]
-    assert (
-        "logout|signout|delete"
-        in (Path(store_module.__file__).parents[1] / "orbit_runner_kit.py").read_text()
-    )
+    assert "@runner.phase" in runner["source"]
+    assert "orbit_runner_kit" not in runner["source"]
+    assert "logout|signout|delete" in runner["source"]
 
 
 def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch):

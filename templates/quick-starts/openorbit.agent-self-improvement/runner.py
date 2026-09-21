@@ -1,9 +1,9 @@
-# Requirements
-# - PROJECT_ROOT is a Git repository.
-# - The build selects fixed target-AI prompts and a configured model
-#   profile, plus a readable change target path on its Target Environment.
-# - A locally installed coding agent creates one reviewable proposal in an
-#   isolated worktree. The source repository is never changed automatically.
+"""Create an evidence-backed agent self-improvement in an isolated worktree.
+
+Requires a Git repository, fixed target-AI cases, a model profile, and a
+readable managed prompt. The coding agent's diff is retained for review and
+never applied automatically to the source repository.
+"""
 
 import hashlib
 import json
@@ -22,12 +22,30 @@ graph.connect("propose-agent-change", "prepare-prompt", kind="loop", label="next
 
 
 def git(ctx, *args):
-    """Run Git in the configured project root without invoking a shell."""
+    """Run Git in the configured project root without invoking a shell.
+
+    Args:
+        ctx: The active Orbit runner context.
+        *args: Git arguments excluding the executable name.
+
+    Returns:
+        Standard output from the Git command.
+    """
     return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)
 
 
 def managed_prompt_evidence(ctx):
-    """Expose the current managed prompt beside the target-AI response evidence."""
+    """Read and fingerprint the prompt that the agent will improve.
+
+    Args:
+        ctx: The active Orbit runner context.
+
+    Returns:
+        The path, content, and SHA-256 fingerprint of the managed prompt.
+
+    Raises:
+        ValueError: If no managed prompt path is configured.
+    """
     prompt_path = str(ctx.build.get("managed_prompt_path") or ctx.build.get("prompt_bundle") or "").strip()
     if not prompt_path:
         raise ValueError("native improvement cycle requires target_environment.managed_prompt_path")
@@ -40,7 +58,11 @@ def managed_prompt_evidence(ctx):
 
 
 def agent_task(ctx):
-    """Give the coding agent a bounded, autonomous improvement objective."""
+    """Build a bounded, autonomous objective for the coding agent.
+
+    The task explicitly confines the agent's modifications to its isolated
+    proposal worktree; it never authorizes an automatic source-repository edit.
+    """
     issue = ctx.current_issue_assessment
     return "\n".join(
         (
@@ -61,6 +83,7 @@ def agent_task(ctx):
 )
 @runner.phase("before_all", step_id="validate-target")
 def before_all(ctx):
+    """Validate that the configured repository is a Git worktree."""
     # Repository validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
 
@@ -74,6 +97,7 @@ def before_all(ctx):
 )
 @runner.phase("before_all", step_id="validate-evaluation-inputs")
 def validate_evaluation_inputs(ctx):
+    """Validate fixed target-AI cases and the selected model profile."""
     if not ctx.test_cases:
         raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
     if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get(
@@ -92,6 +116,7 @@ def validate_evaluation_inputs(ctx):
 )
 @runner.phase("before_each", step_id="prepare-prompt")
 def before_each(ctx):
+    """Expose the current prompt as read-only evidence for this iteration."""
     ctx.emit_result(
         {
             "improvement_cycle": {
@@ -112,6 +137,7 @@ def before_each(ctx):
 )
 @runner.phase("execute", step_id="exercise-target")
 def execute(ctx):
+    """Exercise the target AI and retain raw response evidence."""
     # Exercise the evaluated AI with the current managed prompt. The raw reply
     # is retained as supervisor evidence instead of treating a browser page as
     # proof that a prompt instruction was followed.
@@ -164,7 +190,7 @@ def execute(ctx):
 )
 @runner.phase("after_each", step_id="propose-agent-change")
 def propose_agent_change(ctx):
-    """Create a proposal after retaining evidence and assessing the Issue."""
+    """Create one isolated worktree proposal for a supervisor-assessed issue."""
     issue = ctx.current_issue_assessment
     assessment = issue.get("evaluation") if isinstance(issue, dict) else None
     decision = assessment.get("approval") if isinstance(assessment, dict) else None
@@ -204,6 +230,7 @@ def propose_agent_change(ctx):
 )
 @runner.phase("after_each", step_id="retain-iteration")
 def after_each(ctx):
+    """Keep target-AI evidence available after supervisor assessment."""
     # Per-iteration evidence remains available for supervisor review.
     ctx.log("Retained target-AI responses and supervisor assessment evidence")
 
