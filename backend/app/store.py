@@ -179,7 +179,14 @@ def now() -> datetime:
 class ConsoleStore:
     """File-backed local state. Commands are always executed without a shell."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, recover_interrupted_runs: bool = False) -> None:
+        """Open local state without claiming ownership of the scheduler.
+
+        Only the long-lived API service may recover unfinished local pipelines.
+        Diagnostic scripts also create a store to inspect assets; allowing those
+        short-lived processes to recover runs would incorrectly cancel the
+        pipeline owned by the already-running API service.
+        """
         self._initialize_application_data()
         RUNS.mkdir(parents=True, exist_ok=True)
         RUNNERS.mkdir(parents=True, exist_ok=True)
@@ -194,7 +201,8 @@ class ConsoleStore:
         self._test_sessions: dict[str, Run] = {}
         self._runner_graph_drafts: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
-        self._recover_interrupted_runs()
+        if recover_interrupted_runs:
+            self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
 
     @staticmethod
@@ -2321,6 +2329,60 @@ class ConsoleStore:
         categories = {"accuracy_grounding", "safety_privacy", "task_completion", "user_experience", "other"}
         return str(value) if str(value) in categories else "other"
 
+    def _known_unresolved_issues(self, run: Run, *, limit: int = 12) -> list[dict[str, str]]:
+        """Return compact, active Issue context for a supervisor prompt.
+
+        Issue Management is derived from immutable supervisor results, so this
+        deliberately scans earlier issue-assessment responses instead of a
+        separate mutable issue store. Resolved and deleted items are excluded:
+        a later observation of either may be a genuine regression.
+        """
+        records = self._issue_management_records()
+        candidates = [item for item in self.runs() if item.build_id == run.build_id]
+        if all(item.id != run.id for item in candidates):
+            candidates.append(run)
+        values: list[dict[str, str]] = []
+        for source_run in candidates:
+            for result in source_run.supervisor_results:
+                if (
+                    not isinstance(result, dict)
+                    or result.get("stage", "issue_assessment") != "issue_assessment"
+                ):
+                    continue
+                response = result.get("response")
+                if not isinstance(response, dict):
+                    continue
+                improvements = response.get("improvements")
+                reported = response.get("reported_issues")
+                proposals = improvements if isinstance(improvements, list) and improvements else reported
+                if not isinstance(proposals, list):
+                    continue
+                for index, proposal in enumerate(proposals):
+                    if not isinstance(proposal, dict):
+                        continue
+                    proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:{index}"
+                    if proposals is reported:
+                        proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:issue:{index}"
+                    management = records.get(proposal_id, {})
+                    if management.get("status") in {"resolved", "deleted"}:
+                        continue
+                    if str(proposal.get("status") or "").lower() == "rejected":
+                        continue
+                    values.append(
+                        {
+                            "id": proposal_id,
+                            "title": str(proposal.get("title") or "")[:240],
+                            "category": self._issue_category(proposal.get("category")),
+                            "rationale": str(
+                                proposal.get("rationale") or proposal.get("acceptanceEvidence") or ""
+                            )[:700],
+                            "evidence": str(proposal.get("evidence") or proposal.get("reproduction") or "")[
+                                :700
+                            ],
+                        }
+                    )
+        return values[-limit:]
+
     def cycle_interventions(self) -> list[dict[str, Any]]:
         return (
             yaml.safe_load(CYCLE_INTERVENTIONS.read_text(encoding="utf-8"))
@@ -2420,6 +2482,11 @@ class ConsoleStore:
                     )
                 for proposal_id, proposal in issue_proposals:
                     if not isinstance(proposal, dict):
+                        continue
+                    # A supervisor may retain fresh evidence against an active
+                    # Issue by referring to its stable ID. It is not a new
+                    # Issue Management row until the original issue is resolved.
+                    if str(proposal.get("known_issue_id") or "").strip():
                         continue
                     source_status = str(proposal.get("status") or "proposed").lower()
                     decision = (
@@ -4264,6 +4331,19 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
+        known_issues = self._known_unresolved_issues(run) if stage == "issue_assessment" else []
+        if known_issues:
+            supervisor_prompt += "\n\n# Known unresolved issues\n"
+            supervisor_prompt += json.dumps(known_issues, ensure_ascii=False)
+            supervisor_prompt += (
+                "\nThese are active problems already reported for this build. Compare every potential "
+                "finding by its underlying cause, user impact, and reproduction, not by title wording or "
+                "language. When it is the same unresolved issue, do not create a new improvement or "
+                "reported issue. If retaining this iteration's evidence against that existing issue is "
+                "necessary, return an item with its exact known_issue_id and evidence only; it will not "
+                "create a new Issue Management row. Create a new item only for a materially distinct cause, "
+                "impact, or reproduction.\n"
+            )
         supervisor_prompt += (
             "\n\n# Persona journey timeline required\n"
             "Always include a top-level persona_journeys array. For every active or processed "
@@ -4322,6 +4402,12 @@ class ConsoleStore:
                 result = self._validated_supervisor_result(
                     response_text, require_evaluation=evaluation_request is not None
                 )
+                known_issue_ids = {item["id"] for item in known_issues}
+                for proposal in [*result["improvements"], *result["reported_issues"]]:
+                    known_issue_id = str(proposal.get("known_issue_id") or "").strip()
+                    if known_issue_id and known_issue_id not in known_issue_ids:
+                        # Never let a model-invented ID suppress a new Issue.
+                        proposal.pop("known_issue_id", None)
                 if stage == "issue_assessment" and any(
                     not isinstance(item.get("evaluation"), dict)
                     for item in [*result["reported_issues"], *result["improvements"]]

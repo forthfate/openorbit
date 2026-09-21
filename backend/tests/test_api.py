@@ -113,6 +113,32 @@ def test_generated_sdk_docs_are_served_from_the_local_app(tmp_path, monkeypatch)
     assert "SDK reference" in response.text
 
 
+def test_diagnostic_store_does_not_recover_an_active_pipeline(tmp_path, monkeypatch):
+    """A second store process must not cancel the API server's live run."""
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    timestamp = store_module.now()
+    owner = store_module.ConsoleStore()
+    owner._save(
+        Run(
+            id="active-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+
+    diagnostic = store_module.ConsoleStore()
+
+    assert diagnostic.run("active-run").status == "running"
+
+    recovering_server = store_module.ConsoleStore(recover_interrupted_runs=True)
+
+    assert recovering_server.run("active-run").status == "cancelled"
+    assert recovering_server.run("active-run").step_results[-1]["step_id"] == "orbit-restart"
+
+
 def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
@@ -1281,6 +1307,84 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
     assert len(captured_prompts) == 1
     assert '"phase": "before_each"' in captured_prompts[0]
     assert "Prompt evidence" in captured_prompts[0]
+
+
+def test_supervision_reuses_known_unresolved_issue_without_creating_another_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="known-issue-run",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        supervisor_profile_name="Supervisor",
+        prompt_snapshot="Evaluate the target.",
+        status="running",
+        created_at=timestamp,
+        updated_at=timestamp,
+        step_results=[{"phase": "execute", "loop_index": 2, "result": {"persona_cycle": {}}}],
+        supervisor_results=[
+            {
+                "iteration": 1,
+                "stage": "issue_assessment",
+                "response": {
+                    "improvements": [
+                        {
+                            "title": "Portfolio calculation basis is unclear",
+                            "rationale": "Users cannot verify the displayed value.",
+                            "status": "proposed",
+                        }
+                    ],
+                    "reported_issues": [],
+                },
+            }
+        ],
+    )
+    store._save(run)
+    captured_prompts = []
+
+    class FakeProvider:
+        def complete(self, _settings, prompt):
+            captured_prompts.append(prompt)
+            return json.dumps(
+                {
+                    "improvements": [
+                        {
+                            "known_issue_id": "known-issue-run:1:0",
+                            "evidence": "The basis is still absent in this iteration.",
+                            "evaluation": {"score": 7, "approval": "pending", "summary": "Known issue."},
+                        }
+                    ],
+                    "reported_issues": [],
+                }
+            )
+
+    monkeypatch.setattr(
+        store,
+        "profiles",
+        lambda: [
+            {
+                "profile_name": "Supervisor",
+                "provider": "azure-openai",
+                "model": "test-model",
+                "endpoint": "https://example.test/openai/v1",
+                "region": "us-east-1",
+                "secret_env": "AZURE_OPENAI_API_KEY",
+                "aws_profile": "",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+    )
+    monkeypatch.setattr(store_module, "AzureOpenAIProvider", FakeProvider)
+    monkeypatch.setattr(store, "_review_cycle_improvement", lambda *_args: None)
+
+    store._complete_supervision(run.id)
+
+    assert "# Known unresolved issues" in captured_prompts[0]
+    assert "known-issue-run:1:0" in captured_prompts[0]
+    assert [item["title"] for item in store.proposal_lifecycles()] == [
+        "Portfolio calculation basis is unclear"
+    ]
 
 
 def test_runner_context_uses_the_supplied_model_profile_without_exposing_its_secret(tmp_path, monkeypatch):

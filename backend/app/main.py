@@ -80,7 +80,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-store = ConsoleStore()
+# The API service owns in-memory scheduler threads, so it alone may mark a
+# leftover local pipeline as interrupted when it starts.
+store = ConsoleStore(recover_interrupted_runs=True)
 assistant_ui_broker = AssistantUiBroker()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
@@ -1118,7 +1120,7 @@ def update_application_data(values: ApplicationDataLocationUpdate):
     if any(run.status in {"queued", "running", "awaiting_approval"} for run in store.runs()):
         raise ValueError("Stop active evaluation runs before changing the app data location")
     store_module.configure_application_data(values.path)
-    store = ConsoleStore()
+    store = ConsoleStore(recover_interrupted_runs=True)
     return application_data_summary()
 
 
