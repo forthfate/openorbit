@@ -1948,12 +1948,12 @@ def test_personas_are_managed_as_reusable_assets(tmp_path, monkeypatch):
         "locale": "en-US",
         "timezone": "America/New_York",
         "activity_windows": [{"days": ["mon"], "start": "08:00", "end": "18:00"}],
-        "goals": ["Understand the portfolio safely."],
-        "constraints": ["Never place a real order."],
+        "definition": "# Goals\n\n- Understand the portfolio safely.\n\n# Constraints\n\n- Never place a real order.",
         "context": {"plan": "free"},
     }
     created = store.create_persona(values)
     assert created["context"] == {"plan": "free"}
+    assert created["definition"].startswith("# Goals")
     updated = store.update_persona("careful-investor", {**values, "name": "Cautious investor"})
     assert updated["name"] == "Cautious investor"
 

@@ -1728,21 +1728,45 @@ class ConsoleStore:
         )
 
     def personas(self) -> list[dict[str, Any]]:
-        return yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+        values = yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+        return (
+            [
+                {**item, "definition": self._persona_definition(item)}
+                for item in values
+                if isinstance(item, dict)
+            ]
+            if isinstance(values, list)
+            else []
+        )
+
+    @staticmethod
+    def _persona_definition(values: dict[str, Any]) -> str:
+        """Migrate legacy goal/constraint arrays into one Markdown definition."""
+        definition = str(values.get("definition", "")).strip()
+        if definition:
+            return definition
+        sections = []
+        goals = [str(goal).strip() for goal in values.get("goals", []) if str(goal).strip()]
+        constraints = [
+            str(constraint).strip() for constraint in values.get("constraints", []) if str(constraint).strip()
+        ]
+        if goals:
+            sections.append("# Goals\n\n" + "\n".join(f"- {goal}" for goal in goals))
+        if constraints:
+            sections.append("# Constraints\n\n" + "\n".join(f"- {constraint}" for constraint in constraints))
+        return "\n\n".join(sections)
 
     @staticmethod
     def _validated_persona(values: dict[str, Any], persona_id: str) -> dict[str, Any]:
         name = str(values.get("name", "")).strip()
         locale, timezone = str(values.get("locale", "")).strip(), str(values.get("timezone", "")).strip()
-        goals, windows, context = (
-            values.get("goals", []),
+        definition, windows, context = (
+            str(values.get("definition", "")).strip(),
             values.get("activity_windows", []),
             values.get("context", {}),
         )
-        if not name or not locale or not timezone or not isinstance(goals, list) or not goals:
-            raise ValueError("persona requires a name, locale, timezone, and at least one goal")
-        if not all(isinstance(goal, str) and goal.strip() for goal in goals):
-            raise ValueError("persona goals must be non-empty strings")
+        if not name or not locale or not timezone or not definition:
+            raise ValueError("persona requires a name, locale, timezone, and Markdown definition")
         if not isinstance(windows, list) or not all(isinstance(window, dict) for window in windows):
             raise ValueError("persona activity windows must be a list of objects")
         if not isinstance(context, dict):
@@ -1753,8 +1777,7 @@ class ConsoleStore:
             "locale": locale,
             "timezone": timezone,
             "activity_windows": windows,
-            "goals": [goal.strip() for goal in goals],
-            "constraints": [str(item).strip() for item in values.get("constraints", []) if str(item).strip()],
+            "definition": definition,
             "context": context,
         }
 

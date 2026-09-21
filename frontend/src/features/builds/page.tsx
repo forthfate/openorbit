@@ -93,6 +93,7 @@ type BuildWizardCopy = {
   purpose: LabelCopy;
   managerTemplate: LabelCopy;
   testCaseSet: LabelCopy;
+  persona: LabelCopy & { none: string };
   aiProfile: LabelCopy;
   timezone: LabelCopy;
   repeatInterval: LabelCopy;
@@ -463,16 +464,21 @@ function Direct({
             </select>
           </Field>
           <Field
-            label="Personas"
-            description="Optional reusable user perspectives supplied to this runner. Select more than one for multi-persona simulations."
+            label={copy.persona.label}
+            description={copy.persona.hint}
           >
             <select
-              multiple
-              value={d.persona_ids}
+              value={d.persona_ids[0] ?? ""}
               onChange={(event) =>
-                setD({ ...d, persona_ids: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })
+                setD({
+                  ...d,
+                  persona_ids: event.currentTarget.value
+                    ? [event.currentTarget.value]
+                    : [],
+                })
               }
             >
+              <option value="">{copy.persona.none}</option>
               {personas.map((persona) => (
                 <option key={persona.id} value={persona.id}>
                   {persona.name} · {persona.locale}

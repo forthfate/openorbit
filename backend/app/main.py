@@ -377,8 +377,7 @@ class PersonaUpdate(BaseModel):
     locale: str = Field(min_length=2, max_length=32)
     timezone: str = Field(min_length=1, max_length=64)
     activity_windows: list[dict] = Field(default_factory=list)
-    goals: list[str] = Field(min_length=1, max_length=30)
-    constraints: list[str] = Field(default_factory=list, max_length=30)
+    definition: str = Field(min_length=1, max_length=20_000)
     context: dict = Field(default_factory=dict)
 
 

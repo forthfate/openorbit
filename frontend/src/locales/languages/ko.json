@@ -17,14 +17,15 @@
       "tabRunSetup": "실행 설정",
       "personas": "페르소나",
       "persona": "페르소나",
-      "personaDescription": "사용자 특성, 목표, 제약 조건을 정의해 실제 사용자 흐름을 검증합니다.",
+      "personaDescription": "사용자 특성과 의도를 정의해 실제 사용자 흐름을 검증합니다.",
       "emptyPersonas": "아직 페르소나가 없습니다.",
       "locale": "로케일",
       "timezone": "시간대",
-      "goals": "목표",
-      "goalsHint": "한 줄에 하나씩",
-      "constraints": "제약 조건",
-      "constraintsHint": "한 줄에 하나씩",
+      "localeSearch": "로케일 검색…",
+      "timezoneSearch": "시간대 검색…",
+      "noMatchingOptions": "일치하는 옵션이 없습니다.",
+      "definition": "페르소나 정의",
+      "definitionPlaceholder": "# 목표\n\n- 사용자가 달성하려는 결과\n\n# 제약 조건\n\n- 반드시 지켜야 하는 경계",
       "activityContext": "활동 시간 / 컨텍스트",
       "activityContextHint": "JSON",
       "invalidPersonaJson": "활동 시간과 컨텍스트는 유효한 JSON이어야 합니다.",
@@ -252,8 +253,8 @@
         "hint": "평가 대상 애플리케이션 또는 서비스입니다."
       },
       "executionEnvironment": {
-        "label": "실행 환경",
-        "hint": "Orbit이 선택한 러너를 실행하는 위치입니다."
+        "label": "실행 환경 (옵션)",
+        "hint": "선택한 러너에 필요한 브라우저 런타임과 설정입니다."
       },
       "purpose": {
         "label": "목적",
@@ -266,6 +267,11 @@
       "testCaseSet": {
         "label": "테스트 케이스 세트",
         "hint": "대상 AI에 대한 재사용 가능한 고정 입력과 승인 근거입니다."
+      },
+      "persona": {
+        "label": "페르소나 (옵션)",
+        "hint": "러너에 제공할 재사용 가능한 사용자 관점입니다.",
+        "none": "선택 안 함"
       },
       "aiProfile": {
         "label": "AI 모델 프로필",
@@ -935,7 +941,7 @@
       "assetTemplates": "템플릿은 버전 관리되는 재사용 지시문입니다. 빌드에서 선택해도 저장된 원본은 수정되지 않습니다.",
       "assetTests": "테스트 케이스 세트는 여러 빌드에서 재사용할 고정 프롬프트와 승인 근거를 제공합니다.",
       "assetRunners": "러너에는 프로젝트별 자동화가 들어 있으며 여러 빌드에서 공유할 수 있습니다.",
-      "executionEnvironment": "여기서 로컬 또는 원격 실행 방식을 정하며, 각 러너는 빌드에서 선택한 실행 환경을 사용합니다.",
+      "executionEnvironment": "선택한 러너에 필요한 브라우저 런타임과 설정을 지정합니다.",
       "targetEnvironment": "저장소·브라우저 URL·관리 프롬프트 경로는 이 대상을 선택한 빌드에만 적용됩니다.",
       "applicationSettings": "언어는 콘솔과 관리자 결과 표시 언어에 적용되고, 테마 변경은 이 브라우저에 로컬로 저장됩니다.",
       "applicationData": "저장소 위치 변경은 이후의 로컬 상태와 근거에 적용됩니다. 기존 데이터는 자동으로 이동하지 않습니다.",
