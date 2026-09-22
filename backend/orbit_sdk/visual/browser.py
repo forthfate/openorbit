@@ -69,6 +69,34 @@ def validate_source_contract(
 
 
 @visual_node(
+    kind="validate_tailwind_source",
+    group_key="browser",
+    display_name="Validate Tailwind source",
+    title_key="visual.nodes.validateSourceContract.title",
+    description_key="visual.nodes.validateSourceContract.description",
+    default_outputs=("source_contract",),
+)
+def validate_tailwind_source(ctx: Any, _: Mapping[str, Any], __: Mapping[str, object]) -> dict[str, object]:
+    """Require Tailwind source evidence together with a runnable browser journey."""
+    files = ctx.exec(
+        ["sh", "-lc", "rg -l 'tailwindcss|@tailwind' --glob '*.css' . || true"],
+        cwd=ctx.project_root,
+        timeout=30,
+    )
+    config = ctx.exec(
+        ["sh", "-lc", "rg --files -g 'tailwind.config.*' . || true"], cwd=ctx.project_root, timeout=30
+    )
+    if not files.strip() and not config.strip():
+        raise ValueError("No Tailwind configuration or stylesheet was found in the target project")
+    if not ctx.build.get("browser_base_url") or not ctx.test_cases:
+        raise ValueError("A browser base URL and at least one journey case are required")
+    contract = {"stylesheet_files": files.splitlines()[:40], "config_files": config.splitlines()[:20]}
+    ctx.emit_result({"tailwind_journey": contract})
+    ctx.log("Validated the Tailwind source contract")
+    return {"source_contract": contract}
+
+
+@visual_node(
     kind="run_source_aware_browser_journey",
     group_key="browser",
     display_name="Run source-aware browser journey",

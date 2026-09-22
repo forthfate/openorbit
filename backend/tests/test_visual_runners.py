@@ -142,8 +142,8 @@ def test_sdk_catalog_owns_node_metadata_and_starter_blueprints():
 def test_every_shipped_runner_and_quick_start_has_a_canonical_visual_starter():
     starters = builtin_template_catalog()
     ids = {starter["id"] for starter in starters}
-    assert len(starters) == 14
-    assert sum(item.startswith("builtin:runner-templates:") for item in ids) == 7
+    assert len(starters) == 18
+    assert sum(item.startswith("builtin:runner-templates:") for item in ids) == 11
     assert sum(item.startswith("builtin:quick-starts:") for item in ids) == 7
     assert "builtin:runner-templates:native-improvement-cycle" in ids
     assert "builtin:quick-starts:openorbit.continuous-user-journey" in ids

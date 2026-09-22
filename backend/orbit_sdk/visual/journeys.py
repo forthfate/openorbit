@@ -98,6 +98,24 @@ def validate_browser_runtime(
 
 
 @visual_node(
+    kind="validate_browser_journey_contract",
+    group_key="contracts",
+    display_name="Validate browser journey contract",
+    title_key="visual.nodes.validateBrowserRuntime.title",
+    description_key="visual.nodes.validateBrowserRuntime.description",
+    default_outputs=("journey_contract",),
+)
+def validate_browser_journey_contract(
+    ctx: Any, _: Mapping[str, Any], __: Mapping[str, object]
+) -> dict[str, object]:
+    """Require the browser URL and fixed cases used by a recurring journey."""
+    if not ctx.build.get("browser_base_url") or not ctx.test_cases:
+        raise ValueError("A browser base URL and at least one journey case are required")
+    ctx.log("Validated the continuous Playwright journey contract")
+    return {"journey_contract": True}
+
+
+@visual_node(
     kind="initialize_user_journey_state",
     group_key="journeys",
     display_name="Initialize user journey state",

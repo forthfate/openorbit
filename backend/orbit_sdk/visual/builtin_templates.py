@@ -405,6 +405,95 @@ def _materials_for(template: BuiltinTemplate) -> dict[str, tuple[str, Mapping[st
             "reflect": ("reflect_persona_session", {"namespace": "autonomous_persona"}),
             "finalize": ("log_message", {"message": "Finalized the autonomous persona journey"}),
         }
+    if template_id == "runner-templates:autonomous-persona-journey":
+        return {
+            "validate": ("validate_persona_contract", {}),
+            "observe": ("observe_persona_page", {"namespace": "autonomous_persona"}),
+            "decide": ("plan_persona_action", {"namespace": "autonomous_persona"}),
+            "act": ("run_persona_action", {"namespace": "autonomous_persona"}),
+            "reflect": ("reflect_persona_session", {"namespace": "autonomous_persona"}),
+            "finalize-persona-journey": (
+                "log_message",
+                {"message": "Finalized the autonomous persona journey"},
+            ),
+        }
+    if template_id == "runner-templates:playwright-continuous-journey":
+        return {
+            "validate": ("validate_browser_journey_contract", {}),
+            "plan": ("plan_user_journey", {"namespace": "continuous_journey"}),
+            "exercise": ("run_user_journey", {"namespace": "continuous_journey"}),
+            "retain": ("publish_user_journey_handoff", {"namespace": "continuous_journey"}),
+            "close-journey-cycle": (
+                "log_message",
+                {"message": "Completed one bounded continuous browser journey"},
+            ),
+            "finalize-browser-journey": (
+                "log_message",
+                {"message": "Finalized the continuous browser journey"},
+            ),
+        }
+    if template_id == "runner-templates:selenium-external-journey":
+        return {
+            "ready": ("validate_command_environment", {"command_env": "ORBIT_SELENIUM_COMMAND"}),
+            "prepare": (
+                "command_cycle_action",
+                {
+                    "command_env": "ORBIT_SELENIUM_COMMAND",
+                    "action": "prepare",
+                    "namespace": "selenium_journey",
+                    "result_key": "prepared",
+                    "timeout": 3600,
+                    "log_source": "selenium-adapter",
+                },
+            ),
+            "run": (
+                "command_cycle_action",
+                {
+                    "command_env": "ORBIT_SELENIUM_COMMAND",
+                    "action": "run-once",
+                    "namespace": "selenium_journey",
+                    "result_key": "result",
+                    "timeout": 3600,
+                    "log_source": "selenium-adapter",
+                },
+            ),
+            "collect": (
+                "command_cycle_action",
+                {
+                    "command_env": "ORBIT_SELENIUM_COMMAND",
+                    "action": "collect-evidence",
+                    "namespace": "selenium_journey",
+                    "result_key": "evidence",
+                    "timeout": 3600,
+                    "log_source": "selenium-adapter",
+                },
+            ),
+            "close-selenium-cycle": (
+                "log_message",
+                {"message": "Completed one bounded Selenium adapter cycle"},
+            ),
+            "finalize-selenium-journey": (
+                "log_message",
+                {"message": "Finalized the Selenium adapter evaluation"},
+            ),
+        }
+    if template_id == "runner-templates:tailwind-source-aware":
+        return {
+            "inspect-source": ("validate_tailwind_source", {}),
+            "run-browser": ("run_source_aware_browser_journey", {"namespace": "tailwind_journey"}),
+            "publish-evidence": (
+                "log_message",
+                {"message": "Published Tailwind source context with rendered browser evidence"},
+            ),
+            "close-tailwind-cycle": (
+                "log_message",
+                {"message": "Completed one bounded Tailwind browser journey"},
+            ),
+            "finalize-tailwind-journey": (
+                "log_message",
+                {"message": "Finalized the Tailwind browser evaluation"},
+            ),
+        }
     return {}
 
 

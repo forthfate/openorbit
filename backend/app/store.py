@@ -434,7 +434,11 @@ class ConsoleStore:
 
     def available_runner_templates(self) -> list[dict[str, str]]:
         builtins = [{**item, "origin": "built-in"} for item in self.runner_templates()]
-        return [*builtins, *self._custom_runner_templates()]
+        builtin_ids = {str(item["id"]) for item in builtins}
+        custom = [
+            item for item in self._custom_runner_templates() if str(item.get("id", "")) not in builtin_ids
+        ]
+        return [*builtins, *custom]
 
     def template_translation_input(self, kind: str, template_id: str) -> dict[str, Any]:
         """Return only display text that may safely be translated."""
