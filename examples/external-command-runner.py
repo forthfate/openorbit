@@ -7,33 +7,16 @@ each action; OpenOrbit remains responsible for scheduling and supervision.
 
 from __future__ import annotations
 
-import json
-import os
-import shlex
-
 from orbit_sdk import runner
-
-
-def adapter_command():
-    """Read explicit command configuration without coupling to a repository path."""
-    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
-    if configured.startswith("["):
-        command = json.loads(configured)
-        if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
-            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")
-        return command
-    return shlex.split(configured)
 
 
 def invoke(ctx, action):
     """Run exactly one adapter action and preserve its output as run evidence."""
-    output = ctx.exec(
-        [*adapter_command(), action],
-        cwd=ctx.project_root,
+    output = ctx.run_command_action(
+        command_env="ORBIT_ADAPTER_COMMAND",
+        action=action,
         timeout=3_600,
-        target_log_source="external-adapter",
+        log_source="external-adapter",
     )
     artifact = ctx.write_artifact(
         f"external-command/{action}.log", output, content_type="text/plain; charset=utf-8"

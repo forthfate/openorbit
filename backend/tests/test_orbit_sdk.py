@@ -405,6 +405,49 @@ def test_exec_env_override(tmp_path, monkeypatch):
     assert output.strip() == "set"
 
 
+def test_run_json_action_uses_stdout_without_stderr_and_passes_cycle_input(tmp_path, capsys):
+    project = tmp_path / "project"
+    project.mkdir()
+    script = (
+        "import json, os, sys; "
+        "print(json.dumps({'action': sys.argv[1], 'input': json.loads(os.environ['RUNNER_CYCLE_INPUT'])})); "
+        "print('diagnostic output', file=sys.stderr)"
+    )
+    ctx = sdk.RunnerContext(
+        phase="execute",
+        target_repository=project,
+        mode="run",
+        loop_index=1,
+        environment={
+            "ORBIT_RUN_ID": "run-123",
+            "RUNNER_COMMAND": json.dumps([sys.executable, "-c", script]),
+        },
+    )
+
+    result = ctx.run_json_action(
+        command_env="RUNNER_COMMAND",
+        action="collect",
+        input_env="RUNNER_CYCLE_INPUT",
+        input_data={"iteration": 1},
+        log_source="test-command",
+    )
+
+    assert result == {"action": "collect", "input": {"iteration": 1, "action": "collect"}}
+    assert "diagnostic output" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", ["[]", '[""]'])
+def test_command_from_env_rejects_an_empty_executable(tmp_path, value):
+    with pytest.raises(ValueError, match="non-empty"):
+        sdk.RunnerContext(
+            phase="execute",
+            target_repository=tmp_path,
+            mode="run",
+            loop_index=1,
+            environment={"RUNNER_COMMAND": value},
+        ).command_from_env("RUNNER_COMMAND")
+
+
 def test_repository_snapshot_restores_worktree_index_and_head_without_a_commit(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()

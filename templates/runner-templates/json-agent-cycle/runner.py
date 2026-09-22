@@ -5,57 +5,19 @@ emit one JSON object for each action. Orbit preserves those responses as
 evidence while keeping the lifecycle graph visible in this source file.
 """
 
-import json
-import os
-import shlex
-
 from orbit_sdk import graph, runner
 
 
 def invoke(ctx, action):
-    """Run one external agent action and parse its required JSON response.
-
-    Args:
-        ctx: The active Orbit runner context.
-        action: The action passed as the agent command's final argument.
-
-    Returns:
-        The agent response as a JSON object.
-
-    Raises:
-        ValueError: If the configured command is absent or malformed.
-        RuntimeError: If the action does not return a JSON object.
-    """
-    raw = os.environ.get("ORBIT_AGENT_COMMAND", "").strip()
-    if not raw:
-        raise ValueError("Set ORBIT_AGENT_COMMAND to an external tool command")
-    command = json.loads(raw) if raw.startswith("[") else shlex.split(raw)
-    if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
-        raise ValueError("ORBIT_AGENT_COMMAND must be a JSON string array or command")
-    output = ctx.exec(
-        [*command, action],
-        cwd=ctx.project_root,
+    """Run one external agent action through the SDK command contract."""
+    return ctx.run_json_action(
+        command_env="ORBIT_AGENT_COMMAND",
+        action=action,
+        input_env="ORBIT_CYCLE_INPUT",
+        input_data={"iteration": ctx.loop_index, "build": ctx.build, "test_cases": ctx.test_cases},
         timeout=3600,
-        env={
-            "ORBIT_CYCLE_INPUT": json.dumps(
-                {
-                    "action": action,
-                    "iteration": ctx.loop_index,
-                    "build": ctx.build,
-                    "test_cases": ctx.test_cases,
-                },
-                ensure_ascii=False,
-            )
-        },
-        target_log_source="agent-cycle",
+        log_source="agent-cycle",
     )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"Action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"Action {action!r} must return a JSON object")
-    return result
 
 
 graph.connect("validate-agent-cycle-contract", "preflight-agent-cycle")
@@ -76,8 +38,7 @@ graph.connect("close-agent-cycle", "finalize-agent-cycle", kind="condition", lab
 @runner.phase("before_all", step_id="validate-agent-cycle-contract")
 def validate_contract(ctx):
     """Require fixed test cases before starting the external agent."""
-    if not ctx.test_cases:
-        raise ValueError("Select at least one fixed test case")
+    ctx.require_test_cases()
 
 
 @graph.step(
