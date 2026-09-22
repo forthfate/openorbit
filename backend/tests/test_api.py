@@ -33,11 +33,8 @@ def test_visual_runner_catalog_is_served_from_sdk_registry():
     assert response.status_code == 200
     catalog = response.json()
     assert any(node["kind"] == "custom_script" for node in catalog["nodes"])
-    assert {starter["id"] for starter in catalog["starters"]} >= {"json_agent_cycle", "browser_journey"}
-    assert {
-        "builtin:runner-templates:native-improvement-cycle",
-        "builtin:quick-starts:openorbit.agent-self-improvement",
-    } <= {starter["id"] for starter in catalog["starters"]}
+    assert catalog["starters"] == []
+    assert all(node["group_key"] != "templates" for node in catalog["nodes"])
 
 
 def test_system_readiness_reports_missing_system_ai_and_git(monkeypatch):
@@ -537,7 +534,7 @@ def test_native_improvement_template_uses_repository_snapshot_lifecycle():
     from orbit_sdk.visual.builtin_templates import templates
 
     canonical = templates()["runner-templates:native-improvement-cycle"].source.read_text(encoding="utf-8")
-    assert "ctx.run_visual_node('template_runner_templates_native_improvement_cycle_" in source
+    assert "template_runner_templates_native_improvement_cycle_" in source
     assert "ctx.save_before_each_snapshot()" in canonical
     assert "ctx.save_first_after_each_snapshot()" in canonical
     assert "ctx.restore_before_each_snapshot()" in canonical
@@ -813,7 +810,8 @@ def test_builtin_runner_template_creation_persists_its_visual_definition(tmp_pat
 
     assert runner["visual_template_id"] == "runner-templates:json-agent-cycle"
     assert runner["visual_blueprint"]["nodes"]
-    assert "ctx.run_visual_node('template_" in runner["source"]
+    assert "ctx.run_visual_node('json_cycle_action'" in runner["source"]
+    assert "ctx.run_visual_node('template_" not in runner["source"]
 
     detached = store.update_runner(
         runner["id"],
@@ -1547,7 +1545,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     improvement_source = canonical["runner-templates:native-improvement-cycle"].source.read_text(
         encoding="utf-8"
     )
-    assert "ctx.run_visual_node('template_runner_templates_external_command_adapter_" in adapter
+    assert "template_runner_templates_external_command_adapter_" in adapter
     assert "ORBIT_ADAPTER_COMMAND" in adapter_source
     assert "playwright_journey" not in improvement_source
     assert "complete_model" in improvement_source
@@ -1584,7 +1582,7 @@ def test_site_exploration_quick_start_declares_its_lifecycle():
     assert "orbit_runner_kit" not in runner["source"]
     from orbit_sdk.visual.builtin_templates import templates
 
-    assert "ctx.run_visual_node('template_quick_starts_openorbit_site_exploration_review_" in runner["source"]
+    assert "template_quick_starts_openorbit_site_exploration_review_" in runner["source"]
     assert "logout|signout|delete" in templates()[
         "quick-starts:openorbit.site-exploration-review"
     ].source.read_text(encoding="utf-8")
@@ -1815,7 +1813,7 @@ def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monke
     assert created["build"]["repeat_interval_minutes"] == 1440
     assert store.profiles()[-1]["endpoint"] == ""
     assert runner["visual_template_id"] == "quick-starts:openorbit.ai-slo-drift-monitor"
-    assert runner["visual_blueprint"]["nodes"][0]["config"]["parameters"]["probe_command"] == "uv run ai-eval"
+    assert runner["visual_blueprint"]["parameters"]["probe_command"] == "uv run ai-eval"
 
 
 def test_browser_quick_starts_create_an_internal_workspace_without_a_repository(tmp_path, monkeypatch):

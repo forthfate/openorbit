@@ -12,37 +12,15 @@ import ast
 import hashlib
 import json
 import re
-import threading
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
-from ..decorators.visual import visual_node
-from .registry import VisualNodeDefinition, visual_nodes
-
 _ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATE_ROOT = _ROOT / "templates"
 _CANONICAL_ROOT = Path(__file__).resolve().parent / "canonical"
-_MODULE_LOCK = threading.RLock()
-
-
-class _TemplateGraph:
-    """No-op decorator facade used while loading canonical template functions."""
-
-    def connect(self, *_: object, **__: object) -> None:
-        return None
-
-    def step(self, *_: object, **__: object):
-        return lambda handler: handler
-
-
-class _TemplateRunner:
-    """No-op lifecycle facade; the visual runner owns dispatch and tracing."""
-
-    def phase(self, *_: object, **__: object):
-        return lambda handler: handler
 
 
 @dataclass(frozen=True)
@@ -75,8 +53,8 @@ class TemplateDefinition:
 
     ``blueprint`` is the persisted representation, while ``source_sha256``
     records which canonical template revision it was derived from.  The
-    adapter-backed steps are a migration boundary; a definition can replace
-    them with direct SDK operations without changing callers.
+    every node is a direct SDK operation, so callers never need to know the
+    source-level function boundaries of a shipped template.
     """
 
     id: str
@@ -100,11 +78,6 @@ def _call_name(call: ast.Call) -> str | None:
 
 def _template_id(path: Path) -> str:
     return path.relative_to(_CANONICAL_ROOT).parent.as_posix().replace("/", ":")
-
-
-def _step_kind(template_id: str, step_id: str) -> str:
-    """Return a stable SDK node kind for one canonical template step."""
-    return "template_" + re.sub(r"[^a-z0-9]+", "_", f"{template_id}_{step_id}".lower()).strip("_")
 
 
 def _display_name(path: Path) -> str:
@@ -198,79 +171,6 @@ def templates() -> dict[str, BuiltinTemplate]:
     return {value.id: value for value in values if value is not None}
 
 
-@lru_cache(maxsize=None)
-def _module(template_id: str, parameter_key: str = "") -> dict[str, object]:
-    try:
-        template = templates()[template_id]
-    except KeyError as error:
-        raise ValueError(f"unsupported built-in visual template: {template_id}") from error
-    # Load the trusted function bodies without registering their graph a second
-    # time.  The generated visual runner is the sole lifecycle/trace owner.
-    import orbit_sdk
-
-    with _MODULE_LOCK:
-        graph, runner = orbit_sdk.graph, orbit_sdk.runner
-        orbit_sdk.graph, orbit_sdk.runner = _TemplateGraph(), _TemplateRunner()
-        try:
-            source = template.source.read_text(encoding="utf-8")
-            if parameter_key:
-                parameters = json.loads(parameter_key)
-                source = re.sub(
-                    r"\$\{([a-z][a-z0-9_]*)\}",
-                    lambda match: parameters.get(match.group(1), match.group(0)),
-                    source,
-                )
-            module = {
-                "__name__": f"orbit_builtin_{template_id.replace(':', '_').replace('-', '_')}",
-                "__file__": str(template.source),
-            }
-            exec(compile(source, str(template.source), "exec"), module)
-            return module
-        finally:
-            orbit_sdk.graph, orbit_sdk.runner = graph, runner
-
-
-def _execute_template_step(
-    ctx: Any, *, template_id: str, step_id: str, config: Mapping[str, Any]
-) -> dict[str, object]:
-    """Execute one canonical function; shared by generated per-step handlers."""
-    template = templates().get(template_id)
-    if template is None or step_id not in {step.id for step in template.steps}:
-        raise ValueError("built-in template step is not declared by the SDK catalog")
-    parameters = config.get("parameters", {})
-    if not isinstance(parameters, Mapping) or not all(
-        isinstance(key, str) and isinstance(value, str) for key, value in parameters.items()
-    ):
-        raise ValueError("built-in template parameters must be a string object")
-    parameter_key = json.dumps(dict(parameters), sort_keys=True, separators=(",", ":"))
-    module = _module(template_id, parameter_key)
-    function = module.get(next(step.function_name for step in template.steps if step.id == step_id))
-    if not callable(function):
-        raise RuntimeError(f"built-in template step is not callable: {template_id}/{step_id}")
-    function(ctx)
-    return {"completed": True}
-
-
-@visual_node(
-    kind="builtin_template_step",
-    group_key="templates",
-    display_name="Built-in template step",
-    title_key="visual.nodes.builtinTemplateStep.title",
-    description_key="visual.nodes.builtinTemplateStep.description",
-    default_config={
-        "template_id": "runner-templates:json-agent-cycle",
-        "step_id": "validate-agent-cycle-contract",
-    },
-    required_config=("template_id", "step_id"),
-    default_outputs=("completed",),
-)
-def builtin_template_step(ctx: Any, config: Mapping[str, Any], _: Mapping[str, object]) -> dict[str, object]:
-    """Compatibility facade for legacy visual blueprints using the generic node."""
-    return _execute_template_step(
-        ctx, template_id=config["template_id"], step_id=config["step_id"], config=config
-    )
-
-
 def catalog() -> list[dict[str, Any]]:
     """Return one visual starter per trusted built-in runner source."""
     return [
@@ -286,6 +186,254 @@ def catalog() -> list[dict[str, Any]]:
     ]
 
 
+_AGENT_PAYLOAD = {
+    "iteration": {"$ctx": "loop_index"},
+    "build": {"$ctx": "build"},
+    "test_cases": {"$ctx": "test_cases"},
+}
+_PROBE_PAYLOAD = {
+    "iteration": {"$ctx": "loop_index"},
+    "build": {"$ctx": "build"},
+    "probes": {"$ctx": "test_cases"},
+}
+
+
+def _node(step: TemplateStep, kind: str, config: Mapping[str, object], index: int) -> dict[str, object]:
+    """Create a persisted node while retaining the template's public graph ID."""
+    return {
+        "id": step.id,
+        "kind": kind,
+        "title": step.title,
+        "phase": step.phase,
+        "inputs": list(step.inputs),
+        "outputs": list(step.outputs),
+        "description": step.description,
+        "config": dict(config),
+        "script": "",
+        "position": {"x": 100 + index * 280, "y": 130 + (index % 2) * 180},
+    }
+
+
+def _cycle_materials(
+    *,
+    command_env: str,
+    namespace: str,
+    actions: tuple[str, str, str, str],
+    payload: Mapping[str, object],
+    action_kind: str,
+    contract_kind: str,
+    contract_config: Mapping[str, object],
+    close: str,
+    finalize: str,
+    log_source: str,
+) -> dict[str, tuple[str, Mapping[str, object]]]:
+    """Return the reusable operations shared by external evaluator cycles."""
+    names = ("preflight", "prepared", "result", "evidence")
+    step_ids = ("preflight", "prepare", "run", "collect")
+    values: dict[str, tuple[str, Mapping[str, object]]] = {}
+    for step_id, result_key, action in zip(step_ids, names, actions):
+        values[step_id] = (
+            action_kind,
+            {
+                "command_env": command_env,
+                "action": action,
+                "namespace": namespace,
+                "result_key": result_key,
+                "input_env": "ORBIT_CYCLE_INPUT",
+                "input_data": payload,
+                "timeout": 3600,
+                "log_source": log_source,
+                "include_iteration": step_id != "preflight",
+            },
+        )
+    values.update(
+        {
+            "validate": (contract_kind, contract_config),
+            "close": ("log_message", {"message": close}),
+            "finalize": ("log_message", {"message": finalize}),
+        }
+    )
+    return values
+
+
+def _materials_for(template: BuiltinTemplate) -> dict[str, tuple[str, Mapping[str, object]]]:
+    """Map canonical step IDs to SDK materials, never to palette-only assets.
+
+    The keys intentionally describe runner semantics rather than Python function
+    names.  A visual Blueprint therefore survives an implementation refactor in
+    a shipped template without gaining a new template-specific node type.
+    """
+    template_id = template.id
+    if template_id in {
+        "runner-templates:json-agent-cycle",
+        "quick-starts:openorbit.ai-experience-improvement",
+    }:
+        return _cycle_materials(
+            command_env="ORBIT_AGENT_COMMAND",
+            namespace="agent_cycle",
+            actions=("status", "prepare", "run-once", "collect-evidence"),
+            payload=_AGENT_PAYLOAD,
+            action_kind="json_cycle_action",
+            contract_kind="require_test_cases",
+            contract_config={},
+            close="Completed one bounded external agent cycle",
+            finalize="Finalized the external agent",
+            log_source="agent-cycle",
+        )
+    if template_id == "runner-templates:external-command-adapter":
+        return _cycle_materials(
+            command_env="ORBIT_ADAPTER_COMMAND",
+            namespace="external_adapter",
+            actions=("status", "prepare", "run-once", "collect-evidence"),
+            payload={},
+            action_kind="command_cycle_action",
+            contract_kind="validate_command_environment",
+            contract_config={"command_env": "ORBIT_ADAPTER_COMMAND"},
+            close="Completed one bounded external adapter cycle",
+            finalize="Finalized the external automation evaluation",
+            log_source="external-adapter",
+        )
+    if template_id in {
+        "runner-templates:evidence-gated-probe-cycle",
+        "quick-starts:openorbit.ai-slo-drift-monitor",
+    }:
+        return _cycle_materials(
+            command_env="ORBIT_PROBE_COMMAND",
+            namespace="probe_gate",
+            actions=("preflight", "prepare", "run-probes", "collect-evidence"),
+            payload=_PROBE_PAYLOAD,
+            action_kind="json_cycle_action",
+            contract_kind="require_test_cases",
+            contract_config={"label": "fixed probe case"},
+            close="Completed one bounded probe matrix cycle",
+            finalize="Finalized the probe matrix",
+            log_source="probe-gate",
+        )
+    if template_id in {"runner-templates:site-exploration", "quick-starts:openorbit.site-exploration-review"}:
+        return {
+            "validate-site": ("validate_build_fields", {"fields": ["browser_base_url"]}),
+            "explore-site": ("explore_rendered_site", {"namespace": "site_exploration", "max_clicks": 3}),
+            "review-evidence": (
+                "log_message",
+                {"message": "Retained rendered exploration evidence for review"},
+            ),
+            "finalize-review": ("log_message", {"message": "Finalized the bounded site exploration review"}),
+        }
+    if template_id == "runner-templates:source-aware-browser-journey":
+        return {
+            "validate-source-contract": ("validate_source_contract", {"namespace": "source_aware_journey"}),
+            "run-browser-journey": (
+                "run_source_aware_browser_journey",
+                {"namespace": "source_aware_journey"},
+            ),
+            "publish-rendered-evidence": (
+                "log_message",
+                {"message": "Published source context with rendered browser evidence"},
+            ),
+            "close-source-aware-cycle": (
+                "log_message",
+                {"message": "Completed one bounded source-aware browser journey"},
+            ),
+            "finalize-source-aware-journey": (
+                "log_message",
+                {"message": "Finalized the source-aware browser evaluation"},
+            ),
+        }
+    if template_id in {"runner-templates:user-journey-cycle", "quick-starts:openorbit.critical-flow-proof"}:
+        namespace = "critical_flow" if "critical-flow" in template_id else "user_journey"
+        prefix = "critical-flow" if "critical-flow" in template_id else "user-journey"
+        return {
+            f"validate-{prefix}-runtime": ("validate_browser_runtime", {}),
+            f"validate-{prefix}": ("require_test_cases", {"label": "fixed journey case"}),
+            f"load-{prefix}-state": ("initialize_user_journey_state", {"namespace": namespace}),
+            f"plan-{prefix}": ("plan_user_journey", {"namespace": namespace}),
+            f"run-{prefix}": ("run_user_journey", {"namespace": namespace}),
+            f"review-{prefix}": ("publish_user_journey_handoff", {"namespace": namespace}),
+            f"retain-{prefix}": ("log_message", {"message": "Closed this bounded user journey"}),
+            f"finalize-{prefix}": ("log_message", {"message": "Finalized the user journey evaluation"}),
+        }
+    if template_id == "quick-starts:openorbit.user-journey-smoke-test":
+        return {
+            "validate-browser-runtime": ("validate_browser_runtime", {}),
+            "validate-browser-journey": ("require_test_cases", {"label": "browser journey case"}),
+            "run-browser-journey": (
+                "run_browser_smoke",
+                {"namespace": "browser_smoke", "fail_on_unpassed": True},
+            ),
+            "verify-browser-evidence": (
+                "log_message",
+                {"message": "Quick start browser evaluation completed"},
+            ),
+            "finalize-browser-evaluation": (
+                "log_message",
+                {"message": "Finalized the one-shot browser evaluation"},
+            ),
+        }
+    if template_id == "runner-templates:native-improvement-cycle":
+        return {
+            "validate-target": ("validate_git_repository", {}),
+            "validate-evaluation-inputs": ("validate_improvement_inputs", {}),
+            "snapshot-baseline": ("snapshot", {"operation": "save_before_each"}),
+            "prepare-prompt": ("prepare_managed_prompt", {"mode": "apply_accepted"}),
+            "exercise-target": ("exercise_managed_prompt", {"include_candidate": True}),
+            "assess-candidate": ("assess_prompt_candidate", {}),
+            "retain-iteration": ("retain_improvement_iteration", {}),
+            "restore-baseline": ("restore_improvement_baseline", {}),
+        }
+    if template_id == "quick-starts:openorbit.agent-self-improvement":
+        return {
+            "validate-target": ("validate_git_repository", {}),
+            "validate-evaluation-inputs": ("validate_improvement_inputs", {}),
+            "prepare-prompt": ("prepare_managed_prompt", {"mode": "isolated_worktree"}),
+            "exercise-target": ("exercise_managed_prompt", {}),
+            "retain-iteration": (
+                "log_message",
+                {"message": "Retained target-AI responses and supervisor assessment evidence"},
+            ),
+            "propose-agent-change": (
+                "create_agent_proposal",
+                {"provider": "${agent_provider}", "options": "${agent_options}"},
+            ),
+        }
+    if template_id == "quick-starts:openorbit.continuous-user-journey":
+        return {
+            "validate-browser-runtime": ("validate_browser_runtime", {}),
+            "validate": ("validate_persona_contract", {}),
+            "observe": ("observe_persona_page", {"namespace": "autonomous_persona"}),
+            "decide": ("plan_persona_action", {"namespace": "autonomous_persona"}),
+            "act": ("run_persona_action", {"namespace": "autonomous_persona"}),
+            "reflect": ("reflect_persona_session", {"namespace": "autonomous_persona"}),
+            "finalize": ("log_message", {"message": "Finalized the autonomous persona journey"}),
+        }
+    return {}
+
+
+def _material_for_step(
+    template: BuiltinTemplate, step: TemplateStep
+) -> tuple[str, Mapping[str, object]] | None:
+    """Resolve one canonical graph ID to a reusable operation.
+
+    The three external-cycle families use different public graph IDs while
+    sharing the same seven operations, so their small ID vocabulary is handled
+    here instead of creating per-template node kinds.
+    """
+    materials = _materials_for(template)
+    direct = materials.get(step.id)
+    if direct:
+        return direct
+    if step.id == "check-adapter":
+        return materials.get("preflight")
+    cycle_key = next(
+        (
+            key
+            for key in ("validate", "preflight", "prepare", "run", "collect", "close", "finalize")
+            if step.id.startswith(key) or f"-{key}-" in step.id or step.id.endswith(f"-{key}")
+        ),
+        None,
+    )
+    return materials.get(cycle_key or "")
+
+
 @lru_cache(maxsize=1)
 def definitions() -> dict[str, TemplateDefinition]:
     """Build stable TemplateDefinitions from every built-in runner graph."""
@@ -295,21 +443,12 @@ def definitions() -> dict[str, TemplateDefinition]:
         # contract. Preserve them verbatim so generated executions retain the
         # same step evidence as the canonical source.
         ids = {step.id: step.id for step in template.steps}
-        nodes = [
-            {
-                "id": ids[step.id],
-                "kind": _step_kind(template.id, step.id),
-                "title": step.title,
-                "phase": step.phase,
-                "inputs": list(step.inputs),
-                "outputs": list(step.outputs),
-                "description": step.description,
-                "config": {},
-                "script": "",
-                "position": {"x": 100 + index * 280, "y": 130 + (index % 2) * 180},
-            }
-            for index, step in enumerate(template.steps)
-        ]
+        nodes = []
+        for index, step in enumerate(template.steps):
+            material = _material_for_step(template, step)
+            if material is None:
+                raise RuntimeError(f"no reusable visual material is defined for {template.id}/{step.id}")
+            nodes.append(_node(step, material[0], material[1], index))
         edges = [
             {**edge, "source": ids[edge["source"]], "target": ids[edge["target"]]}
             for edge in template.edges
@@ -340,41 +479,22 @@ def instantiate_definition(
     """Return a blueprint bound to approved Quick Start parameter values."""
     blueprint = deepcopy(definition.blueprint)
     values = dict(parameters or {})
-    for node in blueprint["nodes"]:
-        node["config"] = {**node["config"], "parameters": values}
-    return blueprint
+    if values:
+        blueprint["parameters"] = values
 
-
-def register_template_step_nodes() -> None:
-    """Register one explicit SDK visual node for every shipped template step."""
-    registered = {item["kind"] for item in visual_nodes.catalog()}
-    for template in templates().values():
-        for step in template.steps:
-            kind = _step_kind(template.id, step.id)
-            if kind in registered:
-                continue
-
-            def handler(
-                ctx: Any,
-                config: Mapping[str, Any],
-                _: Mapping[str, object],
-                *,
-                template_id: str = template.id,
-                step_id: str = step.id,
-            ) -> dict[str, object]:
-                return _execute_template_step(ctx, template_id=template_id, step_id=step_id, config=config)
-
-            visual_nodes.register(
-                VisualNodeDefinition(
-                    kind=kind,
-                    group_key="templates",
-                    display_name=step.title,
-                    title_key=f"visual.templates.{template.id.replace(':', '.').replace('-', '_')}.steps.{step.id.replace('-', '_')}.title",
-                    description_key=f"visual.templates.{template.id.replace(':', '.').replace('-', '_')}.steps.{step.id.replace('-', '_')}.description",
-                    default_config={"parameters": {}},
-                    default_inputs=step.inputs,
-                    default_outputs=step.outputs,
-                    handler=handler,
-                )
+    def bind(value: object) -> object:
+        if isinstance(value, str):
+            return re.sub(
+                r"\$\{([a-z][a-z0-9_]*)\}",
+                lambda match: values.get(match.group(1), match.group(0)),
+                value,
             )
-            registered.add(kind)
+        if isinstance(value, list):
+            return [bind(item) for item in value]
+        if isinstance(value, dict):
+            return {key: bind(item) for key, item in value.items()}
+        return value
+
+    for node in blueprint["nodes"]:
+        node["config"] = bind(node["config"])
+    return blueprint

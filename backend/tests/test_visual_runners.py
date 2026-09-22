@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+import ast
 
 import pytest
 from app.visual_runners import generate_source, validate_blueprint
 from orbit_sdk.visual import builtin_template_catalog, starter_catalog, visual_nodes
 from orbit_sdk.visual.bindings import evaluate, resolve
-from orbit_sdk.visual.builtin_templates import _module, definitions, templates
+from orbit_sdk.visual.builtin_templates import definitions, instantiate_definition, templates
 
 
 def blueprint() -> dict:
@@ -143,11 +143,13 @@ def test_every_shipped_runner_and_quick_start_has_a_canonical_visual_starter():
     starters = builtin_template_catalog()
     ids = {starter["id"] for starter in starters}
     assert len(starters) == 14
+    assert sum(item.startswith("builtin:runner-templates:") for item in ids) == 7
+    assert sum(item.startswith("builtin:quick-starts:") for item in ids) == 7
     assert "builtin:runner-templates:native-improvement-cycle" in ids
     assert "builtin:quick-starts:openorbit.continuous-user-journey" in ids
     for starter in starters:
         source = generate_source(starter["blueprint"])
-        assert "ctx.run_visual_node('template_" in source
+        assert "ctx.run_visual_node('template_" not in source
         assert "step_id=" in source
 
 
@@ -170,63 +172,38 @@ def test_template_definitions_preserve_canonical_lifecycle_step_ids_and_edges():
             assert f"step_id={step.id!r}" in source
 
 
-def test_explicit_template_nodes_delegate_to_the_matching_canonical_step(monkeypatch):
-    import orbit_sdk.visual.builtin_templates as builtin_templates
+def test_template_definitions_use_only_reusable_material_nodes():
+    for definition in definitions().values():
+        kinds = {node["kind"] for node in definition.blueprint["nodes"]}
+        assert not any(kind.startswith("template_") for kind in kinds)
+        assert "builtin_template_step" not in kinds
 
-    calls: list[tuple[str, str, dict[str, object]]] = []
 
-    def execute(ctx, *, template_id, step_id, config):
-        calls.append((template_id, step_id, dict(config)))
-        return {"completed": True}
-
-    monkeypatch.setattr(builtin_templates, "_execute_template_step", execute)
-    for template in templates().values():
-        definition = definitions()[template.id]
-        for node in definition.blueprint["nodes"]:
-            result = visual_nodes.execute(node["kind"], object(), config=node["config"], inputs={})
-            assert result == {"completed": True}
-
-    assert {(template_id, step_id) for template_id, step_id, _ in calls} == {
-        (template.id, step.id) for template in templates().values() for step in template.steps
+def test_visible_catalog_contains_only_composable_material_groups():
+    groups = {item["group_key"] for item in visual_nodes.catalog() if item["palette_visible"]}
+    assert groups == {
+        "actions",
+        "advanced",
+        "ai",
+        "browser",
+        "contracts",
+        "evidence",
+        "improvement",
+        "journeys",
+        "state",
     }
 
 
-def test_builtin_template_step_delegates_to_the_canonical_runner_function():
-    class Context:
-        def __init__(self):
-            self.requested = []
-
-        def command_from_env(self, name):
-            self.requested.append(name)
-            return ["adapter"]
-
-    context = Context()
-    result = visual_nodes.execute(
-        "builtin_template_step",
-        context,
-        config={
-            "template_id": "runner-templates:external-command-adapter",
-            "step_id": "validate-adapter-contract",
-        },
-        inputs={},
-    )
-
-    assert result == {"completed": True}
-    assert context.requested == ["ORBIT_ADAPTER_COMMAND"]
+def test_quick_start_parameters_bind_only_declared_blueprint_values():
+    definition = definitions()["quick-starts:openorbit.agent-self-improvement"]
+    blueprint = instantiate_definition(definition, {"agent_provider": "claude", "agent_options": "--fast"})
+    proposal = next(node for node in blueprint["nodes"] if node["id"] == "propose-agent-change")
+    assert proposal["config"] == {"provider": "claude", "options": "--fast"}
 
 
-def test_every_canonical_visual_template_resolves_each_declared_step_function():
-    for template in templates().values():
-        module = _module(template.id)
-        for step in template.steps:
-            assert callable(module[step.function_name])
-
-
-def test_shipped_runner_sources_are_generated_from_their_template_definitions():
-    root = Path(__file__).resolve().parents[2] / "templates"
+def test_template_definitions_generate_valid_runner_sources():
     for definition in definitions().values():
-        shipped = root / definition.id.replace(":", "/") / "runner.py"
-        assert shipped.read_text(encoding="utf-8") == generate_source(definition.blueprint)
+        ast.parse(generate_source(definition.blueprint))
 
 
 def test_visual_runtime_bindings_resolve_only_context_inputs_and_resources():

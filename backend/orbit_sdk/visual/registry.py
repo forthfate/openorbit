@@ -33,6 +33,7 @@ class VisualNodeDefinition:
     default_config: dict[str, object] | None = None
     handler: VisualNodeHandler | None = None
     is_custom_script: bool = False
+    palette_visible: bool = True
     config_validator: VisualNodeValidator | None = None
 
     def validate_config(self, config: Mapping[str, Any]) -> None:
@@ -60,6 +61,7 @@ class VisualNodeDefinition:
             "config_schema": self.config_schema or {"type": "object"},
             "default_config": self.default_config or {},
             "is_custom_script": self.is_custom_script,
+            "palette_visible": self.palette_visible,
         }
 
 

@@ -711,9 +711,12 @@ def preview_visual_runner(values: VisualRunnerPreview):
 @app.get("/api/visual-runners/catalog")
 def visual_runner_catalog():
     """Expose SDK-owned visual node metadata for editor clients."""
-    from orbit_sdk.visual import builtin_template_catalog, starter_catalog
-
-    return {"nodes": visual_nodes.catalog(), "starters": [*starter_catalog(), *builtin_template_catalog()]}
+    return {
+        "nodes": [node for node in visual_nodes.catalog() if node.get("palette_visible", True)],
+        # Templates are selected before entering Visual Mode. The palette is
+        # reserved for reusable composition materials.
+        "starters": [],
+    }
 
 
 @app.put("/api/runners/{runner_id}/visual")
