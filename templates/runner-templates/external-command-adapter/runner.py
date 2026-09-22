@@ -5,34 +5,13 @@ retained under ``external_adapter`` so a supervisor can assess evidence without
 the runner imposing product-specific semantics.
 """
 
-import json
-import os
-import shlex
-
 from orbit_sdk import graph, runner
 
 
 def invoke(ctx, action):
-    """Run one external command action without imposing a JSON result contract.
-
-    Args:
-        ctx: The active Orbit runner context.
-        action: The action passed as the command's final argument.
-
-    Returns:
-        The command's standard output.
-
-    Raises:
-        ValueError: If the configured command is absent or malformed.
-    """
-    raw = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
-    if not raw:
-        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
-    command = json.loads(raw) if raw.startswith("[") else shlex.split(raw)
-    if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
-        raise ValueError("ORBIT_ADAPTER_COMMAND must be a non-empty JSON string array or command")
-    return ctx.exec(
-        [*command, action], cwd=ctx.project_root, timeout=3600, target_log_source="external-adapter"
+    """Run one external command action through the SDK command contract."""
+    return ctx.run_command_action(
+        command_env="ORBIT_ADAPTER_COMMAND", action=action, timeout=3600, log_source="external-adapter"
     )
 
 
@@ -54,12 +33,7 @@ graph.connect("close-adapter-cycle", "finalize-adapter", kind="condition", label
 @runner.phase("before_all", step_id="validate-adapter-contract")
 def validate_contract(ctx):
     """Validate the adapter command before invoking it."""
-    raw = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
-    if not raw:
-        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
-    command = json.loads(raw) if raw.startswith("[") else shlex.split(raw)
-    if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
-        raise ValueError("ORBIT_ADAPTER_COMMAND must be a non-empty JSON string array or command")
+    ctx.command_from_env("ORBIT_ADAPTER_COMMAND")
 
 
 @graph.step(

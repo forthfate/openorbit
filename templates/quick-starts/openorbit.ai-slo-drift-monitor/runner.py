@@ -5,10 +5,6 @@ matrix, validates its JSON action responses, and retains evidence for Orbit's
 supervisor to assess quality, safety, latency, or cost drift.
 """
 
-import json
-import os
-import shlex
-
 from orbit_sdk import graph, runner
 
 COMMAND_ENV = "ORBIT_PROBE_COMMAND"
@@ -16,43 +12,15 @@ NAMESPACE = "probe_gate"
 
 
 def invoke(ctx, action):
-    """Run one evaluator action and require a JSON object response.
-
-    Args:
-        ctx: The active Orbit runner context.
-        action: The structured evaluator action for this lifecycle phase.
-
-    Returns:
-        The evaluator's JSON response.
-
-    Raises:
-        ValueError: If the evaluator command is not configured correctly.
-        RuntimeError: If the evaluator output is not one JSON object.
-    """
-    configured = os.environ.get(COMMAND_ENV, "").strip()
-    if not configured:
-        raise ValueError(f"Set {COMMAND_ENV} to an external tool command")
-    command = json.loads(configured) if configured.startswith("[") else shlex.split(configured)
-    if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
-        raise ValueError(f"{COMMAND_ENV} must be a JSON string array or command")
-    payload = json.dumps(
-        {"action": action, "iteration": ctx.loop_index, "build": ctx.build, "probes": ctx.test_cases},
-        ensure_ascii=False,
-    )
-    output = ctx.exec(
-        [*command, action],
-        cwd=ctx.project_root,
+    """Run one evaluator action through the SDK command contract."""
+    return ctx.run_json_action(
+        command_env=COMMAND_ENV,
+        action=action,
+        input_env="ORBIT_CYCLE_INPUT",
+        input_data={"iteration": ctx.loop_index, "build": ctx.build, "probes": ctx.test_cases},
         timeout=3600,
-        env={"ORBIT_CYCLE_INPUT": payload},
-        target_log_source="probe-gate",
+        log_source="probe-gate",
     )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"Action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"Action {action!r} must return a JSON object")
-    return result
 
 
 graph.connect("validate-probe-gate-contract", "preflight-probe-gate")
@@ -73,8 +41,7 @@ graph.connect("close-probe-gate", "finalize-probe-gate", kind="condition", label
 @runner.phase("before_all", step_id="validate-probe-gate-contract")
 def validate_contract(ctx):
     """Require at least one fixed SLO probe."""
-    if not ctx.test_cases:
-        raise ValueError("Select at least one fixed probe case")
+    ctx.require_test_cases(label="fixed probe case")
 
 
 @graph.step(

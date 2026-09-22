@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import threading
@@ -1467,6 +1468,21 @@ class RunnerContext:
         """
         return list(self.resources.get("test_cases", []))
 
+    def require_test_case_ids(
+        self, required_ids: set[str] | list[str] | tuple[str, ...], *, label: str = "required test case"
+    ) -> None:
+        """Require that the declared fixed cases include every requested ID.
+
+        Args:
+            required_ids: Stable test-case IDs that must be selected.
+            label: Singular description used in an actionable validation error.
+        """
+        required = {str(case_id) for case_id in required_ids if str(case_id).strip()}
+        selected = {str(case.get("id", "")) for case in self.test_cases}
+        missing = sorted(required - selected)
+        if missing:
+            raise ValueError(f"Missing {label}: {', '.join(missing)}")
+
     def resource(self, name: str, default: object = None) -> object:
         """Read a named value from Orbit's immutable resource snapshot.
 
@@ -1521,6 +1537,15 @@ class RunnerContext:
             "model": settings.model,
             "response": response,
         }
+
+    def complete_model_json(self, prompt: str, *, description: str = "model response") -> dict[str, object]:
+        """Run one target-AI turn and require a JSON object response.
+
+        Use this when a runner's prompt explicitly contracts the model to emit
+        structured data. The raw text remains available through
+        :meth:`complete_model` for free-form model tasks.
+        """
+        return self.parse_json_object(self.complete_model(prompt)["response"], description=description)
 
     @property
     def previous_supervisor_feedback(self) -> dict[str, object]:
@@ -1943,6 +1968,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         input: str | None = None,
         target_log_source: str | None = None,
         target_log_exclude_prefixes: tuple[str, ...] = (),
+        merge_stderr: bool = True,
     ) -> str:
         """Run one bounded child command and return its captured output.
 
@@ -1961,9 +1987,13 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
                 the target-log stream under this source name.
             target_log_exclude_prefixes: Output prefixes retained for the caller
                 but excluded from target logs, for structured child results.
+            merge_stderr: When ``True`` (the default), include standard error in
+                the returned output. Set to ``False`` when a child reserves
+                standard output for a machine-readable response; standard error
+                is still printed and forwarded to target logs.
 
         Returns:
-            Combined standard output and standard error from the child.
+            Standard output, plus standard error when ``merge_stderr`` is true.
 
         Raises:
             subprocess.TimeoutExpired: If the child exceeds ``timeout``.
@@ -1977,7 +2007,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             text=True,
             stdin=subprocess.PIPE if input is not None else None,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
         )
         lines: list[str] = []
 
@@ -1986,16 +2016,29 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             process.stdin.write(input)
             process.stdin.close()
 
-        def forward_output() -> None:
-            assert process.stdout is not None
-            for line in process.stdout:
-                lines.append(line)
+        def forward_output(stream, *, retain: bool) -> None:
+            for line in stream:
+                if retain:
+                    lines.append(line)
                 print(line, end="", flush=True)
                 if target_log_source and line.strip() and not line.startswith(target_log_exclude_prefixes):
                     self.target_log(line.strip(), source=target_log_source)
 
-        reader = threading.Thread(target=forward_output, daemon=True)
-        reader.start()
+        assert process.stdout is not None
+        readers = [
+            threading.Thread(
+                target=forward_output, args=(process.stdout,), kwargs={"retain": True}, daemon=True
+            )
+        ]
+        if not merge_stderr:
+            assert process.stderr is not None
+            readers.append(
+                threading.Thread(
+                    target=forward_output, args=(process.stderr,), kwargs={"retain": False}, daemon=True
+                )
+            )
+        for reader in readers:
+            reader.start()
         try:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -2003,13 +2046,107 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             process.wait()
             raise
         finally:
-            reader.join()
+            for reader in readers:
+                reader.join()
         output = "".join(lines)
         if process.returncode:
             self.log(f"exec failed with exit code {process.returncode}: {' '.join(command)}")
             raise SystemExit(process.returncode)
         self.log(f"exec completed: {' '.join(command)}")
         return output
+
+    def command_from_env(self, command_env: str) -> list[str]:
+        """Parse one externally configured command from the runner environment.
+
+        The value may be a shell-style command string or a JSON array of
+        strings. The executable must be present; empty arguments remain valid
+        because some tools use them intentionally.
+        """
+        configured = self.environment.get(command_env, "").strip()
+        if not configured:
+            raise ValueError(f"Set {command_env} to an external tool command")
+        try:
+            command = json.loads(configured) if configured.startswith("[") else shlex.split(configured)
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError(f"{command_env} must be a JSON string array or command") from error
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(item, str) for item in command)
+            or not command[0].strip()
+        ):
+            raise ValueError(f"{command_env} must be a non-empty JSON string array or command")
+        return command
+
+    def run_command_action(
+        self,
+        *,
+        command_env: str,
+        action: str,
+        timeout: int | None = None,
+        env: dict[str, str] | None = None,
+        log_source: str | None = None,
+        log_exclude_prefixes: tuple[str, ...] = (),
+        stdout_only: bool = False,
+    ) -> str:
+        """Run one action of an externally configured command.
+
+        Args:
+            command_env: Environment variable holding the command configuration.
+            action: Final argument passed to the external command.
+            timeout: Maximum duration in seconds.
+            env: Additional environment values for the child command.
+            log_source: Optional target-log source for child output.
+            log_exclude_prefixes: Child-output prefixes excluded from target logs.
+            stdout_only: Return only stdout, preserving stderr for logs. Use for
+                commands whose stdout is a structured response.
+        """
+        return self.exec(
+            [*self.command_from_env(command_env), action],
+            cwd=self.project_root,
+            timeout=timeout,
+            env=env,
+            target_log_source=log_source,
+            target_log_exclude_prefixes=log_exclude_prefixes,
+            merge_stderr=not stdout_only,
+        )
+
+    def parse_json_object(self, output: str, *, description: str = "command output") -> dict[str, object]:
+        """Parse and require exactly one JSON object from command output."""
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"{description} did not return JSON") from error
+        if not isinstance(result, dict):
+            raise RuntimeError(f"{description} must return a JSON object")
+        return result
+
+    def run_json_action(
+        self,
+        *,
+        command_env: str,
+        action: str,
+        input_env: str,
+        input_data: dict[str, object],
+        timeout: int | None = None,
+        log_source: str | None = None,
+    ) -> dict[str, object]:
+        """Run one external action that returns a JSON object on standard output."""
+        payload = json.dumps({**input_data, "action": action}, ensure_ascii=False)
+        output = self.run_command_action(
+            command_env=command_env,
+            action=action,
+            timeout=timeout,
+            env={input_env: payload},
+            log_source=log_source,
+            stdout_only=True,
+        )
+        return self.parse_json_object(output, description=f"Action {action!r}")
+
+    def require_test_cases(self, *, label: str = "fixed test case") -> None:
+        """Require at least one declared fixed test case for a runner contract."""
+        if not self.test_cases:
+            raise ValueError(f"Select at least one {label}")
 
 
 class Runner:
