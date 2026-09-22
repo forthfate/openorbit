@@ -768,6 +768,19 @@
       "save": "Save runner",
       "delete": "Delete"
     },
+    "visual": {
+      "groups": {"starters": "Starter workflows", "templates": "Built-in templates", "actions": "Actions", "state": "State & lifecycle", "ai": "AI", "evidence": "Evidence", "advanced": "Advanced"},
+      "nodes": {
+        "customScript": {"title": "Custom Script", "description": "Run operator-authored Python in this node."},
+        "externalJsonAction": {"title": "External JSON action", "description": "Run an external command that returns a JSON object."},
+        "commandAction": {"title": "Command action", "description": "Run a configured command action."},
+        "browserJourney": {"title": "Browser journey", "description": "Run the configured browser journey."},
+        "stateLoad": {"title": "Load runner state", "description": "Read retained runner state."}, "stateSave": {"title": "Save runner state", "description": "Persist runner state."},
+        "modelPrompt": {"title": "Model prompt", "description": "Ask the configured model."}, "modelJson": {"title": "Structured model prompt", "description": "Ask the model for JSON."}, "aiAgent": {"title": "AI agent", "description": "Run the configured coding agent."},
+        "requireTestCases": {"title": "Require test cases", "description": "Require at least one fixed test case."}, "snapshot": {"title": "Snapshot", "description": "Save or restore a target snapshot."}, "emitEvidence": {"title": "Emit evidence", "description": "Publish node values as evidence."}
+      },
+      "starters": {"jsonAgentCycle": {"title": "JSON Agent Cycle", "description": "A four-phase external JSON agent cycle."}, "commandAdapter": {"title": "Command Adapter", "description": "A four-phase command adapter."}, "browserJourney": {"title": "Browser Journey", "description": "Validate, run, and publish a browser journey."}, "userJourneyCycle": {"title": "User Journey Cycle", "description": "Retain state around a browser journey."}, "readiness": "Check readiness", "prepare": "Prepare cycle", "run": "Run cycle", "evidence": "Collect evidence", "validateBrowser": "Validate browser journey", "runBrowser": "Run browser journey", "publishBrowser": "Publish browser evidence", "loadJourney": "Load journey state", "runJourney": "Run selected journey", "retainJourney": "Retain journey state"}
+    },
     "environmentText": {
       "execution": "Execution environments",
       "executionHint": "Reusable runner location, invocation method, and browser runtime.",

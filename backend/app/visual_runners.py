@@ -8,9 +8,14 @@ from collections import defaultdict
 from collections.abc import Iterable
 from typing import Any
 
+from orbit_sdk.visual import visual_nodes
+from orbit_sdk.visual.bindings import validate as validate_bindings
+from orbit_sdk.visual.bindings import validate_condition
+
 PHASES = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
-NODE_KINDS = {"custom_script", "external_json_action", "emit_evidence"}
-_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+NODE_KINDS = {item["kind"] for item in visual_nodes.catalog()}
+_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_PYTHON_IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _PHASE_INDEX = {phase: index for index, phase in enumerate(PHASES)}
 
 
@@ -39,13 +44,18 @@ def validate_blueprint(value: dict[str, Any]) -> dict[str, Any]:
         inputs = _ports(node.get("inputs", []), node_id, "input")
         outputs = _ports(node.get("outputs", []), node_id, "output")
         config = node.get("config") if isinstance(node.get("config"), dict) else {}
-        if kind == "external_json_action":
-            if not isinstance(config.get("command_env"), str) or not config["command_env"].strip():
-                raise ValueError(f"visual runner node {node_id!r} requires a command environment")
-            if not isinstance(config.get("action"), str) or not config["action"].strip():
-                raise ValueError(f"visual runner node {node_id!r} requires an action")
-        if kind == "emit_evidence" and not isinstance(config.get("namespace", "visual_runner"), str):
-            raise ValueError(f"visual runner node {node_id!r} requires a text evidence namespace")
+        try:
+            validate_bindings(config)
+            validate_condition(node.get("when"))
+        except ValueError as error:
+            raise ValueError(
+                f"visual runner node {node_id!r} has invalid runtime binding: {error}"
+            ) from error
+        if kind != "custom_script":
+            try:
+                visual_nodes.validate(kind, config)
+            except ValueError as error:
+                raise ValueError(f"visual runner node {node_id!r} {error}") from error
         position = node.get("position") if isinstance(node.get("position"), dict) else {}
         normalized_nodes.append(
             {
@@ -57,6 +67,7 @@ def validate_blueprint(value: dict[str, Any]) -> dict[str, Any]:
                 "inputs": inputs,
                 "outputs": outputs,
                 "config": config,
+                "when": node.get("when"),
                 "script": str(node.get("script") or ""),
                 "position": {"x": _number(position.get("x", 0)), "y": _number(position.get("y", 0))},
             }
@@ -73,7 +84,9 @@ def validate_blueprint(value: dict[str, Any]) -> dict[str, Any]:
         source_port = str(edge.get("source_port") or "") or None
         target_port = str(edge.get("target_port") or "") or None
         if kind == "data":
-            if (
+            if bool(source_port) != bool(target_port):
+                raise ValueError("visual runner data edges must declare both ports or neither")
+            if source_port and (
                 source_port not in nodes_by_id[source]["outputs"]
                 or target_port not in nodes_by_id[target]["inputs"]
             ):
@@ -81,8 +94,11 @@ def validate_blueprint(value: dict[str, Any]) -> dict[str, Any]:
         elif source_port or target_port:
             raise ValueError("only visual runner data edges may use ports")
         if kind == "loop":
-            if nodes_by_id[source]["phase"] != "after_each" or nodes_by_id[target]["phase"] != "before_each":
-                raise ValueError("visual runner loops must connect after_each to before_each")
+            if nodes_by_id[source]["phase"] != "after_each" or nodes_by_id[target]["phase"] not in {
+                "before_each",
+                "execute",
+            }:
+                raise ValueError("visual runner loops must connect after_each to before_each or execute")
         elif _PHASE_INDEX[nodes_by_id[source]["phase"]] > _PHASE_INDEX[nodes_by_id[target]["phase"]]:
             raise ValueError("visual runner edges must follow lifecycle order")
         normalized_edges.append(
@@ -142,7 +158,7 @@ def generate_source(blueprint: dict[str, Any]) -> str:
     blueprint = validate_blueprint(blueprint)
     bindings_by_target: dict[str, dict[str, tuple[str, str]]] = defaultdict(dict)
     for edge in blueprint["edges"]:
-        if edge["kind"] == "data":
+        if edge["kind"] == "data" and edge["source_port"] and edge["target_port"]:
             bindings_by_target[edge["target"]][edge["target_port"]] = (
                 edge["source"],
                 edge["source_port"],
@@ -152,6 +168,8 @@ def generate_source(blueprint: dict[str, Any]) -> str:
         by_phase[node["phase"]].append({**node, "_bindings": bindings_by_target[node["id"]]})
     lines = [
         '"""Generated by OpenOrbit Visual Runner Editor. Do not edit by hand."""',
+        "",
+        "import json",
         "",
         "from orbit_sdk import graph, runner",
         "",
@@ -175,7 +193,7 @@ def generate_source(blueprint: dict[str, Any]) -> str:
         if by_phase[phase]:
             lines.append(f"@runner.phase({phase!r})")
             lines.append(f"def phase_{phase}(ctx):")
-            lines.extend(f"    {node['id']}(ctx)" for node in ordered_nodes)
+            lines.extend(f"    {_function_name(node['id'])}(ctx)" for node in ordered_nodes)
             lines.append("")
     lines.extend(["if __name__ == '__main__':", "    runner.main()", ""])
     return "\n".join(lines)
@@ -186,19 +204,21 @@ def _node_source(node: dict[str, Any]) -> list[str]:
     outputs = repr(node["outputs"])
     lines = [
         f"@graph.step({node['id']!r}, title={node['title']!r}, phase={node['phase']!r}, inputs={node['inputs']!r}, outputs={outputs}, description={node['description']!r})",
-        f"def {node['id']}(ctx):",
+        f"@runner.phase({node['phase']!r}, step_id={node['id']!r})",
+        f"def {_function_name(node['id'])}(ctx):",
         f"    config = {config}",
         f"    outputs = ctx.visual_node_inputs({node['id']!r}, {_bindings(node)!r})",
     ]
-    if node["kind"] == "external_json_action":
-        lines.append(
-            "    outputs['result'] = ctx.run_json_action(command_env=config['command_env'], action=config['action'], input_env=config.get('input_env', 'ORBIT_CYCLE_INPUT'), input_data=config.get('input_data', {}), timeout=config.get('timeout'), log_source=config.get('log_source'))"
-        )
-    elif node["kind"] == "emit_evidence":
-        lines.append("    ctx.emit_result({config.get('namespace', 'visual_runner'): outputs})")
-    else:
+    if node["when"] is not None:
+        lines.append(f"    if not ctx.visual_should_run({node['when']!r}, inputs=outputs):")
+        lines.append("        return")
+    if node["kind"] == "custom_script":
         script = node["script"] or "# Set values on outputs, then return.\npass"
         lines.extend(f"    {line}" if line else "" for line in script.splitlines())
+    else:
+        lines.append(
+            f"    outputs.update(ctx.run_visual_node({node['kind']!r}, node_id={node['id']!r}, config=config, inputs=outputs))"
+        )
     lines.extend([f"    ctx.publish_visual_node_outputs({node['id']!r}, outputs)", ""])
     return lines
 
@@ -206,6 +226,13 @@ def _node_source(node: dict[str, Any]) -> list[str]:
 def _bindings(node: dict[str, Any]) -> dict[str, tuple[str, str]]:
     # Set by generate_source immediately before each node is rendered.
     return node.get("_bindings", {})
+
+
+def _function_name(node_id: str) -> str:
+    """Return a deterministic, safe Python function name for a graph node ID."""
+    if _PYTHON_IDENTIFIER.fullmatch(node_id):
+        return node_id
+    return "node_" + re.sub(r"[^a-z0-9_]", "_", node_id)
 
 
 def _ordered_nodes(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[dict[str, Any]]:

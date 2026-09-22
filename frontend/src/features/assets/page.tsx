@@ -436,7 +436,9 @@ function RunnerModal({
         .then(setTemplates)
         .catch((error) => setNotice(error.message));
   }, [editing]);
-  const choose = (template: RunnerTemplate) =>
+  const choose = (template: RunnerTemplate) => {
+    setVisualBlueprint(template.visual_blueprint);
+    setVisualDetached(!template.visual_blueprint);
     setDraft({
       id: "",
       name: template.name,
@@ -445,8 +447,11 @@ function RunnerModal({
       source: template.source,
       version: 1,
     });
+  };
   const changeTemplate = () => {
     setDraft(undefined);
+    setVisualBlueprint(undefined);
+    setVisualDetached(false);
     setNotice("");
   };
   const refreshWorkflowGraph = (source = draft?.source ?? "") => {

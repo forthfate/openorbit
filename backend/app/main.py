@@ -12,6 +12,7 @@ from typing import Literal
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from orbit_sdk.visual import visual_nodes
 from pydantic import BaseModel, Field
 
 from . import store as store_module
@@ -705,6 +706,14 @@ def preview_visual_runner(values: VisualRunnerPreview):
     blueprint = validate_blueprint(values.blueprint)
     source = generate_source(blueprint)
     return {"blueprint": blueprint, "source": source}
+
+
+@app.get("/api/visual-runners/catalog")
+def visual_runner_catalog():
+    """Expose SDK-owned visual node metadata for editor clients."""
+    from orbit_sdk.visual import builtin_template_catalog, starter_catalog
+
+    return {"nodes": visual_nodes.catalog(), "starters": [*starter_catalog(), *builtin_template_catalog()]}
 
 
 @app.put("/api/runners/{runner_id}/visual")

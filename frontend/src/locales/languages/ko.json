@@ -767,6 +767,11 @@
       "save": "러너 저장",
       "delete": "삭제"
     },
+    "visual": {
+      "groups": {"starters": "시작 워크플로우", "templates": "내장 템플릿", "actions": "액션", "state": "상태 및 수명주기", "ai": "AI", "evidence": "증거", "advanced": "고급"},
+      "nodes": {"customScript": {"title": "커스텀 스크립트", "description": "이 노드에서 작성한 Python을 실행합니다."}, "externalJsonAction": {"title": "외부 JSON 액션", "description": "JSON 객체를 반환하는 외부 명령을 실행합니다."}, "commandAction": {"title": "명령 액션", "description": "구성된 명령 액션을 실행합니다."}, "browserJourney": {"title": "브라우저 여정", "description": "구성된 브라우저 여정을 실행합니다."}, "stateLoad": {"title": "러너 상태 불러오기", "description": "보존된 러너 상태를 읽습니다."}, "stateSave": {"title": "러너 상태 저장", "description": "러너 상태를 보존합니다."}, "modelPrompt": {"title": "모델 프롬프트", "description": "구성된 모델에 요청합니다."}, "modelJson": {"title": "구조화된 모델 프롬프트", "description": "모델에 JSON을 요청합니다."}, "aiAgent": {"title": "AI 에이전트", "description": "구성된 코딩 에이전트를 실행합니다."}, "requireTestCases": {"title": "테스트 케이스 요구", "description": "고정 테스트 케이스를 요구합니다."}, "snapshot": {"title": "스냅샷", "description": "대상 스냅샷을 저장하거나 복원합니다."}, "emitEvidence": {"title": "증거 내보내기", "description": "노드 값을 증거로 발행합니다."}},
+      "starters": {"jsonAgentCycle": {"title": "JSON 에이전트 사이클", "description": "4단계 외부 JSON 에이전트 사이클입니다."}, "commandAdapter": {"title": "명령 어댑터", "description": "4단계 명령 어댑터입니다."}, "browserJourney": {"title": "브라우저 여정", "description": "브라우저 여정을 검증, 실행, 발행합니다."}, "userJourneyCycle": {"title": "사용자 여정 사이클", "description": "브라우저 여정 전후로 상태를 보존합니다."}, "readiness": "준비 상태 확인", "prepare": "사이클 준비", "run": "사이클 실행", "evidence": "증거 수집", "validateBrowser": "브라우저 여정 검증", "runBrowser": "브라우저 여정 실행", "publishBrowser": "브라우저 증거 발행", "loadJourney": "여정 상태 불러오기", "runJourney": "선택한 여정 실행", "retainJourney": "여정 상태 보존"}
+    },
     "environmentText": {
       "execution": "실행 환경",
       "executionHint": "재사용 가능한 러너 위치, 호출 방식, 브라우저 런타임을 관리합니다.",
