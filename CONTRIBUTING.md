@@ -53,9 +53,9 @@ The React hook needs `pnpm install` to have been run once.
 
 Run the checks below for the kind of change you made rather than the full
 list. Backend checks match what CI runs exactly (see
-`.github/workflows/ci.yml`); for frontend, linting is enforced locally via the
-pre-commit hook, but CI's frontend job only runs the production build, and
-the Playwright specs are not run in CI at all.
+`.github/workflows/ci.yml`); for frontend, CI's frontend job runs lint,
+the docs build, and the production build (linting is also enforced locally
+via the pre-commit hook), and the Playwright specs are not run in CI at all.
 
 **Documentation-only change** (`*.md`, `docs/`): run `pnpm run docs:build`
 (the same strict mkdocs build CI's frontend job runs for every PR) and
