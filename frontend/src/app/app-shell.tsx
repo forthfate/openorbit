@@ -133,10 +133,10 @@ export function AppShell({
     : navigationLabels.collapseNavigation;
   return (
     <main
-      className={collapsed ? "sidebar-collapsed" : undefined}
+      className={`app-shell${collapsed ? " sidebar-collapsed" : ""}`}
       data-theme={theme === "midnight" ? "midnight" : undefined}
     >
-      <aside>
+      <aside className="app-sidebar">
         <button
           className="sidebar-toggle"
           type="button"
@@ -166,7 +166,7 @@ export function AppShell({
             </div>
           </div>
         )}
-        <nav>
+        <nav className="app-navigation">
           {navigation.map(([id, icon, label]) => (
             <button
               className={page === id ? "active" : ""}
@@ -189,7 +189,7 @@ export function AppShell({
           ))}
         </nav>
       </aside>
-      <section className="content">
+      <section className="app-content">
         <header>
           <div className="page-header-copy">
             <h1>{t[page]}</h1>

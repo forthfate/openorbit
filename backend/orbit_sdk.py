@@ -471,6 +471,55 @@ class RunnerContext:
             "size": len(payload),
         }
 
+    def visual_node_inputs(
+        self, node_id: str, bindings: dict[str, tuple[str, str]] | None = None
+    ) -> dict[str, object]:
+        """Return declared upstream values for one generated visual-runner node.
+
+        Args:
+            node_id: The generated graph-node identifier requesting inputs.
+            bindings: Input names mapped to ``(source_node_id, output_port)``.
+                Generated visual runners provide this mapping from their data
+                edges, so unrelated node output is never exposed implicitly.
+
+        Returns:
+            A dictionary keyed by the node's declared input ports. Missing
+            upstream values are omitted, allowing a custom script to apply a
+            default explicitly.
+        """
+        document = self.load_state("orbit-visual-node-outputs", {}, scope="runner")
+        if not isinstance(document, dict) or document.get("iteration") != self.loop_index:
+            return {}
+        values = document.get("outputs", {})
+        if not isinstance(values, dict):
+            return {}
+        if bindings is None:
+            return {}
+        inputs: dict[str, object] = {}
+        for input_name, binding in bindings.items():
+            if not isinstance(input_name, str) or not isinstance(binding, tuple) or len(binding) != 2:
+                raise ValueError("visual node input bindings must map names to source node ports")
+            source_node, source_port = binding
+            source_outputs = values.get(source_node)
+            if isinstance(source_outputs, dict) and source_port in source_outputs:
+                inputs[input_name] = source_outputs[source_port]
+        return inputs
+
+    def publish_visual_node_outputs(self, node_id: str, values: dict[str, object]) -> None:
+        """Persist JSON-safe outputs from one generated visual-runner node."""
+        if not node_id.strip():
+            raise ValueError("visual node ID must not be empty")
+        if not isinstance(values, dict):
+            raise ValueError("visual node outputs must be a JSON object")
+        current = self.load_state("orbit-visual-node-outputs", {}, scope="runner")
+        if not isinstance(current, dict) or current.get("iteration") != self.loop_index:
+            current = {"iteration": self.loop_index, "outputs": {}}
+        outputs = current.setdefault("outputs", {})
+        if not isinstance(outputs, dict):
+            outputs = current["outputs"] = {}
+        outputs[node_id] = values
+        self.save_state("orbit-visual-node-outputs", current, scope="runner")
+
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
         """Atomically materialize runner-owned files outside the target repository.
 

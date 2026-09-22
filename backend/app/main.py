@@ -23,6 +23,7 @@ from .mcp_server import create_mcp_server
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .store import ConsoleStore
 from .terminal import serve_terminal
+from .visual_runners import generate_source, validate_blueprint
 
 
 @asynccontextmanager
@@ -575,6 +576,7 @@ class RunnerAssetUpdate(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     source: str = Field(min_length=1, max_length=250_000)
     template_id: str | None = Field(default=None, max_length=64)
+    visual_blueprint: dict | None = None
 
 
 class RunnerAssetCreate(RunnerAssetUpdate):
@@ -588,6 +590,16 @@ class RunnerGraphPreview(BaseModel):
 
 class RunnerGraphDraft(BaseModel):
     source: str = Field(min_length=1, max_length=250_000)
+
+
+class VisualRunnerPreview(BaseModel):
+    blueprint: dict
+
+
+class VisualRunnerUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=500)
+    blueprint: dict
 
 
 class RunnerTemplateValues(BaseModel):
@@ -686,6 +698,18 @@ def preview_runner_graph_draft(draft_id: str):
 @app.post("/api/runners/preview-graph")
 def preview_runner_graph(values: RunnerGraphPreview):
     return safely(lambda: store.preview_runner_graph(values.source))
+
+
+@app.post("/api/visual-runners/preview")
+def preview_visual_runner(values: VisualRunnerPreview):
+    blueprint = validate_blueprint(values.blueprint)
+    source = generate_source(blueprint)
+    return {"blueprint": blueprint, "source": source}
+
+
+@app.put("/api/runners/{runner_id}/visual")
+def update_visual_runner(runner_id: str, values: VisualRunnerUpdate):
+    return safely(lambda: store.update_visual_runner(runner_id, values.model_dump()))
 
 
 @app.post("/api/runners")

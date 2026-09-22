@@ -809,6 +809,50 @@ def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_pa
     assert [step.phase for step in store._runner_execution_plan("versioned-runner", 2).steps] == ["verify"]
 
 
+def test_direct_code_update_detaches_a_visual_runner_without_erasing_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store = store_module.ConsoleStore()
+    blueprint = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "collect",
+                "kind": "custom_script",
+                "title": "Collect",
+                "phase": "execute",
+                "inputs": [],
+                "outputs": ["result"],
+                "config": {},
+                "script": "outputs['result'] = True",
+                "position": {"x": 0, "y": 0},
+            }
+        ],
+        "edges": [],
+    }
+    visual = store.create_runner(
+        {
+            "id": "visual-runner",
+            "name": "Visual runner",
+            "description": "A generated visual runner.",
+            "source": "placeholder",
+            "visual_blueprint": blueprint,
+        }
+    )
+    updated = store.update_runner(
+        "visual-runner",
+        {
+            "name": visual["name"],
+            "description": visual["description"],
+            "source": "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n",
+        },
+    )
+
+    assert visual["versions"][0]["visual_blueprint"]["schema_version"] == 1
+    assert "visual_blueprint" not in updated
+    assert "visual_blueprint" not in updated["versions"][-1]
+    assert updated["versions"][0]["visual_blueprint"]["nodes"][0]["id"] == "collect"
+
+
 def test_bundle_runner_updates_in_place_and_keeps_immutable_versions(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     bundle = store_module.RUNNERS / "bundle-runner"

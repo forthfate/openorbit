@@ -35,6 +35,7 @@ from .models import PHASE_ALIASES, Run, Step, Workflow
 from .observability import configure_telemetry
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .remote import RemoteInvocation
+from .visual_runners import generate_source, validate_blueprint
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -1066,6 +1067,9 @@ class ConsoleStore:
     def create_runner(self, values: dict[str, str]) -> dict[str, str]:
         if any(item["id"] == values["id"] for item in self.runners()):
             raise ValueError("runner ID already exists")
+        if isinstance(values.get("visual_blueprint"), dict):
+            blueprint = validate_blueprint(values["visual_blueprint"])
+            values = {**values, "visual_blueprint": blueprint, "source": generate_source(blueprint)}
         return self._write_runner(values["id"], values)
 
     def migrate_runner_to_bundle(self, runner_id: str) -> dict[str, str]:
@@ -1085,15 +1089,30 @@ class ConsoleStore:
 
     def update_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         existing = self._runner(runner_id)
+        detached_visual = bool(existing.get("visual_blueprint")) and not isinstance(
+            values.get("visual_blueprint"), dict
+        )
+        if existing.get("visual_blueprint") and not isinstance(values.get("visual_blueprint"), dict):
+            values = {**values, "visual_blueprint": None}
+        merged = {**existing, **{key: value for key, value in values.items() if value is not None}}
+        if detached_visual:
+            merged.pop("visual_blueprint", None)
         return self._write_runner(
             runner_id,
-            {**existing, **{key: value for key, value in values.items() if value is not None}},
+            merged,
             bundle=bool(existing.get("bundle")),
         )
 
+    def update_visual_runner(self, runner_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        """Compile and version one visual runner blueprint."""
+        blueprint = validate_blueprint(dict(values["blueprint"]))
+        return self.update_runner(
+            runner_id, {**values, "source": generate_source(blueprint), "visual_blueprint": blueprint}
+        )
+
     def _write_runner(
-        self, runner_id: str, values: dict[str, str], *, bundle: bool = False
-    ) -> dict[str, str]:
+        self, runner_id: str, values: dict[str, Any], *, bundle: bool = False
+    ) -> dict[str, Any]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
         existing_versions = list(values.get("versions") or [])
@@ -1104,6 +1123,8 @@ class ConsoleStore:
             "sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
             "created_at": now().isoformat(),
         }
+        if isinstance(values.get("visual_blueprint"), dict):
+            version_record["visual_blueprint"] = values["visual_blueprint"]
         asset = {
             "id": runner_id,
             "name": str(values["name"]).strip(),
@@ -1113,6 +1134,8 @@ class ConsoleStore:
             "version": version,
             "versions": [*existing_versions, version_record],
         }
+        if "visual_blueprint" in version_record:
+            asset["visual_blueprint"] = version_record["visual_blueprint"]
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
         source_path, metadata_path = (
