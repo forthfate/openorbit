@@ -448,6 +448,34 @@ def test_command_from_env_rejects_an_empty_executable(tmp_path, value):
         ).command_from_env("RUNNER_COMMAND")
 
 
+def test_complete_model_json_requires_a_json_object(tmp_path, monkeypatch):
+    ctx = context(tmp_path, iteration=1)
+    monkeypatch.setattr(ctx, "complete_model", lambda _prompt: {"response": '{"next": "visit"}'})
+
+    assert ctx.complete_model_json("Choose an action") == {"next": "visit"}
+
+    monkeypatch.setattr(ctx, "complete_model", lambda _prompt: {"response": "[]"})
+    with pytest.raises(RuntimeError, match="must return a JSON object"):
+        ctx.complete_model_json("Choose an action")
+
+
+def test_require_test_case_ids_reports_missing_cases(tmp_path):
+    resources = {"test_cases": [{"id": "included"}]}
+    ctx = sdk.RunnerContext(
+        phase="execute",
+        target_repository=tmp_path,
+        mode="run",
+        loop_index=1,
+        environment={
+            "ORBIT_RUNNER_RESOURCES": b64encode(json.dumps(resources).encode()).decode(),
+        },
+    )
+
+    ctx.require_test_case_ids({"included"})
+    with pytest.raises(ValueError, match="Missing required test case: absent"):
+        ctx.require_test_case_ids({"included", "absent"})
+
+
 def test_repository_snapshot_restores_worktree_index_and_head_without_a_commit(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()

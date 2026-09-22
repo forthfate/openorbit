@@ -66,20 +66,8 @@ def save_state(ctx, state):
 
 
 def model_json(ctx, prompt):
-    """Request and validate one JSON decision from the configured model.
-
-    Raises:
-        ValueError: If the model response is not a JSON object.
-    """
-    """Use the configured model, but retain only a strict JSON decision record."""
-    response = ctx.complete_model(prompt)["response"]
-    try:
-        value = json.loads(response)
-    except json.JSONDecodeError as error:
-        raise ValueError("persona model must return one JSON object") from error
-    if not isinstance(value, dict):
-        raise ValueError("persona model response must be a JSON object")
-    return value
+    """Request one JSON decision through the SDK's model response contract."""
+    return ctx.complete_model_json(prompt, description="persona model response")
 
 
 def browser(ctx, *, url, screenshot, allowed_href=None):

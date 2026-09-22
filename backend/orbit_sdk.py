@@ -1468,6 +1468,21 @@ class RunnerContext:
         """
         return list(self.resources.get("test_cases", []))
 
+    def require_test_case_ids(
+        self, required_ids: set[str] | list[str] | tuple[str, ...], *, label: str = "required test case"
+    ) -> None:
+        """Require that the declared fixed cases include every requested ID.
+
+        Args:
+            required_ids: Stable test-case IDs that must be selected.
+            label: Singular description used in an actionable validation error.
+        """
+        required = {str(case_id) for case_id in required_ids if str(case_id).strip()}
+        selected = {str(case.get("id", "")) for case in self.test_cases}
+        missing = sorted(required - selected)
+        if missing:
+            raise ValueError(f"Missing {label}: {', '.join(missing)}")
+
     def resource(self, name: str, default: object = None) -> object:
         """Read a named value from Orbit's immutable resource snapshot.
 
@@ -1522,6 +1537,15 @@ class RunnerContext:
             "model": settings.model,
             "response": response,
         }
+
+    def complete_model_json(self, prompt: str, *, description: str = "model response") -> dict[str, object]:
+        """Run one target-AI turn and require a JSON object response.
+
+        Use this when a runner's prompt explicitly contracts the model to emit
+        structured data. The raw text remains available through
+        :meth:`complete_model` for free-form model tasks.
+        """
+        return self.parse_json_object(self.complete_model(prompt)["response"], description=description)
 
     @property
     def previous_supervisor_feedback(self) -> dict[str, object]:
