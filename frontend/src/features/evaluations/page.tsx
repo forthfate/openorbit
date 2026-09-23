@@ -4,8 +4,7 @@ import type {
   Build,
   Run,
   WorkflowGraphNode,
-  CommitChange,
-  PromptRevision,
+  IssueManagementItem,
   RunTelemetry,
   SupervisorRecord,
 } from "../../domain/models";
@@ -27,12 +26,10 @@ import {
   type RunDetailTab,
 } from "./run-detail-tabs";
 import {
-  CommitChangesPanel,
-  PromptChangesPanel,
+  WorktreePanel,
 } from "./run-detail-change-panels";
 import {
   CombinedLogPanel,
-  WorkflowLogPanel,
 } from "./run-detail-log-panels";
 import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
@@ -42,6 +39,7 @@ const phases = [
   "before_each",
   "execute",
   "verify",
+  "after_supervision",
   "after_each",
   "after_all",
 ] as const;
@@ -137,12 +135,10 @@ export function EvaluationsPage({
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
     [tab, setTab] = useState<RunDetailTab>("result"),
-    [phaseTab, setPhaseTab] = useState<(typeof phases)[number]>("before_all"),
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
     [telemetry, setTelemetry] = useState<RunTelemetry>(),
-    [promptRevisions, setPromptRevisions] = useState<PromptRevision[]>([]),
-    [commitChanges, setCommitChanges] = useState<CommitChange[]>([]),
+    [worktrees, setWorktrees] = useState<IssueManagementItem[]>([]),
     [statuses, setStatuses] = useState<Set<string>>(() => new Set(runStatuses)),
     [buildFilter, setBuildFilter] = useState(""),
     [modeFilter, setModeFilter] = useState<"all" | "run" | "test">("all"),
@@ -281,15 +277,9 @@ export function EvaluationsPage({
   }, [selected]);
   useEffect(() => {
     if (!selected) return;
-    api<CommitChange[]>(`/api/runs/${selected.id}/commit-changes`)
-      .then(setCommitChanges)
-      .catch(() => setCommitChanges([]));
-  }, [selected]);
-  useEffect(() => {
-    if (!selected) return;
-    api<PromptRevision[]>(`/api/runs/${selected.id}/prompt-revisions`)
-      .then(setPromptRevisions)
-      .catch(() => setPromptRevisions([]));
+    api<IssueManagementItem[]>("/api/v1/issue-management")
+      .then((items) => setWorktrees(items.filter((item) => item.run_id === selected.id)))
+      .catch(() => setWorktrees([]));
   }, [selected]);
   const label = (status: string) =>
     ({
@@ -794,7 +784,7 @@ export function EvaluationsPage({
     previousIteration = iterations[iterationPosition - 1],
     nextIteration = iterations[iterationPosition + 1];
   const iterationNavigator =
-    tab !== "result" && tab !== "prompt" && iterations.length > 0 ? (
+    tab !== "result" && iterations.length > 0 ? (
       <div className="iteration-navigator" aria-label={l.iteration}>
         <button className="ghost icon-button" type="button" aria-label={ui.previousIteration} title={ui.previousIteration} disabled={previousIteration === undefined} onClick={() => {
           if (previousIteration !== undefined) {
@@ -961,7 +951,6 @@ export function EvaluationsPage({
           );
           setSelected(r);
           setTab("result");
-          setPhaseTab("before_all");
           setIterationTab(latest);
           setCandidateTab(r.iteration_candidates?.find((candidate) => candidate.iteration === latest && candidate.selected)?.id ?? null);
         }}
@@ -1027,7 +1016,12 @@ export function EvaluationsPage({
             </div>
             <div>
               <small>{l.decision}</small>
-              <strong>{evaluation?.approval ?? "—"}</strong>
+              <strong
+                title={evaluation?.summary || undefined}
+                aria-label={evaluation?.summary ? `${evaluation.approval}: ${evaluation.summary}` : undefined}
+              >
+                {evaluation?.approval ?? "—"}
+              </strong>
             </div>
           </div>
           <section className="run-detail-workflow-graph" aria-label={l.workflowGraph}>
@@ -1042,14 +1036,12 @@ export function EvaluationsPage({
             onSelect={setTab}
             tabs={[
               { id: "result", label: l.result },
-              { id: "prompt", label: l.promptChanges },
-              { id: "commits", label: l.commitChanges },
+              { id: "commits", label: l.worktrees },
               { id: "supervisor", label: l.supervisor },
-              { id: "workflow", label: l.workflow },
               { id: "logs", label: l.logs },
             ]}
           />
-          {tab !== "result" && tab !== "prompt" && iterations.length > 0 && (
+          {tab !== "result" && iterations.length > 0 && (
             <>
             {selected.iteration_strategy === "score_select" && (
               <div className="iteration-candidates">
@@ -1061,28 +1053,6 @@ export function EvaluationsPage({
               </div>
             )}
             </>
-          )}
-          {tab === "workflow" && (
-            <RunDetailTabPanel description={l.workflowDescription} hint={l.workflowDataHint} action={iterationNavigator}>
-              <div className="run-tabs phase-tabs">
-                {phases.map((phase) => (
-                  <button
-                    key={phase}
-                    className={phaseTab === phase ? "active" : ""}
-                    onClick={() => setPhaseTab(phase)}
-                  >
-                    {phaseLabel(phase)}
-                  </button>
-                ))}
-              </div>
-              <WorkflowLogPanel
-                locale={locale}
-                steps={selectedSteps.filter(
-                  (step) => (step.phase ?? step.step_id) === phaseTab,
-                )}
-                empty={l.noCommandsForPhase}
-              />
-            </RunDetailTabPanel>
           )}
           {tab === "logs" && (
             <RunDetailTabPanel description={l.logsDescription} hint={l.logsDataHint} action={iterationNavigator}>
@@ -1099,19 +1069,9 @@ export function EvaluationsPage({
               />
             </RunDetailTabPanel>
           )}
-          {tab === "prompt" && (
-            <RunDetailTabPanel description={l.promptChangesDescription} hint={l.promptDataHint}>
-              <PromptChangesPanel
-                key={selected.id}
-                revisions={promptRevisions}
-                l={l}
-                renderLineOutput={(value) => <LineNumberedOutput value={value} />}
-              />
-            </RunDetailTabPanel>
-          )}
           {tab === "commits" && (
-            <RunDetailTabPanel description={l.commitChangesDescription} hint={l.commitsDataHint} action={iterationNavigator}>
-              <CommitChangesPanel changes={commitChanges} l={l} />
+            <RunDetailTabPanel description={l.worktreesDescription} hint={l.worktreesDataHint}>
+              <WorktreePanel items={worktrees} empty={l.noWorktrees} branch={l.worktreeBranch} path={l.worktreePath} diffLabel={l.worktreeDiff} />
             </RunDetailTabPanel>
           )}
           {tab === "supervisor" && (

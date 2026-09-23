@@ -12,8 +12,18 @@ import remarkGfm from "remark-gfm";
 import { localeMessages, resolveLocale } from "../locales";
 import { api } from "../services/api";
 import { AssistantTerminal } from "./assistant-terminal";
+import { type AssistantUiCommand, useAssistantUiBridge } from "./assistant-ui-bridge";
 
 type Message = { role: "user" | "assistant"; content: string };
+type ChatStreamEvent = {
+  type: "activity" | "response" | "error" | "ui_command";
+  phase?: "thinking" | "working";
+  tool?: string;
+  response?: string;
+  message?: string;
+  command_id?: string;
+  command?: AssistantUiCommand;
+};
 type Position = { x: number; y: number };
 type DragTarget = "launcher" | "window";
 type ToolSettings = {
@@ -21,8 +31,12 @@ type ToolSettings = {
   file_read_enabled: boolean;
   file_search_enabled: boolean;
   run_process_enabled: boolean;
+  coding_agent_enabled: boolean;
+  ui_context_enabled: boolean;
+  ui_interaction_enabled: boolean;
   terminal_enabled: boolean;
   terminal_visible: boolean;
+  mcp_server_url: string;
 };
 type ApplicationSettings = { assistant_tools: ToolSettings };
 type ChatAssistantCopy = {
@@ -35,14 +49,23 @@ type ChatAssistantCopy = {
   toolsAvailable: string;
   noToolsAvailable: string;
   workspace: string;
+  mcpServerUrl: string;
   fileRead: string;
   fileSearch: string;
   runProcess: string;
-  terminalVisible: string;
+  codingAgent: string;
+  uiContext: string;
+  uiInteraction: string;
   saveTools: string;
   empty: string;
   requestFailed: string;
-  thinking: string;
+  thinkingStatus: string;
+  workingStatus: string;
+  reviewingRequest: string;
+  reviewingResults: string;
+  usingTool: string;
+  usingUiContext: string;
+  usingUiInteract: string;
   message: string;
   placeholder: string;
   send: string;
@@ -54,8 +77,12 @@ const defaultToolSettings: ToolSettings = {
   file_read_enabled: true,
   file_search_enabled: true,
   run_process_enabled: true,
+  coding_agent_enabled: true,
+  ui_context_enabled: true,
+  ui_interaction_enabled: true,
   terminal_enabled: true,
   terminal_visible: true,
+  mcp_server_url: "http://127.0.0.1:3000/mcp/",
 };
 const normalizedToolSettings = (
   value: Partial<ToolSettings> | undefined,
@@ -107,6 +134,7 @@ const initialWindowPosition = (): Position | null => {
 };
 
 export function ChatAssistant() {
+  const { sessionId, handleCommand } = useAssistantUiBridge();
   const copy = localeMessages<ChatAssistantCopy>(
     resolveLocale(localStorage.getItem("orbit.locale")),
     "chatAssistant",
@@ -115,6 +143,9 @@ export function ChatAssistant() {
     [messages, setMessages] = useState<Message[]>([]),
     [draft, setDraft] = useState(""),
     [sending, setSending] = useState(false),
+    [activityPhase, setActivityPhase] = useState<"thinking" | "working">("thinking"),
+    [activityLines, setActivityLines] = useState<string[]>([]),
+    [activityDots, setActivityDots] = useState(1),
     [position, setPosition] = useState<Position>(initialPosition),
     [windowPosition, setWindowPosition] = useState<Position | null>(
       initialWindowPosition,
@@ -139,9 +170,18 @@ export function ChatAssistant() {
   const suppressClick = useRef(false);
   const messageList = useRef<HTMLDivElement>(null);
   const chatWindow = useRef<HTMLElement>(null);
+  const hasUsedTool = useRef(false);
   useEffect(() => {
     messageList.current?.scrollTo({ top: messageList.current.scrollHeight });
-  }, [messages, sending]);
+  }, [messages, sending, activityLines]);
+  useEffect(() => {
+    if (!sending) return;
+    const interval = window.setInterval(
+      () => setActivityDots((current) => (current % 3) + 1),
+      420,
+    );
+    return () => window.clearInterval(interval);
+  }, [sending]);
   useEffect(() => {
     localStorage.setItem(positionKey, JSON.stringify(position));
   }, [position]);
@@ -152,9 +192,9 @@ export function ChatAssistant() {
   useEffect(() => {
     if (open)
       api<ApplicationSettings>("/api/application-settings")
-        .then((values) =>
-          setToolSettings(normalizedToolSettings(values.assistant_tools)),
-        )
+        .then((values) => {
+          setToolSettings(normalizedToolSettings(values.assistant_tools));
+        })
         .catch(() => undefined);
   }, [open]);
   useEffect(() => {
@@ -212,14 +252,69 @@ export function ChatAssistant() {
     setDraft("");
     setMessages((current) => [...current, { role: "user", content }]);
     setSending(true);
+    setActivityPhase("thinking");
+    setActivityLines([]);
+    setActivityDots(1);
+    hasUsedTool.current = false;
     try {
-      const result = await api<{ response: string }>("/api/chat", "POST", {
-        content,
-        history,
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content, history, ui_session_id: sessionId }),
       });
+      if (!response.ok || !response.body)
+        throw new Error(await response.text());
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = "";
+      let answer = "";
+      const addActivity = (line: string) =>
+        setActivityLines((current) => [...current, line].slice(-3));
+      const activityLabel = (tool: string) => {
+        if (tool === "ui_get_context") return copy.usingUiContext;
+        if (tool === "ui_interact") return copy.usingUiInteract;
+        return copy.usingTool.replace("{tool}", tool);
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        buffered += decoder.decode(value, { stream: !done });
+        const lines = buffered.split("\n");
+        buffered = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line) continue;
+          const event = JSON.parse(line) as ChatStreamEvent;
+          if (event.type === "activity" && event.phase) {
+            setActivityPhase(event.phase);
+            if (event.phase === "working") {
+              hasUsedTool.current = true;
+              addActivity(activityLabel(event.tool ?? "tool"));
+            } else {
+              addActivity(
+                hasUsedTool.current ? copy.reviewingResults : copy.reviewingRequest,
+              );
+            }
+          } else if (event.type === "response") {
+            answer = event.response ?? "";
+          } else if (event.type === "ui_command" && event.command_id && event.command) {
+            const result = await handleCommand(event.command).catch((error) => ({
+              ok: false,
+              error: error instanceof Error ? error.message : copy.requestFailed,
+            }));
+            await api("/api/chat/ui-results", "POST", {
+              session_id: sessionId,
+              command_id: event.command_id,
+              result,
+            });
+          } else if (event.type === "error") {
+            throw new Error(event.message ?? copy.requestFailed);
+          }
+        }
+        if (done) break;
+      }
+      if (!answer) throw new Error(copy.requestFailed);
       setMessages((current) => [
         ...current,
-        { role: "assistant", content: result.response },
+        { role: "assistant", content: answer },
       ]);
     } catch (error) {
       setMessages((current) => [
@@ -394,9 +489,21 @@ export function ChatAssistant() {
                 </article>
               ))}
               {sending && (
-                <article className="chat-message chat-message--assistant">
-                  {copy.thinking}
-                </article>
+                <div className="chat-activity" aria-live="polite" role="status">
+                  <strong>
+                    {activityPhase === "working"
+                      ? copy.workingStatus
+                      : copy.thinkingStatus}
+                    {".".repeat(activityDots)}
+                  </strong>
+                  {activityLines.length > 0 && (
+                    <div>
+                      {activityLines.map((line, index) => (
+                        <span key={`${index}-${line}`}>{line}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
             <form
@@ -451,11 +558,27 @@ export function ChatAssistant() {
               }
             />
           </label>
+          <label>
+            <span>{copy.mcpServerUrl}</span>
+            <input
+              type="url"
+              value={toolSettings.mcp_server_url}
+              onChange={(event) =>
+                setToolSettings((current) => ({
+                  ...current,
+                  mcp_server_url: event.target.value,
+                }))
+              }
+            />
+          </label>
           {(
             [
               ["file_read_enabled", copy.fileRead],
               ["file_search_enabled", copy.fileSearch],
+              ["ui_context_enabled", copy.uiContext],
+              ["ui_interaction_enabled", copy.uiInteraction],
               ["run_process_enabled", copy.runProcess],
+              ["coding_agent_enabled", copy.codingAgent],
             ] as const
           ).map(([key, label]) => (
             <label className="chat-tool-popover-toggle" key={key}>
@@ -463,29 +586,19 @@ export function ChatAssistant() {
               <input
                 type="checkbox"
                 checked={toolSettings[key]}
+                disabled={key === "ui_interaction_enabled" && !toolSettings.ui_context_enabled}
                 onChange={(event) =>
                   setToolSettings((current) => ({
                     ...current,
                     [key]: event.target.checked,
+                    ...(key === "ui_context_enabled" && !event.target.checked
+                      ? { ui_interaction_enabled: false }
+                      : {}),
                   }))
                 }
               />
             </label>
           ))}
-          <label className="chat-tool-popover-toggle">
-            <span>{copy.terminalVisible}</span>
-            <input
-              type="checkbox"
-              checked={toolSettings.terminal_visible}
-              onChange={(event) =>
-                setToolSettings((current) => ({
-                  ...current,
-                  terminal_visible: event.target.checked,
-                  terminal_enabled: event.target.checked,
-                }))
-              }
-            />
-          </label>
           <div>
             <button className="ghost" onClick={() => setSettingsOpen(false)}>
               {copy.collapse}

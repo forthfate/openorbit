@@ -17,6 +17,7 @@ dependencies = [
   "opentelemetry-api>=1.28",
   "opentelemetry-sdk>=1.28",
   "langgraph>=0.2",
+  "mcp>=1.9,<2",
   "requests>=2.31",
   "pywinpty>=2.0; sys_platform == 'win32'",
   "python-multipart>=0.0.20",

@@ -11,6 +11,24 @@
       "savedHint": "초안이 로컬에 저장되어 있습니다. 저장하면 새 버전이 생성됩니다."
     },
     "assetsText": {
+      "tabsLabel": "자산 카테고리",
+      "tabAI": "AI 구성",
+      "tabTestDesign": "테스트 설계",
+      "tabRunSetup": "실행 설정",
+      "personas": "페르소나",
+      "persona": "페르소나",
+      "personaDescription": "사용자 특성과 의도를 정의해 실제 사용자 흐름을 검증합니다.",
+      "emptyPersonas": "아직 페르소나가 없습니다.",
+      "locale": "로케일",
+      "timezone": "시간대",
+      "localeSearch": "로케일 검색…",
+      "timezoneSearch": "시간대 검색…",
+      "noMatchingOptions": "일치하는 옵션이 없습니다.",
+      "definition": "페르소나 정의",
+      "definitionPlaceholder": "# 목표\n\n- 사용자가 달성하려는 결과\n\n# 제약 조건\n\n- 반드시 지켜야 하는 경계",
+      "activityContext": "활동 시간 / 컨텍스트",
+      "activityContextHint": "JSON",
+      "invalidPersonaJson": "활동 시간과 컨텍스트는 유효한 JSON이어야 합니다.",
       "profiles": "AI 모델 프로필",
       "templates": "관리자 프롬프트 템플릿",
       "tests": "대상 AI 고정 테스트 케이스",
@@ -22,6 +40,7 @@
       "id": "ID",
       "name": "이름",
       "columnName": "이름",
+      "columnUsage": "사용 수",
       "columnCreated": "생성일",
       "columnActions": "작업",
       "version": "버전",
@@ -55,14 +74,23 @@
       "toolsAvailable": "사용 가능한 도구",
       "noToolsAvailable": "현재 사용 가능한 도구가 없습니다.",
       "workspace": "작업 공간",
+      "mcpServerUrl": "MCP 서버 URL",
       "fileRead": "파일 읽기",
       "fileSearch": "파일 검색",
       "runProcess": "프로세스 실행",
-      "terminalVisible": "배포 시 터미널 모드 표시",
+      "codingAgent": "코딩 에이전트 사용",
+      "uiContext": "UI 확인",
+      "uiInteraction": "UI 조작",
       "saveTools": "도구 저장",
       "empty": "평가 작업, 러너 또는 컨트롤 룸에 관해 물어보세요.",
       "requestFailed": "채팅 요청에 실패했습니다.",
-      "thinking": "생각 중…",
+      "thinkingStatus": "생각 중",
+      "workingStatus": "작업 중",
+      "reviewingRequest": "요청을 검토하고 있습니다",
+      "reviewingResults": "결과를 검토하고 있습니다",
+      "usingTool": "도구 사용: {tool}",
+      "usingUiContext": "현재 UI 확인 중",
+      "usingUiInteract": "UI 조작 중",
       "message": "메시지",
       "placeholder": "Orbit에 메시지 보내기…",
       "send": "메시지 전송"
@@ -70,6 +98,25 @@
     "appMeta": {
       "title": "OpenOrbit",
       "titleSeparator": " - "
+    },
+    "systemReadiness": {
+      "title": "시스템 설정이 필요합니다",
+      "description": "필수 시스템 요소가 준비되지 않아 OpenOrbit의 핵심 기능을 정상적으로 사용할 수 없습니다.",
+      "openSettings": "설정 열기",
+      "checks": {
+        "system_ai": {
+          "title": "시스템 AI",
+          "details": {
+            "profile_not_selected": "사용할 시스템 AI 모델을 선택하세요.",
+            "profile_not_found": "선택한 시스템 AI 프로필을 찾을 수 없습니다.",
+            "model_not_set": "선택한 프로필에 모델 또는 배포 이름이 없습니다.",
+            "endpoint_not_set": "선택한 Azure 프로필에 엔드포인트가 없습니다.",
+            "secret_not_available": "선택한 프로필의 시크릿 환경 변수를 사용할 수 없습니다.",
+            "credentials_not_available": "AWS 자격 증명 또는 AWS CLI 프로필을 설정하세요."
+          }
+        },
+        "git": { "title": "Git", "details": { "not_installed": "Git을 설치한 뒤 OpenOrbit 서버를 다시 시작하세요." } }
+      }
     },
     "navigationAccessibility": {
       "expandNavigation": "탐색 메뉴 펼치기",
@@ -80,11 +127,10 @@
     },
     "shell": {
       "dashboard": "평가 운영 상태, 최근 활동, 운영 이벤트를 한눈에 확인합니다.",
-      "assets": "평가에 사용하는 재사용 환경, 러너, 템플릿, 테스트 케이스, 워크플로를 관리합니다.",
+      "assets": "AI 구성, 테스트 설계, 실행 설정을 위한 재사용 자산을 관리합니다.",
       "builds": "재사용 자산을 태스크로 조합한 뒤 실행하거나 테스트합니다.",
       "runs": "진행 중이거나 완료된 실행, 근거, 승인 결정을 확인합니다.",
       "improvements": "실행 피드백, 개선 제안, 시간에 따른 결과를 검토합니다.",
-      "issues": "빌드별 제안을 검토하고 개발 조치와 검증 이력을 관리합니다.",
       "settings": "콘솔 기본 설정, AI 연결 프로필, 운영 관리자 지시문을 관리합니다."
     },
     "settingsPage": {
@@ -111,6 +157,29 @@
         "selectChatProfile": "시스템 AI 모델 선택",
         "saveChatProfile": "저장",
         "chatProfileSaved": "시스템 AI 모델을 저장했습니다."
+      },
+      "codingAgent": {
+        "title": "Orbit Assistant 코딩 에이전트",
+        "description": "Orbit Assistant가 작업 공간 작업에 사용할 로컬 설치 코딩 에이전트를 선택합니다.",
+        "select": "코딩 에이전트",
+        "none": "미선택",
+        "save": "저장",
+        "saved": "코딩 에이전트를 저장했습니다."
+      },
+      "mcp": {
+        "title": "MCP 연결",
+        "description": "로컬 코딩 에이전트가 사용할 MCP 서버를 관리합니다.",
+        "edit": "편집",
+        "save": "저장",
+        "reset": "초기화",
+        "openInVsCode": "VS Code에서 열기",
+        "name": "이름",
+        "url": "URL",
+        "status": "상태",
+        "enabled": "활성화됨",
+        "disabled": "비활성화됨",
+        "noServers": "구성된 서버 없음",
+        "saved": "MCP 설정을 저장했습니다."
       },
       "storage": {
         "title": "앱 데이터",
@@ -184,8 +253,8 @@
         "hint": "평가 대상 애플리케이션 또는 서비스입니다."
       },
       "executionEnvironment": {
-        "label": "실행 환경",
-        "hint": "Orbit이 선택한 러너를 실행하는 위치입니다."
+        "label": "실행 환경 (옵션)",
+        "hint": "선택한 러너에 필요한 브라우저 런타임과 설정입니다."
       },
       "purpose": {
         "label": "목적",
@@ -198,6 +267,11 @@
       "testCaseSet": {
         "label": "테스트 케이스 세트",
         "hint": "대상 AI에 대한 재사용 가능한 고정 입력과 승인 근거입니다."
+      },
+      "persona": {
+        "label": "페르소나 (옵션)",
+        "hint": "러너에 제공할 재사용 가능한 사용자 관점입니다.",
+        "none": "선택 안 함"
       },
       "aiProfile": {
         "label": "AI 모델 프로필",
@@ -335,7 +409,6 @@
       "trend": "시간대별 감독관 피드백과 같은 기간에 수용 가능한 개선을 비교합니다."
     },
     "settings": "설정",
-    "issues": "문제관리",
     "issueManagementPage": {
       "title": "문제관리",
       "description": "빌드별 제안을 검토하고 조치 이력을 남깁니다.",
@@ -364,7 +437,6 @@
       "acceptable": "수용 가능",
       "accepted": "수용됨",
       "rejected": "기각됨",
-      "score": "점수",
       "taskId": "태스크 ID",
       "iteration": "반복",
       "run": "실행",
@@ -372,10 +444,18 @@
       "saved": "저장했습니다.",
       "build": "빌드",
       "proposal": "제안",
+      "accuracyGrounding": "정확성·근거",
+      "safetyPrivacy": "안전·개인정보",
+      "taskCompletion": "작업 완결성",
+      "userExperience": "사용자 경험",
+      "other": "기타",
       "details": "상세",
       "statusHint": "제안이 생성된 태스크 빌드입니다.",
       "managementStatusHint": "개발자 확인과 수정 진행 상태를 관리합니다.",
       "commentHint": "개발자가 확인하거나 수정한 내용을 기록합니다.",
+      "discussion": "토론",
+      "noComments": "아직 댓글이 없습니다.",
+      "sendComment": "댓글 보내기",
       "assignerHint": "이 코멘트를 작성한 사람을 기록합니다.",
       "verificationHint": "수정을 검증한 실행 이력을 선택해 연결합니다.",
       "historyHint": "상태 변경과 코멘트가 시간순으로 기록됩니다.",
@@ -383,7 +463,15 @@
       "deleteSelected": "선택 항목 삭제",
       "deleteSelectedTitle": "선택한 문제를 삭제할까요?",
       "deleteSelectedDescription": "문제 {count}개가 문제 관리에서 숨겨집니다. 원본 실행과 증거는 보존됩니다.",
-      "delete": "삭제"
+      "delete": "삭제",
+      "agentProposalDiff": "에이전트 제안 diff",
+      "noAgentProposalChanges": "제안된 파일 변경이 없습니다.",
+      "agentProposalBranch": "에이전트 제안 브랜치",
+      "committed": "커밋됨",
+      "approveAndCommit": "승인 후 커밋",
+      "rejectAndRemove": "기각 및 삭제",
+      "agentProposalCommitted": "에이전트 제안을 해당 브랜치에 커밋했습니다.",
+      "agentProposalRemoved": "에이전트 제안 worktree와 브랜치를 삭제했습니다."
     },
     "settingsLogs": {
       "title": "Orbit 운영 로그",
@@ -682,20 +770,9 @@
       "runHealth": "실행 상태",
       "accepted": "수용됨",
       "score": "점수",
-      "history": "제안 결정 히스토리",
-      "historyHint": "제안·수용·기각·적용된 개선의 감사 이력을 확인합니다.",
-      "allBuilds": "전체 빌드",
-      "allStates": "전체 상태",
       "acceptable": "수용 가능",
       "rejected": "기각됨",
       "proposed": "제안됨",
-      "decisionReason": "결정 사유",
-      "timeline": "타임라인",
-      "noProposals": "제안 이력이 없습니다.",
-      "savedDataFiles": "저장된 데이터 파일",
-      "fileName": "파일 이름",
-      "copyFileName": "파일 이름 복사",
-      "copyPath": "경로 복사",
       "iteration": "반복",
       "run": "실행",
       "feedbackCount": "피드백 수",
@@ -746,7 +823,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "에이전트 자체 개선",
-        "description": "실제 대상 AI의 보존된 응답을 바탕으로 관리 프롬프트를 개선합니다. Git 저장소, 프롬프트 파일, 구성된 모델 프로필이 필요합니다."
+        "description": "관리 대상 AI 프롬프트를 평가하고 에이전트가 격리된 worktree에서 검토 가능한 자체 개선 하나를 만듭니다. 원본 저장소는 자동으로 변경하지 않습니다."
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO 및 행동 변화 모니터",
@@ -762,9 +839,6 @@
       "detail": "실행 상세",
       "workflowGraph": "워크플로우 그래프",
       "noWorkflowGraph": "이 작업에는 표시할 워크플로우가 선언되어 있지 않습니다.",
-      "workflow": "워크플로 로그",
-      "workflowDescription": "단계별 실행 로그와 브라우저 근거를 검토합니다.",
-      "workflowDataHint": "before_all, before_each, execute, verify, after_each, after_all 단계가 실행되고 러너가 출력이나 근거를 남기면 표시됩니다.",
       "logs": "로그",
       "logsDescription": "전체 실행 출력을 시간순으로 한 번에 확인합니다.",
       "logsDataHint": "Orbit 프로세스가 출력을 남기거나 러너가 ctx.target_log()로 대상 로그를 전송하면 표시됩니다.",
@@ -776,34 +850,13 @@
       "result": "결과",
       "resultDescription": "점수, 판단, 개선 제안 및 보고된 이슈를 확인합니다.",
       "resultDataHint": "평가 러너가 결과를 제출하거나 감독관 AI의 검토가 완료되면, 점수·판단·제안·이슈가 표시됩니다.",
-      "promptChanges": "프롬프트 변화",
-      "promptChangesDescription": "평가 반복 과정에서 기록된 프롬프트 변경을 비교합니다.",
-      "promptDataHint": "실행 중 관리 프롬프트 파일의 변경이 감지되거나 변경 요청이 보류·차단되면, 해당 이력이 표시됩니다.",
-      "commitChanges": "커밋 변화",
-      "commitChangesDescription": "이 실행에서 생성된 커밋, 변경 파일 및 보관된 diff를 검토합니다.",
-      "commitsDataHint": "실행 전후 Git 커밋 또는 변경 파일이 감지되면, 관련 변화가 표시됩니다.",
-      "noCommitChanges": "이 실행에는 기록된 커밋 변화가 없습니다.",
-      "commits": "커밋",
-      "changedFiles": "변경 파일",
-      "noChangedFiles": "기록된 변경 파일이 없습니다.",
-      "diffArtifact": "보관된 diff",
-      "loadingCommitDiff": "보관된 diff를 불러오는 중…",
-      "previousCommitChange": "이전 커밋 변화",
-      "nextCommitChange": "다음 커밋 변화",
-      "commitVersion": "변화 {0} / {1}",
-      "noPromptChanges": "이 반복에는 기록된 프롬프트 변화가 없습니다.",
-      "noPromptSnapshot": "이전 버전이라 비교용 스냅샷을 보관하지 않았습니다.",
-      "initialPromptState": "최초 프롬프트 상태",
-      "initialPromptHint": "기록된 변경이 적용되기 전의 관리 프롬프트입니다.",
-      "promptinitial": "최초 상태",
-      "promptapplied": "적용됨",
-      "promptblocked": "승인 대기",
-      "promptrolled_back": "롤백됨",
-      "promptunchanged": "변경 없음",
-      "promptBlockedHint": "사람 승인 필요 정책에 따라 실제 파일 변경 전에 차단됐습니다.",
-      "previousPromptChange": "이전 프롬프트 변화",
-      "nextPromptChange": "다음 프롬프트 변화",
-      "promptVersion": "변화 {0} / {1}",
+      "worktrees": "워크트리",
+      "worktreesDescription": "이 실행에서 생성된 이슈 연결 에이전트 워크트리를 검토합니다.",
+      "worktreesDataHint": "이 실행의 Issue Management 제안에 연결된 워크트리만 표시합니다.",
+      "noWorktrees": "이 실행에 연결된 워크트리가 없습니다.",
+      "worktreeBranch": "브랜치",
+      "worktreePath": "워크트리",
+      "worktreeDiff": "워크트리 diff",
       "score": "점수",
       "decision": "결정",
       "proposals": "개선 제안",
@@ -839,7 +892,6 @@
       "noSupervisorPrompt": "이 실행에는 감독관 프롬프트가 기록되지 않았습니다.",
       "noLogs": "아직 확인할 프로세스 출력이 없습니다.",
       "noResults": "이 반복에 기록된 데이터가 없습니다.",
-      "noCommandsForPhase": "이 단계에서 실행된 명령이 없습니다.",
       "openTelemetryTrace": "OpenTelemetry 추적",
       "loadingOpenTelemetryTrace": "OpenTelemetry 추적을 불러오는 중…",
       "noOpenTelemetrySpans": "아직 내보낸 OpenTelemetry 스팬이 없습니다.",
@@ -889,12 +941,13 @@
       "assetTemplates": "템플릿은 버전 관리되는 재사용 지시문입니다. 빌드에서 선택해도 저장된 원본은 수정되지 않습니다.",
       "assetTests": "테스트 케이스 세트는 여러 빌드에서 재사용할 고정 프롬프트와 승인 근거를 제공합니다.",
       "assetRunners": "러너에는 프로젝트별 자동화가 들어 있으며 여러 빌드에서 공유할 수 있습니다.",
-      "executionEnvironment": "여기서 로컬 또는 원격 실행 방식을 정하며, 각 러너는 빌드에서 선택한 실행 환경을 사용합니다.",
+      "executionEnvironment": "선택한 러너에 필요한 브라우저 런타임과 설정을 지정합니다.",
       "targetEnvironment": "저장소·브라우저 URL·관리 프롬프트 경로는 이 대상을 선택한 빌드에만 적용됩니다.",
       "applicationSettings": "언어는 콘솔과 관리자 결과 표시 언어에 적용되고, 테마 변경은 이 브라우저에 로컬로 저장됩니다.",
       "applicationData": "저장소 위치 변경은 이후의 로컬 상태와 근거에 적용됩니다. 기존 데이터는 자동으로 이동하지 않습니다.",
       "managerPrompt": "빌드에서 선택한 관리자 프롬프트 템플릿은 __ORBIT_MANAGER_AI_PROMPT__ 위치에 삽입됩니다.",
       "systemAiModel": "이 프로필은 Orbit 챗봇과 사이클 분석 같은 시스템 기능에 사용됩니다.",
+      "orbitAssistantCodingAgent": "선택한 로컬 CLI는 Orbit Assistant가 설정된 작업 공간의 코딩 작업을 위임할 때 사용됩니다.",
       "orbitLogs": "항목은 로컬 운영 이벤트입니다. 콘솔과 러너 활동을 진단하는 용도이며 평가 근거에는 포함되지 않습니다."
     },
     "chartHints": {

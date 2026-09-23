@@ -1,44 +1,52 @@
-"""Run a bounded external automation through its explicit action contract."""
+"""Run an external command adapter through explicit runner phases.
 
-import json
-import os
-import shlex
+The adapter may return ordinary text rather than JSON. Its lifecycle output is
+retained under ``external_adapter`` so a supervisor can assess evidence without
+the runner imposing product-specific semantics.
+"""
 
-from orbit_sdk import ORBIT_PROJECT_PATH, graph, runner
+from orbit_sdk import graph, runner
 
-graph.connect("check-adapter", "prepare-adapter")
-graph.connect("prepare-adapter", "run-adapter", label="prepared target")
-graph.connect("run-adapter", "collect-adapter-evidence", kind="data", label="adapter output")
+
+def invoke(ctx, action):
+    """Run one external command action through the SDK command contract."""
+    return ctx.run_command_action(
+        command_env="ORBIT_ADAPTER_COMMAND", action=action, timeout=3600, log_source="external-adapter"
+    )
+
+
+graph.connect("validate-adapter-contract", "check-adapter")
+graph.connect("check-adapter", "prepare-adapter", label="prepared target")
+graph.connect("prepare-adapter", "run-adapter", kind="data", label="adapter output")
+graph.connect("run-adapter", "collect-adapter-evidence")
 graph.connect("collect-adapter-evidence", "close-adapter-cycle")
 graph.connect("close-adapter-cycle", "prepare-adapter", kind="loop", label="next cycle")
 graph.connect("close-adapter-cycle", "finalize-adapter", kind="condition", label="completed")
 
 
-def adapter_command():
-    configured = os.environ.get("ORBIT_ADAPTER_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_ADAPTER_COMMAND to an external tool command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_ADAPTER_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
+@graph.step(
+    "validate-adapter-contract",
+    title="Validate adapter command",
+    phase="before_all",
+    outputs=["adapter_contract"],
+)
+@runner.phase("before_all", step_id="validate-adapter-contract")
+def validate_contract(ctx):
+    """Validate the adapter command before invoking it."""
+    ctx.command_from_env("ORBIT_ADAPTER_COMMAND")
 
 
-def invoke(ctx, action):
-    return ctx.exec(
-        [*adapter_command(), action],
-        cwd=ORBIT_PROJECT_PATH(),
-        timeout=3600,
-        target_log_source="external-adapter",
-    )
-
-
-@graph.step("check-adapter", title="Check adapter readiness", phase="before_all", outputs=["adapter_status"])
-@runner.phase("before_all")
-def before_all(ctx):
-    ctx.emit_result({"external_adapter": {"status": invoke(ctx, "status")}})
+@graph.step(
+    "check-adapter",
+    title="Check adapter readiness",
+    phase="before_all",
+    inputs=["adapter_contract"],
+    outputs=["adapter_status"],
+)
+@runner.phase("before_all", step_id="check-adapter")
+def check_adapter(ctx):
+    """Record adapter readiness once for the run."""
+    ctx.emit_result({"external_adapter": {"status": invoke(ctx, "status"), "iteration": ctx.loop_index}})
 
 
 @graph.step(
@@ -48,9 +56,10 @@ def before_all(ctx):
     inputs=["adapter_status"],
     outputs=["prepared_target"],
 )
-@runner.phase("before_each")
-def before_each(ctx):
-    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "prepared": invoke(ctx, "prepare")}})
+@runner.phase("before_each", step_id="prepare-adapter")
+def prepare(ctx):
+    """Prepare the external adapter for this iteration."""
+    ctx.emit_result({"external_adapter": {"prepared": invoke(ctx, "prepare"), "iteration": ctx.loop_index}})
 
 
 @graph.step(
@@ -60,9 +69,10 @@ def before_each(ctx):
     inputs=["prepared_target"],
     outputs=["adapter_result"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="run-adapter")
 def execute(ctx):
-    ctx.emit_result({"external_adapter": {"iteration": ctx.loop_index, "result": invoke(ctx, "run-once")}})
+    """Execute the adapter's bounded unit of work."""
+    ctx.emit_result({"external_adapter": {"result": invoke(ctx, "run-once"), "iteration": ctx.loop_index}})
 
 
 @graph.step(
@@ -72,10 +82,11 @@ def execute(ctx):
     inputs=["adapter_result"],
     outputs=["adapter_evidence"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="collect-adapter-evidence")
 def verify(ctx):
+    """Collect adapter evidence for supervisor review."""
     ctx.emit_result(
-        {"external_adapter": {"iteration": ctx.loop_index, "evidence": invoke(ctx, "collect-evidence")}}
+        {"external_adapter": {"evidence": invoke(ctx, "collect-evidence"), "iteration": ctx.loop_index}}
     )
 
 
@@ -86,8 +97,9 @@ def verify(ctx):
     inputs=["adapter_evidence"],
     outputs=["cycle_complete"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="close-adapter-cycle")
 def after_each(ctx):
+    """Close one adapter lifecycle iteration."""
     ctx.log("Completed one bounded external adapter cycle")
 
 
@@ -98,8 +110,9 @@ def after_each(ctx):
     inputs=["cycle_complete"],
     outputs=["final_status"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="finalize-adapter")
 def after_all(ctx):
+    """Finalize the external automation evaluation."""
     ctx.log("Finalized the external automation evaluation")
 
 

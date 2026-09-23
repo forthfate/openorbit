@@ -1,211 +1,206 @@
-# Requirements
-# - The target application is running at the build's browser base URL.
-# - The build selects at least one fixed test case.
-# - Playwright Chromium and its operating-system libraries are available.
-# No external runner script, adapter repository, or background program is required.
+"""Run a recurring browser journey with phases declared in this runner.
+
+The runner retries failed fixed cases before rotating through the journey set.
+It persists only bounded state and rendered evidence, so the supervisor can
+review what happened without relying on hidden lifecycle helpers.
+"""
 
 import json
-import re
 
 from orbit_sdk import graph, runner
 
-graph.connect("validate-journey", "plan-journey")
-graph.connect("plan-journey", "run-journey", label="focused cases")
-graph.connect("run-journey", "review-journey", kind="data", label="browser evidence")
-graph.connect("review-journey", "retain-journey")
-graph.connect("retain-journey", "plan-journey", kind="loop", label="next iteration")
-graph.connect("retain-journey", "finalize-journey", kind="condition", label="completed")
+NAMESPACE = "user_journey"
+
+graph.connect("validate-user-journey-runtime", "validate-user-journey")
+graph.connect("validate-user-journey", "load-user-journey-state")
+graph.connect("load-user-journey-state", "plan-user-journey")
+graph.connect("plan-user-journey", "run-user-journey", label="focused cases")
+graph.connect("run-user-journey", "review-user-journey", kind="data", label="browser evidence")
+graph.connect("review-user-journey", "retain-user-journey")
+graph.connect("retain-user-journey", "plan-user-journey", kind="loop", label="next iteration")
+graph.connect("retain-user-journey", "finalize-user-journey", kind="condition", label="completed")
 
 
-# Validate only configuration that the runner cannot safely infer. This runs
-# once when an evaluation process starts, before its iteration loop.
-def validate(ctx):
-    build = ctx.build
-    if not build.get("browser_base_url"):
-        raise ValueError("Set a browser base URL on the build")
+def state(ctx):
+    """Load the bounded state used to choose the next browser journey.
+
+    Args:
+        ctx: The active Orbit runner context.
+
+    Returns:
+        Persisted journey state, initialized for a new build when absent.
+    """
+    return ctx.load_state(NAMESPACE, {"next_case_index": 0, "failed_case_ids": [], "history": []})
+
+
+@graph.step(
+    "validate-user-journey-runtime",
+    title="Validate user journey runtime",
+    phase="before_all",
+    outputs=["browser_runtime"],
+)
+@runner.phase("before_all", step_id="validate-user-journey-runtime")
+def validate_runtime(ctx):
+    """Validate the browser base URL before the recurring journey starts."""
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("Set required build field(s): browser_base_url")
+    ctx.log("Validated the browser runtime target")
+
+
+@graph.step(
+    "validate-user-journey",
+    title="Validate user journey contract",
+    phase="before_all",
+    inputs=["browser_runtime"],
+    outputs=["journey_contract"],
+)
+@runner.phase("before_all", step_id="validate-user-journey")
+def validate_contract(ctx):
+    """Require fixed journey cases for reproducible coverage."""
     if not ctx.test_cases:
-        raise ValueError("Select a fixed test case set before running a user journey")
+        raise ValueError("Select at least one fixed journey case before running this runner")
+    ctx.log("Validated the user journey contract")
 
 
-def state_path(ctx):
-    # Keep state in OpenOrbit AppData, keyed by build, so a later iteration can
-    # resume its focused journey without writing into the target repository.
-    build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
-    directory = ctx.app_data / "user-journey-state"
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / f"{build_id}.json"
-
-
+@graph.step(
+    "load-user-journey-state",
+    title="Load user journey state",
+    phase="before_each",
+    inputs=["journey_contract"],
+    outputs=["journey_state"],
+)
+@runner.phase("before_each", step_id="load-user-journey-state")
 def load_state(ctx):
-    # A build's first iteration begins with an empty rotation and no failures.
-    path = state_path(ctx)
-    if not path.exists():
-        return {"next_case_index": 0, "failed_case_ids": [], "history": []}
-    return json.loads(path.read_text(encoding="utf-8"))
+    """Persist an initialized state document for this iteration."""
+    ctx.save_state(NAMESPACE, state(ctx))
 
 
-def save_state(ctx, state):
-    # Retain a bounded history so a long-running evaluation does not grow
-    # indefinitely while still preserving useful handoffs.
-    state["history"] = state.get("history", [])[-24:]
-    state_path(ctx).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def plan(ctx, state):
-    # Supervisor feedback from the completed prior iteration is an input to
-    # planning, not a replacement for browser-observable evidence.
-    feedback = ctx.previous_supervisor_feedback
-    failed = set(state.get("failed_case_ids", []))
-    cases = ctx.test_cases
-    # Failed cases take precedence; otherwise rotate through fixed cases one at
-    # a time to keep each scheduled iteration bounded and explainable.
-    focused = [case for case in cases if case.get("id") in failed]
-    if not focused:
-        index = int(state.get("next_case_index", 0)) % len(cases)
-        focused = [cases[index]]
+@graph.step(
+    "plan-user-journey",
+    title="Plan focused user journey",
+    phase="before_each",
+    inputs=["journey_state"],
+    outputs=["journey_plan"],
+)
+@runner.phase("before_each", step_id="plan-user-journey")
+def plan(ctx):
+    """Choose failed cases first, then rotate through the fixed case set."""
+    current = state(ctx)
+    failed = bool(current.get("failed_case_ids"))
+    failed_ids = {str(case_id) for case_id in current.get("failed_case_ids", [])}
+    cases = [case for case in ctx.test_cases if str(case.get("id")) in failed_ids]
+    if not cases:
+        cases = [ctx.test_cases[int(current.get("next_case_index", 0)) % len(ctx.test_cases)]]
     rules = [
         "Preserve observable evidence for every browser action.",
         "Do not infer a result that the page did not expose.",
     ]
     if failed:
         rules.insert(0, "Revisit previously failed journeys before exploring a new route.")
-    if feedback.get("reported_issues"):
+    if ctx.previous_supervisor_feedback.get("reported_issues"):
         rules.insert(0, "Prioritize the supervisor's previously reported issues.")
-    reason = (
-        "Previously failed journeys require confirmation."
+    plan_data = {
+        "case_ids": [str(case.get("id")) for case in cases],
+        "reason": "Revisit previously failed journeys."
         if failed
-        else "Rotate one fixed journey to retain broad, bounded coverage."
-    )
-    return {
-        "case_ids": [str(case.get("id")) for case in focused],
+        else "Rotate one fixed journey to retain bounded coverage.",
         "rules": rules,
-        "reason": reason,
-        "supervisor_feedback": feedback,
+        "supervisor_feedback": ctx.previous_supervisor_feedback,
     }
-
-
-@graph.step(
-    "validate-journey", title="Validate journey contract", phase="before_all", outputs=["journey_contract"]
-)
-@runner.phase("before_all")
-def before_all(ctx):
-    # Process-level preparation: run once before OpenOrbit starts repeating.
-    validate(ctx)
-    ctx.log("Validated the bounded user-journey contract")
-
-
-@graph.step(
-    "plan-journey",
-    title="Plan focused journey",
-    phase="before_each",
-    inputs=["journey_contract"],
-    outputs=["journey_plan"],
-)
-@runner.phase("before_each")
-def before_each(ctx):
-    # Iteration-level preparation: persist a plan that the execute phase consumes.
-    state = load_state(ctx)
-    journey_plan = plan(ctx, state)
-    state["plan"] = journey_plan
-    save_state(ctx, state)
+    current["plan"] = plan_data
+    ctx.save_state(NAMESPACE, current)
     ctx.emit_result(
-        {
-            "user_journey": {
-                "iteration": ctx.loop_index,
-                "case_count": len(ctx.test_cases),
-                "plan": journey_plan,
-            }
-        }
+        {NAMESPACE: {"iteration": ctx.loop_index, "case_count": len(ctx.test_cases), "plan": plan_data}}
     )
-    ctx.log(f"Planned {len(journey_plan['case_ids'])} focused journey case(s): {journey_plan['reason']}")
 
 
 @graph.step(
-    "run-journey",
-    title="Run browser journey",
+    "run-user-journey",
+    title="Run user journey",
     phase="execute",
     inputs=["journey_plan"],
     outputs=["journey_evidence"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="run-user-journey")
 def execute(ctx):
-    # Execute only the focused fixed cases; Playwright returns screenshots and
-    # page evidence that can be inspected by both users and the supervisor.
-    state = load_state(ctx)
-    journey_plan = state.get("plan") or plan(ctx, state)
-    case_ids = set(journey_plan["case_ids"])
-    focused_cases = [case for case in ctx.test_cases if str(case.get("id")) in case_ids]
-    evidence = ctx.playwright_journey(focused_cases)
-    results = evidence["results"]
-    passed = len([item for item in results if item["passed"]])
-    failed = [str(item.get("id")) for item in results if not item["passed"]]
-    state["failed_case_ids"] = failed
-    state["next_case_index"] = (int(state.get("next_case_index", 0)) + 1) % len(ctx.test_cases)
-    # This compact handoff is the explicit input to the next scheduled cycle.
-    state["handoff"] = {
+    """Run the focused browser cases and retain evidence plus next state."""
+    current = state(ctx)
+    ids = set(current["plan"]["case_ids"])
+    evidence = ctx.playwright_journey([case for case in ctx.test_cases if str(case.get("id")) in ids])
+    results = list(evidence.get("results", []))
+    current["failed_case_ids"] = [str(item.get("id")) for item in results if not item.get("passed")]
+    current["next_case_index"] = (int(current.get("next_case_index", 0)) + 1) % len(ctx.test_cases)
+    handoff = {
         "iteration": ctx.loop_index,
-        "reason": journey_plan["reason"],
-        "rules": journey_plan["rules"],
-        "passed": passed,
-        "failed": len(results) - passed,
-        "failed_case_ids": failed,
+        "reason": current["plan"]["reason"],
+        "rules": current["plan"]["rules"],
+        "passed": len(results) - len(current["failed_case_ids"]),
+        "failed": len(current["failed_case_ids"]),
+        "failed_case_ids": current["failed_case_ids"],
     }
-    state.setdefault("history", []).append(state["handoff"])
-    save_state(ctx, state)
+    current["history"] = [*current.get("history", []), handoff][-24:]
+    current["handoff"] = handoff
+    ctx.save_state(NAMESPACE, current)
+    artifact = ctx.save_data_file(
+        f"{NAMESPACE}/iteration-{ctx.loop_index}.json",
+        json.dumps(
+            {"plan": current["plan"], "evidence": evidence, "handoff": handoff}, ensure_ascii=False, indent=2
+        ),
+        label="User journey iteration evidence",
+        content_type="application/json",
+    )
     ctx.emit_result(
         {
-            "user_journey": {
+            NAMESPACE: {
                 "iteration": ctx.loop_index,
-                "plan": journey_plan,
-                "passed": passed,
-                "failed": len(results) - passed,
+                "plan": current["plan"],
                 "results": results,
                 "evidence": evidence,
-                "handoff": state["handoff"],
+                "handoff": handoff,
+                "artifact": artifact,
             }
         }
     )
 
 
 @graph.step(
-    "review-journey",
-    title="Review journey evidence",
+    "review-user-journey",
+    title="Review user journey evidence",
     phase="verify",
     inputs=["journey_evidence"],
     outputs=["journey_handoff"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="review-user-journey")
 def verify(ctx):
-    # Expose the persisted handoff as structured run output for supervision.
-    state = load_state(ctx)
-    ctx.emit_result(
-        {"user_journey": {"next_iteration": state.get("handoff", {}), "state_path": str(state_path(ctx))}}
-    )
-    ctx.log("Stored the journey summary, reasons, and behavior rules for the next iteration")
+    """Expose the next-iteration handoff to the supervisor."""
+    ctx.emit_result({NAMESPACE: {"next_iteration": state(ctx).get("handoff", {})}})
+    ctx.log("Stored the journey summary and next-iteration handoff")
 
 
 @graph.step(
-    "retain-journey",
-    title="Retain journey result",
+    "retain-user-journey",
+    title="Retain user journey result",
     phase="after_each",
     inputs=["journey_handoff"],
     outputs=["iteration_complete"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="retain-user-journey")
 def after_each(ctx):
-    ctx.log("Closed this bounded browser journey")
+    """Close the current bounded journey iteration."""
+    ctx.log("Closed this bounded user journey")
 
 
 @graph.step(
-    "finalize-journey",
-    title="Finalize journey evaluation",
+    "finalize-user-journey",
+    title="Finalize user journey evaluation",
     phase="after_all",
     inputs=["iteration_complete"],
     outputs=["final_status"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="finalize-user-journey")
 def after_all(ctx):
-    ctx.log("Finalized the user-journey evaluation")
+    """Finalize the recurring journey after its last iteration."""
+    ctx.log("Finalized the user journey evaluation")
 
 
 if __name__ == "__main__":

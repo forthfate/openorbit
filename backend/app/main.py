@@ -1,21 +1,39 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
+import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import store as store_module
+from .assistant_graph import OrbitAssistantGraph, build_assistant_prompt
 from .assistant_tools import AssistantToolExecutor
+from .assistant_ui import AssistantUiBroker, AssistantUiToolExecutor
 from .docker import preflight_docker
+from .mcp_server import create_mcp_server
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .store import ConsoleStore
 from .terminal import serve_terminal
+
+
+@asynccontextmanager
+async def application_lifespan(_: FastAPI):
+    """Run the MCP session manager for the same lifetime as the API server."""
+    async with mcp_server.session_manager.run():
+        try:
+            yield
+        finally:
+            store.shutdown()
+
 
 app = FastAPI(
     title="OpenOrbit API",
@@ -54,6 +72,7 @@ operator's machine.
         {"name": "Improvements", "description": "Read-only supervisor feedback and analytics."},
         {"name": "System", "description": "Local service health and capabilities."},
     ],
+    lifespan=application_lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -61,15 +80,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-store = ConsoleStore()
+# The API service owns in-memory scheduler threads, so it alone may mark a
+# leftover local pipeline as interrupted when it starts.
+store = ConsoleStore(recover_interrupted_runs=True)
+assistant_ui_broker = AssistantUiBroker()
 WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
-
-
-@app.on_event("shutdown")
-def stop_active_runner_processes() -> None:
-    """Prevent browsers from outliving the local API process on reload."""
-    store.shutdown()
 
 
 def safely(action):
@@ -135,6 +151,56 @@ def health():
 @app.get("/api/v1/health", tags=["System"], operation_id="getHealth", summary="Get API health")
 def health_v1():
     return health()
+
+
+@app.get("/api/system/readiness", tags=["System"], summary="Get required local system capabilities")
+def system_readiness():
+    """Report prerequisites required by the control room as a whole.
+
+    Keep this intentionally separate from build-specific validation: these
+    checks decide whether the application can safely offer its core features,
+    while repository, browser, and Docker requirements vary per build.
+    """
+    application = store.application_settings()
+    profiles = {profile["profile_name"]: profile for profile in store.profiles()}
+    selected_profile = str(application.get("chat_model_profile_name", "")).strip()
+    profile = profiles.get(selected_profile)
+
+    ai_detail = "ready"
+    if not selected_profile:
+        ai_detail = "profile_not_selected"
+    elif profile is None:
+        ai_detail = "profile_not_found"
+    elif not profile.get("model", "").strip():
+        ai_detail = "model_not_set"
+    elif profile.get("provider") == "azure-openai":
+        if not profile.get("endpoint", "").strip():
+            ai_detail = "endpoint_not_set"
+        elif not profile.get("secret_env", "").strip() or not os.environ.get(profile["secret_env"].strip()):
+            ai_detail = "secret_not_available"
+    elif profile.get("provider") == "aws-bedrock":
+        has_environment_credentials = bool(
+            os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY")
+        )
+        if not profile.get("aws_profile", "").strip() and not has_environment_credentials:
+            ai_detail = "credentials_not_available"
+
+    git_executable = shutil.which("git")
+    checks = [
+        {
+            "id": "system_ai",
+            "status": "ready" if ai_detail == "ready" else "blocked",
+            "detail": ai_detail,
+            "settings_page": "settings",
+        },
+        {
+            "id": "git",
+            "status": "ready" if git_executable else "blocked",
+            "detail": "ready" if git_executable else "not_installed",
+            "settings_page": None,
+        },
+    ]
+    return {"ready": all(check["status"] == "ready" for check in checks), "checks": checks}
 
 
 @app.get("/api/v1", tags=["System"], operation_id="getApiInfo", summary="Get API entry-point information")
@@ -204,16 +270,6 @@ def run_telemetry(run_id: str):
     return safely(lambda: store.run_telemetry(run_id))
 
 
-@app.get("/api/runs/{run_id}/prompt-revisions")
-def prompt_revisions(run_id: str):
-    return safely(lambda: store.prompt_revisions(run_id))
-
-
-@app.get("/api/runs/{run_id}/commit-changes")
-def commit_changes(run_id: str):
-    return safely(lambda: store.commit_changes(run_id))
-
-
 @app.get("/api/runs/{run_id}/artifacts/{loop_index}/{artifact_path:path}")
 def run_artifact(run_id: str, loop_index: int, artifact_path: str):
     return safely(lambda: FileResponse(store.run_artifact(run_id, loop_index, artifact_path)))
@@ -252,6 +308,11 @@ def execution_environments():
 @app.get("/api/target-environments")
 def target_environments():
     return store.target_environments()
+
+
+@app.get("/api/personas")
+def personas():
+    return store.personas()
 
 
 class PromptTemplateUpdate(BaseModel):
@@ -313,6 +374,19 @@ class TargetEnvironmentUpdate(BaseModel):
     managed_prompt_path: str = ""
 
 
+class PersonaUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    locale: str = Field(min_length=2, max_length=32)
+    timezone: str = Field(min_length=1, max_length=64)
+    activity_windows: list[dict] = Field(default_factory=list)
+    definition: str = Field(min_length=1, max_length=20_000)
+    context: dict = Field(default_factory=dict)
+
+
+class PersonaCreate(PersonaUpdate):
+    id: str = Field(pattern=r"^[a-z][a-z0-9-]{2,63}$")
+
+
 @app.put("/api/prompt-templates/{template_id}")
 def update_prompt_template(template_id: str, values: PromptTemplateUpdate):
     return safely(lambda: store.update_prompt_template(template_id, values.model_dump()))
@@ -338,6 +412,11 @@ def create_target_environment(values: TargetEnvironmentCreate):
     return safely(lambda: store.create_target_environment(values.model_dump()))
 
 
+@app.post("/api/personas")
+def create_persona(values: PersonaCreate):
+    return safely(lambda: store.create_persona(values.model_dump()))
+
+
 @app.put("/api/execution-environments/{environment_id}")
 def update_execution_environment(environment_id: str, values: ExecutionEnvironmentUpdate):
     return safely(lambda: store.update_execution_environment(environment_id, values.model_dump()))
@@ -348,6 +427,11 @@ def update_target_environment(environment_id: str, values: TargetEnvironmentUpda
     return safely(lambda: store.update_target_environment(environment_id, values.model_dump()))
 
 
+@app.put("/api/personas/{persona_id}")
+def update_persona(persona_id: str, values: PersonaUpdate):
+    return safely(lambda: store.update_persona(persona_id, values.model_dump()))
+
+
 @app.delete("/api/execution-environments/{environment_id}")
 def delete_execution_environment(environment_id: str):
     return safely(lambda: store.delete_execution_environment(environment_id))
@@ -356,6 +440,11 @@ def delete_execution_environment(environment_id: str):
 @app.delete("/api/target-environments/{environment_id}")
 def delete_target_environment(environment_id: str):
     return safely(lambda: store.delete_target_environment(environment_id))
+
+
+@app.delete("/api/personas/{persona_id}")
+def delete_persona(persona_id: str):
+    return safely(lambda: store.delete_persona(persona_id))
 
 
 @app.delete("/api/prompt-templates/{template_id}")
@@ -425,6 +514,7 @@ class BuildCreate(BaseModel):
     manager_template_id: str = "manager-default-v1"
     model_profile_name: str = "Default"
     test_case_set_id: str = Field(min_length=1, max_length=64)
+    persona_ids: list[str] = Field(default_factory=list)
     browser_base_url: str = Field(default="", max_length=2_000)
     browser_executable_path: str = Field(default="", max_length=4_000)
     browser_library_path: str = Field(default="", max_length=4_000)
@@ -474,6 +564,10 @@ class IssueManagementUpdate(BaseModel):
 
 class IssueManagementDelete(BaseModel):
     proposal_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class AgentIssueDecision(BaseModel):
+    decision: Literal["approve", "reject"]
 
 
 class RunnerAssetUpdate(BaseModel):
@@ -975,11 +1069,21 @@ def application_settings():
     return store.application_settings()
 
 
+@app.get("/api/assistant-mcp-config")
+def assistant_mcp_config():
+    return store.assistant_mcp_config()
+
+
 class ApplicationSettingsUpdate(BaseModel):
     manager_prompt_template: str = Field(default="", max_length=100_000)
     manager_output_locale: str = Field(default="", max_length=100)
     chat_model_profile_name: str = Field(default="", max_length=200)
+    coding_agent_provider: Literal["none", "kiro", "claude-code", "codex"] = "none"
     assistant_tools: dict | None = None
+
+
+class AssistantMcpConfigUpdate(BaseModel):
+    content: str = Field(min_length=2, max_length=1_000_000)
 
 
 class ApplicationDataLocationUpdate(BaseModel):
@@ -1016,13 +1120,23 @@ def update_application_data(values: ApplicationDataLocationUpdate):
     if any(run.status in {"queued", "running", "awaiting_approval"} for run in store.runs()):
         raise ValueError("Stop active evaluation runs before changing the app data location")
     store_module.configure_application_data(values.path)
-    store = ConsoleStore()
+    store = ConsoleStore(recover_interrupted_runs=True)
     return application_data_summary()
 
 
 @app.put("/api/application-settings")
 def update_application_settings(values: ApplicationSettingsUpdate):
     return store.save_application_settings(values.model_dump(exclude_unset=True))
+
+
+@app.put("/api/assistant-mcp-config")
+def save_assistant_mcp_config(values: AssistantMcpConfigUpdate):
+    return safely(lambda: store.save_assistant_mcp_config(values.content))
+
+
+@app.post("/api/assistant-mcp-config/open-vscode")
+def open_assistant_mcp_config_in_vscode():
+    return safely(store.open_assistant_mcp_config_in_vscode)
 
 
 class ChatTurn(BaseModel):
@@ -1033,6 +1147,13 @@ class ChatTurn(BaseModel):
 class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=12)
+    ui_session_id: str = Field(default="", max_length=200)
+
+
+class AssistantUiResult(BaseModel):
+    session_id: str = Field(min_length=1, max_length=200)
+    command_id: str = Field(min_length=1, max_length=200)
+    result: dict
 
 
 class TemplateTranslationRequest(BaseModel):
@@ -1168,27 +1289,103 @@ def chat(values: ChatMessage, request: Request):
     )
     try:
         provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
-        history = "\n".join(f"{turn.role.title()}: {turn.content}" for turn in values.history)
-        prompt = (
-            "You are Orbit, a concise assistant for the local OpenOrbit control room.\n"
-            "The local OpenAPI contract is available at /api/openapi.json; use it as the source of truth "
-            "when explaining API endpoints, parameters, and response shapes.\n"
+        application = store.application_settings()
+        tool_executor = AssistantToolExecutor(
+            application["assistant_tools"], application["coding_agent_provider"]
         )
-        if locale := request_locale(request):
-            prompt += f"Respond in BCP 47 locale '{locale}'.\n"
-        if history:
-            prompt += f"Conversation so far:\n{history}\n\n"
-        prompt += f"User: {values.content}\nAssistant:"
-        tool_executor = AssistantToolExecutor(store.application_settings()["assistant_tools"])
-        definitions = tool_executor.definitions()
-        response = (
-            provider.complete_with_tools(settings, prompt, definitions, tool_executor.execute)
-            if definitions
-            else provider.complete(settings, prompt)
+        prompt = build_assistant_prompt(
+            values.content,
+            [(turn.role, turn.content) for turn in values.history],
+            request_locale(request),
         )
+        response = OrbitAssistantGraph(provider, settings, tool_executor).invoke(prompt)
         return {"response": response, "profile_name": profile_name}
     except RuntimeError as error:
         raise HTTPException(409, str(error))
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(values: ChatMessage, request: Request):
+    profile_name = store.application_settings()["chat_model_profile_name"]
+    if not profile_name:
+        raise HTTPException(409, "Select an AI model profile for the chat assistant in Settings.")
+    configured = profile(store.profiles(), profile_name)
+    settings = ModelSettings(
+        **{key: value for key, value in configured.items() if key in ModelSettings.__dataclass_fields__}
+    )
+    provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+    application = store.application_settings()
+    tool_executor = AssistantToolExecutor(
+        application["assistant_tools"], application["coding_agent_provider"]
+    )
+    prompt = build_assistant_prompt(
+        values.content,
+        [(turn.role, turn.content) for turn in values.history],
+        request_locale(request),
+        ui_enabled=bool(values.ui_session_id and application["assistant_tools"]["ui_context_enabled"]),
+    )
+
+    async def events():
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def send_ui_command(command_id: str, command: dict[str, object]) -> None:
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {"type": "ui_command", "command_id": command_id, "command": command},
+            )
+
+        ui_tools = None
+        if values.ui_session_id and application["assistant_tools"]["ui_context_enabled"]:
+            assistant_ui_broker.open(values.ui_session_id, send_ui_command)
+            ui_tools = AssistantUiToolExecutor(
+                assistant_ui_broker,
+                values.ui_session_id,
+                context_enabled=True,
+                interaction_enabled=application["assistant_tools"]["ui_interaction_enabled"],
+            )
+
+        def activity(phase: str, tool: str | None = None) -> None:
+            event = {"type": "activity", "phase": phase}
+            if tool:
+                event["tool"] = tool
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        async def run() -> None:
+            try:
+                response = await asyncio.to_thread(
+                    OrbitAssistantGraph(
+                        provider, settings, tool_executor, ui_tools=ui_tools, on_activity=activity
+                    ).invoke,
+                    prompt,
+                )
+                await queue.put({"type": "response", "response": response})
+            except RuntimeError as error:
+                await queue.put({"type": "error", "message": str(error)})
+            except Exception:
+                await queue.put({"type": "error", "message": "Chat request failed."})
+
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                event = await queue.get()
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+                if event["type"] in {"response", "error"}:
+                    break
+        finally:
+            if not task.done():
+                task.cancel()
+            if values.ui_session_id:
+                assistant_ui_broker.close(values.ui_session_id)
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+@app.post("/api/chat/ui-results")
+def chat_ui_result(values: AssistantUiResult):
+    if not assistant_ui_broker.resolve(values.session_id, values.command_id, values.result):
+        raise HTTPException(404, "Browser UI command was not found or has expired.")
+    return {"ok": True}
 
 
 @app.websocket("/api/terminal")
@@ -1326,32 +1523,27 @@ def list_improvements_v1():
     return store.improvements()
 
 
-@app.get(
-    "/api/v1/improvements/proposals",
-    tags=["Improvements"],
-    operation_id="listProposalLifecycles",
-    summary="List proposals and decisions from evaluation-run results",
-)
-def list_proposal_lifecycles_v1(
-    build_id: str | None = None,
-    status: Literal["proposed", "acceptable", "accepted", "rejected", "applied"] | None = None,
-):
-    return store.proposal_lifecycles(build_id, status)
-
-
-@app.get(
-    "/api/v1/improvements/iterations",
-    tags=["Improvements"],
-    operation_id="listImprovementIterationData",
-    summary="List SDK-saved data files by evaluation iteration",
-)
-def list_improvement_iteration_data_v1(build_id: str | None = None):
-    return store.improvement_iteration_data(build_id)
-
-
 @app.get("/api/v1/issue-management", tags=["Improvements"], operation_id="listIssueManagementItems")
 def list_issue_management_items_v1():
     return store.issue_management_items()
+
+
+@app.get(
+    "/api/v1/issue-management/{proposal_id}/diff",
+    tags=["Improvements"],
+    operation_id="getIssueManagementDiff",
+)
+def issue_management_diff_v1(proposal_id: str):
+    return safely(lambda: store.issue_management_diff(proposal_id))
+
+
+@app.post(
+    "/api/v1/issue-management/{proposal_id}/decision",
+    tags=["Improvements"],
+    operation_id="decideAgentIssue",
+)
+def decide_agent_issue_v1(proposal_id: str, values: AgentIssueDecision):
+    return safely(lambda: store.decide_agent_issue(proposal_id, values.decision))
 
 
 @app.patch(
@@ -1449,6 +1641,12 @@ def sdk_docs(path: str):
     if index.is_file():
         return FileResponse(index)
     raise HTTPException(404, "SDK documentation page was not found.")
+
+
+# Streamable HTTP transport for MCP clients. The mounted application's root
+# is the protocol endpoint, so the public URL is /mcp/.
+mcp_server = create_mcp_server(lambda: store, app.openapi)
+app.mount("/mcp", mcp_server.streamable_http_app())
 
 
 @app.get("/{path:path}", include_in_schema=False)

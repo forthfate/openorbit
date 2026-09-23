@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppShell } from "./app/app-shell";
 import { ConfirmDialog } from "./components/ui/confirm-dialog";
@@ -7,6 +7,7 @@ import { SectionSkeleton } from "./components/ui/section-skeleton";
 import type { Page, Run } from "./domain/models";
 import { DashboardPage } from "./features/dashboard/page";
 import { QuickStartModal } from "./components/quick-start-modal";
+import { AssistantUiProvider, useAssistantUiBridge } from "./components/assistant-ui-bridge";
 
 const AssetsPage = lazy(() =>
   import("./features/assets/page").then((module) => ({
@@ -31,7 +32,6 @@ const ImprovementsPage = lazy(() =>
     default: module.ImprovementsPage,
   })),
 );
-const IssuesPage = lazy(() => import("./features/issues/page").then((module) => ({ default: module.IssuesPage })));
 
 const SettingsPage = lazy(() =>
   import("./features/settings/page").then((module) => ({
@@ -58,16 +58,17 @@ const pages: Page[] = [
   "builds",
   "runs",
   "improvements",
-  "issues",
   "settings",
 ];
 const pageFromLocation = (): Page => {
   const path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  if (path === "issues") return "improvements";
   if (pages.includes(path as Page)) return path as Page;
 
   // Preserve links saved before the browser-path migration, then normalize
   // them on first render below.
   const legacyHash = window.location.hash.slice(1);
+  if (legacyHash === "issues") return "improvements";
   return pages.includes(legacyHash as Page) ? (legacyHash as Page) : "dashboard";
 };
 type ConfirmCopy = {
@@ -86,6 +87,7 @@ type AssetDeleteKind =
   | "target-environment";
 
 export default function App() {
+  const { register: registerAssistantUi } = useAssistantUiBridge();
   const [page, setPageState] = useState<Page>(pageFromLocation);
   const [locale, setLocaleState] = useState<Locale>(savedLocale);
   const [theme, setThemeState] = useState(savedTheme);
@@ -97,7 +99,7 @@ export default function App() {
   const [confirmingEmergencyStop, setConfirmingEmergencyStop] = useState(false);
   const [quickStartOpen, setQuickStartOpen] = useState(false);
   const [quickStartSelection, setQuickStartSelection] = useState<string>();
-  const room = useControlRoom();
+  const room = useControlRoom(page);
   const ui = locales[locale].ui;
   useEffect(() => {
     const sync = () => setPageState(pageFromLocation());
@@ -121,7 +123,29 @@ export default function App() {
     localStorage.setItem(themeStorageKey, value);
     setThemeState(value);
   };
+  const navigationUi = useMemo(
+    () => ({
+      id: "app.navigation",
+      title: "Application navigation",
+      getState: () => ({ page }),
+      controls: [
+        {
+          id: "page",
+          label: "Current page",
+          kind: "select" as const,
+          value: page,
+          options: pages.map((value) => ({ value, label: locales[locale].common[value] })),
+          setValue: (value: unknown) => {
+            if (typeof value === "string" && pages.includes(value as Page)) setPage(value as Page);
+          },
+        },
+      ],
+    }),
+    [page, locale],
+  );
+  useEffect(() => registerAssistantUi(navigationUi), [navigationUi, registerAssistantUi]);
   const openQuickStart = (id?: string) => {
+    void room.loadProfiles();
     setQuickStartSelection(id);
     setQuickStartOpen(true);
   };
@@ -296,6 +320,7 @@ export default function App() {
     assets: (
       <AssetsPage
         locale={locale}
+        builds={room.builds}
         workflows={room.workflows}
         runners={room.runners}
         promptTemplates={room.promptTemplates}
@@ -353,8 +378,8 @@ export default function App() {
       onRetry={retryRun}
       onApprove={approveRun}
       onReject={rejectRun}
+      onNotice={(message, tone) => room.setNotice(message, tone)}
     />,
-    issues: <IssuesPage locale={locale} onNotice={(message, tone) => room.setNotice(message, tone)} />,
     settings: (
       room.loading ? <>
         <SectionSkeleton rows={2} />
@@ -393,6 +418,7 @@ export default function App() {
       setPage={setPage}
       locale={locale}
       theme={theme}
+      readiness={room.readiness}
       activeRunCount={
         room.runs.filter((run) =>
           ["queued", "awaiting_approval", "running"].includes(run.status),
@@ -448,6 +474,8 @@ export default function App() {
 
 createRoot(document.getElementById("root")!).render(
   <ToastProvider>
-    <App />
+    <AssistantUiProvider>
+      <App />
+    </AssistantUiProvider>
   </ToastProvider>,
 );

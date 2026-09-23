@@ -17,15 +17,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   ImprovementAnalytics,
-  ImprovementIterationData,
   Build,
-  ProposalLifecycle,
   Run,
   RunnerState,
-  SavedDataFile,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
-import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
+import { preferredBuildId, savePreferredBuildId } from "../../services/build-selection";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -43,6 +40,7 @@ import { SectionSkeleton } from "../../components/ui/section-skeleton";
 import { DataTable, type Column } from "../../components/ui/data-table";
 import { CircleStop, RotateCcw } from "lucide-react";
 import { EvaluationsPage } from "../evaluations/page";
+import { IssueManagementSection } from "../issues/page";
 
 type ImprovementCopy = {
   improvement: string;
@@ -236,10 +234,30 @@ function PersonaJourneyTimeline({
     for (const run of runs) {
       if (run.build_id !== buildId) continue;
       for (const record of run.supervisor_results ?? []) {
-        const trace = record.response?.evaluation?.behavior_trace;
-        if (!trace || !Object.values(trace).some(Boolean)) continue;
         const recordedAt = record.recorded_at ?? run.updated_at ?? run.created_at;
         if (rangeStart && recordedAt && (Date.parse(recordedAt) || 0) < rangeStart) continue;
+        const journeys = record.response?.persona_journeys ?? [];
+        if (journeys.length) {
+          for (const [index, journey] of journeys.entries()) {
+            const trace = journey.behavior_trace;
+            const event = {
+              id: `${run.id}:${record.iteration}:${index}`,
+              persona: journey.persona_id,
+              run,
+              iteration: record.iteration,
+              recordedAt,
+              goal: trace.persona_goal,
+              action: trace.current_action,
+              decision: trace.decision,
+              nextAction: trace.next_action,
+            };
+            groups.set(journey.persona_id, [...(groups.get(journey.persona_id) ?? []), event]);
+          }
+          continue;
+        }
+        // Retain existing timelines from evaluations created before persona_journeys.
+        const trace = record.response?.evaluation?.behavior_trace;
+        if (!trace || !Object.values(trace).some(Boolean)) continue;
         const personas = new Set<string>();
         for (const step of run.step_results ?? []) {
           if (step.loop_index !== record.iteration || step.phase !== "before_each") continue;
@@ -542,300 +560,6 @@ export function Trends({ t }: { t: (typeof copy)["en"] }) {
   );
 }
 
-function ProposalHistory({
-  t,
-  locale,
-  buildId,
-  hours,
-}: {
-  t: (typeof copy)["en"];
-  locale: Locale;
-  buildId?: string;
-  hours: number;
-}) {
-  const [items, setItems] = useState<ProposalLifecycle[]>([]),
-    [iterationData, setIterationData] = useState<ImprovementIterationData[]>([]),
-    [selected, setSelected] = useState<ProposalLifecycle | null>(null),
-    [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
-  useEffect(() => {
-    api<ProposalLifecycle[]>("/api/v1/improvements/proposals")
-      .then(setItems)
-      .catch(() => setItems([]));
-    api<ImprovementIterationData[]>("/api/v1/improvements/iterations")
-      .then(setIterationData)
-      .catch(() => setIterationData([]));
-  }, []);
-  const tree = useMemo(() => {
-    const builds = new Map<
-      string,
-      {
-        name: string;
-        runs: Map<
-          string,
-          {
-            iterations: Map<
-              number,
-              { items: ProposalLifecycle[]; dataFiles: SavedDataFile[]; recordedAt?: string }
-            >;
-          }
-        >;
-      }
-    >();
-    const iteration = (
-      buildId: string | undefined,
-      buildName: string | undefined,
-      runId: string | undefined,
-      value: number | undefined,
-      recordedAt?: string,
-    ) => {
-      const resolvedBuildId = buildId || "unassigned";
-      const build = builds.get(resolvedBuildId) || {
-        name: buildName || resolvedBuildId,
-        runs: new Map(),
-      };
-      const resolvedRunId = runId || "unknown-run";
-      const run = build.runs.get(resolvedRunId) || { iterations: new Map() };
-      const resolvedIteration = value ?? 0;
-      const group = run.iterations.get(resolvedIteration) || {
-        items: [],
-        dataFiles: [],
-        recordedAt,
-      };
-      if (!group.recordedAt && recordedAt) group.recordedAt = recordedAt;
-      run.iterations.set(resolvedIteration, group);
-      build.runs.set(resolvedRunId, run);
-      builds.set(resolvedBuildId, build);
-      return group;
-    };
-    const inRange = (value?: string) => rangeStart === 0 || !value || (Date.parse(value) || 0) >= rangeStart;
-    for (const item of items.filter((item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at))) {
-      iteration(
-        item.build_id,
-        item.build_name,
-        item.run_id,
-        item.iteration,
-        item.recorded_at,
-      ).items.push(item);
-    }
-    for (const item of iterationData.filter(
-      (item) => (!buildId || item.build_id === buildId) && inRange(item.recorded_at),
-    )) {
-      iteration(
-        item.build_id,
-        item.build_name,
-        item.run_id,
-        item.iteration,
-        item.recorded_at,
-      ).dataFiles.push(...item.data_files);
-    }
-    return [...builds.entries()].map(([id, build]) => ({
-      id,
-      ...build,
-      runs: [...build.runs.entries()]
-        .map(([runId, run]) => ({
-          runId,
-          iterations: [...run.iterations.entries()]
-            .map(([iteration, group]) => ({ iteration, ...group }))
-            .sort((a, b) => a.iteration - b.iteration),
-        }))
-        .sort(
-          (a, b) =>
-            b.iterations
-              .at(-1)
-              ?.recordedAt?.localeCompare(a.iterations.at(-1)?.recordedAt || "") || 0,
-        ),
-    }));
-  }, [items, iterationData, buildId, rangeStart]);
-  const statusLabel = (value: string) =>
-    value === "acceptable"
-      ? t.acceptable
-      : value === "rejected"
-      ? t.rejected
-      : value === "proposed"
-        ? t.proposed
-        : t.accepted;
-  const proposalText = (key: string) =>
-    typeof selected?.proposal[key] === "string"
-      ? String(selected.proposal[key])
-      : "";
-  const proposalItem = (item: ProposalLifecycle) => (
-    <button
-      className="proposal-tree__item"
-      key={item.proposal_id}
-      onClick={() => setSelected(item)}
-    >
-      <span>
-        <strong>{item.title}</strong>
-        <small>{item.target}</small>
-      </span>
-      <span className="proposal-tree__item-meta">
-        {item.score !== undefined && item.score !== null && (
-          <b className="proposal-tree__score">
-            {t.score} {item.score}/10
-          </b>
-        )}
-        <StatusBadge value={item.status} label={statusLabel(item.status)} />
-      </span>
-    </button>
-  );
-  const evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations");
-  return (
-    <section className="panel cycle-proposal-history">
-      <h3>
-        <SectionInfo title={t.history} description={t.historyHint} />
-      </h3>
-      <p className="hint">{t.historyHint}</p>
-      {tree.length ? (
-        <div className="proposal-tree">
-          {tree.map((build) => (
-            <details className="proposal-tree__build" key={build.id} open>
-              <summary>
-                <strong>{build.name}</strong>
-                <small>
-                  {build.runs.length} {t.run}
-                </small>
-              </summary>
-              {build.runs.map((run) => (
-                <details className="proposal-tree__run" key={run.runId} open>
-                  <summary>
-                    <span>
-                      <strong>{t.run}</strong>
-                      <small>{run.runId}</small>
-                    </span>
-                  </summary>
-                  {run.iterations.map((group) => {
-                    const personaGroups = new Map<string, { personas: string[]; items: ProposalLifecycle[] }>();
-                    const ungroupedItems: ProposalLifecycle[] = [];
-                    for (const item of group.items) {
-                      const personas = [...new Set((item.personas ?? []).filter((persona) => persona.trim()))];
-                      if (!personas.length) {
-                        ungroupedItems.push(item);
-                        continue;
-                      }
-                      const key = personas.join("\u0000");
-                      const personaGroup = personaGroups.get(key) || { personas, items: [] };
-                      personaGroup.items.push(item);
-                      personaGroups.set(key, personaGroup);
-                    }
-                    return <details
-                      className="proposal-tree__iteration"
-                      key={group.iteration}
-                      open
-                    >
-                      <summary>
-                        <span>
-                          <strong>
-                            {t.iteration} #{group.iteration} <span className="proposal-tree__count">({group.items.length})</span>
-                          </strong>
-                          <small>
-                            {timestamp(locale, group.recordedAt)}
-                          </small>
-                        </span>
-                        <span className="proposal-tree__iteration-meta">
-                          <EvidenceViewer
-                            className="proposal-tree__evidence"
-                            runId={run.runId}
-                            iteration={group.iteration}
-                            artifacts={visualEvidenceArtifacts([...group.dataFiles, ...group.items.flatMap((item) => item.data_files ?? [])])}
-                            imageLabel={evidenceCopy.viewImageEvidence}
-                            htmlLabel={evidenceCopy.viewHtmlEvidence}
-                            imageTitle={evidenceCopy.imageEvidence}
-                            htmlTitle={evidenceCopy.htmlEvidence}
-                          />
-                        </span>
-                      </summary>
-                      <div>
-                        {[...personaGroups.values()].map((personaGroup) => (
-                          <section
-                            className="proposal-tree__persona-group"
-                            key={personaGroup.personas.join("\u0000")}
-                          >
-                            <header>
-                              <strong>{personaGroup.personas.join(" · ")}</strong>
-                            </header>
-                            <div>{personaGroup.items.map(proposalItem)}</div>
-                          </section>
-                        ))}
-                        {ungroupedItems.map(proposalItem)}
-                      </div>
-                    </details>
-                  })}
-                </details>
-              ))}
-            </details>
-          ))}
-        </div>
-      ) : (
-        <p className="catalog-empty">{t.noProposals}</p>
-      )}
-      <Modal
-        open={!!selected}
-        title={selected?.title || t.history}
-        onClose={() => setSelected(null)}
-        className="modal--proposal-detail"
-      >
-        {selected && (
-          <div className="proposal-detail">
-            <div className="proposal-detail__summary">
-              <StatusBadge
-                value={selected.status}
-                label={statusLabel(selected.status)}
-              />
-              <span>
-                {selected.build_name ||
-                  selected.build_id ||
-                  "—"}{" "}
-                · {t.iteration} #{selected.iteration ?? "—"}
-              </span>
-              <span>
-                {t.run}: {selected.run_id || "—"}
-              </span>
-            </div>
-            <section>
-              <h3>{t.decisionReason}</h3>
-              <p>{selected.decision_rationale || "—"}</p>
-            </section>
-            {proposalText("proposed_change") && (
-              <section>
-                <h3>{t.improvement}</h3>
-                <pre>{proposalText("proposed_change")}</pre>
-              </section>
-            )}
-            <section>
-              <h3>{t.timeline}</h3>
-              <ol className="proposal-timeline">
-                {selected.events.map((event) => (
-                  <li key={event.id}>
-                    <StatusBadge
-                      value={
-                        event.decision === "pending"
-                          ? "proposed"
-                          : event.decision || "proposed"
-                      }
-                      label={statusLabel(
-                        event.decision === "pending"
-                          ? "proposed"
-                          : event.decision || "proposed",
-                      )}
-                    />
-                    <div>
-                      <strong>{timestamp(locale, event.recorded_at)}</strong>
-                      <small>
-                        {t.iteration} #{event.iteration ?? "—"} ·{" "}
-                        {event.phase || "—"}
-                      </small>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          </div>
-        )}
-      </Modal>
-    </section>
-  );
-}
-
 function CycleImprovementAI({
   locale,
   build,
@@ -1002,93 +726,38 @@ function StoredState({
     </section>
   );
 }
-export function ImprovementsPage({
+function ImprovementBuildContent({
   runs,
   onStop,
   onRetry,
   onApprove,
   onReject,
+  buildId,
+  hours,
+  onHoursChange,
+  onNotice,
 }: {
   runs: Run[];
   onStop: (id: string) => void;
   onRetry: (id: string, restartFromFirst: boolean) => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  buildId: string;
+  hours: number;
+  onHoursChange: (hours: number) => void;
+  onNotice: (message: string, tone?: "success" | "warning") => void;
 }) {
   const locale = resolveLocale(localStorage.getItem("orbit.locale")),
     t = copy[locale],
-    [build, setBuild] = useState(""),
-    [builds, setBuilds] = useState<Build[]>([]),
-    [initialLoading, setInitialLoading] = useState(true),
     [selectedRun, setSelectedRun] = useState<Run | null>(null),
-    [retryingRun, setRetryingRun] = useState<Run | null>(null),
-    [hours, setHours] = useState(24);
-  useEffect(() => {
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        setBuilds(next);
-        setBuild((current) =>
-          current ||
-          [...next].sort(
-            (left, right) =>
-              Number(right.starred) - Number(left.starred) ||
-              lastRunTimestamp(right) - lastRunTimestamp(left) ||
-              left.name.localeCompare(right.name),
-          )[0]?.id ||
-          "",
-        );
-      })
-      .catch(() => setBuilds([]))
-      .finally(() => setInitialLoading(false));
-  }, []);
-  const sortedBuilds = useMemo(
-    () =>
-      [...builds].sort((left, right) => {
-        const starOrder = Number(right.starred) - Number(left.starred);
-        if (starOrder) return starOrder;
-        const leftRun = lastRunTimestamp(left);
-        const rightRun = lastRunTimestamp(right);
-        return rightRun - leftRun || left.name.localeCompare(right.name);
-      }),
-    [builds],
-  );
-  if (initialLoading) return <>
-    <SectionSkeleton rows={1} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={4} />
-    <SectionSkeleton rows={4} />
-    <SectionSkeleton rows={3} />
-  </>;
+    [retryingRun, setRetryingRun] = useState<Run | null>(null);
   return (
     <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.selectBuild}
-          <select value={build} onChange={(event) => setBuild(event.target.value)}>
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}{item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {t.range}
-          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
-            <option value={24}>24h</option>
-            <option value={72}>3d</option>
-            <option value={168}>7d</option>
-            <option value={720}>30d</option>
-            <option value={0}>{t.unlimited}</option>
-          </select>
-        </label>
-      </section>
-      <CycleImprovementAI locale={locale} build={build} hours={hours} />
-      {build && <FeedbackTrends locale={locale} buildId={build} scope="improvements" hours={hours} onHoursChange={setHours} />}
-      {build && <RelatedRuns
-        key={`${build}:${hours}`}
-        buildId={build}
+      <CycleImprovementAI locale={locale} build={buildId} hours={hours} />
+      <FeedbackTrends locale={locale} buildId={buildId} scope="improvements" hours={hours} onHoursChange={onHoursChange} />
+      <RelatedRuns
+        key={`${buildId}:${hours}`}
+        buildId={buildId}
         runs={runs}
         locale={locale}
         t={t}
@@ -1096,10 +765,10 @@ export function ImprovementsPage({
         onStop={onStop}
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
-      />}
-      {build && <PersonaJourneyTimeline key={`${build}:${hours}`} buildId={build} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />}
-      {build && <ProposalHistory key={`${build}:${hours}`} t={t} locale={locale} buildId={build} hours={hours} />}
-      {build && <StoredState buildId={build} locale={locale} t={t} />}
+      />
+      <PersonaJourneyTimeline key={`${buildId}:${hours}`} buildId={buildId} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />
+      <IssueManagementSection key={buildId} buildId={buildId} locale={locale} onNotice={onNotice} />
+      <StoredState buildId={buildId} locale={locale} t={t} />
       {selectedRun && <EvaluationsPage
         detailOnly
         locale={locale}
@@ -1122,6 +791,98 @@ export function ImprovementsPage({
           </div>
         </div>
       </Modal>
+    </>
+  );
+}
+
+export function ImprovementsPage({
+  runs,
+  onStop,
+  onRetry,
+  onApprove,
+  onReject,
+  onNotice,
+}: {
+  runs: Run[];
+  onStop: (id: string) => void;
+  onRetry: (id: string, restartFromFirst: boolean) => void;
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onNotice: (message: string, tone?: "success" | "warning") => void;
+}) {
+  const locale = resolveLocale(localStorage.getItem("orbit.locale")),
+    t = copy[locale],
+    [builds, setBuilds] = useState<Build[]>([]),
+    [buildId, setBuildId] = useState(""),
+    [hours, setHours] = useState(24),
+    [initialLoading, setInitialLoading] = useState(true);
+  const sortedBuilds = useMemo(
+    () =>
+      [...builds].sort(
+        (left, right) =>
+          Number(right.starred) - Number(left.starred) ||
+          lastRunTimestamp(right) - lastRunTimestamp(left) ||
+          left.name.localeCompare(right.name),
+      ),
+    [builds],
+  );
+  useEffect(() => {
+    api<Build[]>("/api/builds")
+      .then((next) => {
+        setBuilds(next);
+        const fallback = [...next].sort(
+          (left, right) => Number(right.starred) - Number(left.starred) || lastRunTimestamp(right) - lastRunTimestamp(left) || left.name.localeCompare(right.name),
+        )[0]?.id || "";
+        setBuildId((current) => current || preferredBuildId("improvements", next, fallback));
+      })
+      .catch(() => setBuilds([]))
+      .finally(() => setInitialLoading(false));
+  }, []);
+  useEffect(() => savePreferredBuildId("improvements", buildId), [buildId]);
+  if (initialLoading) return <>
+    <SectionSkeleton rows={1} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={3} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={4} />
+    <SectionSkeleton rows={3} />
+  </>;
+  return (
+    <>
+      <section className="improvements-build-selector">
+        <label>
+          {t.selectBuild}
+          <select value={buildId} onChange={(event) => setBuildId(event.target.value)}>
+            {sortedBuilds.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.starred ? "★ " : ""}{item.name} ({compactTimestamp(locale, item.last_run_at)})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {t.range}
+          <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
+            <option value={24}>24h</option>
+            <option value={72}>3d</option>
+            <option value={168}>7d</option>
+            <option value={720}>30d</option>
+            <option value={0}>{t.unlimited}</option>
+          </select>
+        </label>
+      </section>
+      {buildId && <ImprovementBuildContent
+        key={buildId}
+        runs={runs}
+        onStop={onStop}
+        onRetry={onRetry}
+        onApprove={onApprove}
+        onReject={onReject}
+        buildId={buildId}
+        hours={hours}
+        onHoursChange={setHours}
+        onNotice={onNotice}
+      />}
     </>
   );
 }

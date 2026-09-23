@@ -12,15 +12,19 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import tempfile
 import threading
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Iterator, Literal
+
+from coding_agents import build_coding_agent_command
 
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
@@ -32,6 +36,7 @@ PHASE_ALIASES = {
     "setup": "before_each",
     "run": "execute",
     "eval": "verify",
+    "post_supervision": "after_supervision",
     "teardown": "after_each",
     "finalize": "after_all",
 }
@@ -52,6 +57,7 @@ class GraphNode:
     inputs: tuple[str, ...] = ()
     outputs: tuple[str, ...] = ()
     description: str | None = None
+    after_supervision: bool = False
 
 
 @dataclass(frozen=True)
@@ -87,6 +93,7 @@ class Graph:
         inputs: tuple[str, ...] | list[str] = (),
         outputs: tuple[str, ...] | list[str] = (),
         description: str | None = None,
+        after_supervision: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Annotate one function as a visual workflow node.
 
@@ -106,6 +113,7 @@ class Graph:
                 inputs=tuple(inputs),
                 outputs=tuple(outputs),
                 description=description,
+                after_supervision=after_supervision,
             )
             self._nodes[node_id] = node
             setattr(handler, "__orbit_graph_node__", node)
@@ -153,6 +161,7 @@ class Graph:
                     "inputs": list(node.inputs),
                     "outputs": list(node.outputs),
                     "description": node.description,
+                    **({"after_supervision": True} if node.after_supervision else {}),
                 }
                 for node in self._nodes.values()
             ],
@@ -1459,6 +1468,21 @@ class RunnerContext:
         """
         return list(self.resources.get("test_cases", []))
 
+    def require_test_case_ids(
+        self, required_ids: set[str] | list[str] | tuple[str, ...], *, label: str = "required test case"
+    ) -> None:
+        """Require that the declared fixed cases include every requested ID.
+
+        Args:
+            required_ids: Stable test-case IDs that must be selected.
+            label: Singular description used in an actionable validation error.
+        """
+        required = {str(case_id) for case_id in required_ids if str(case_id).strip()}
+        selected = {str(case.get("id", "")) for case in self.test_cases}
+        missing = sorted(required - selected)
+        if missing:
+            raise ValueError(f"Missing {label}: {', '.join(missing)}")
+
     def resource(self, name: str, default: object = None) -> object:
         """Read a named value from Orbit's immutable resource snapshot.
 
@@ -1514,6 +1538,15 @@ class RunnerContext:
             "response": response,
         }
 
+    def complete_model_json(self, prompt: str, *, description: str = "model response") -> dict[str, object]:
+        """Run one target-AI turn and require a JSON object response.
+
+        Use this when a runner's prompt explicitly contracts the model to emit
+        structured data. The raw text remains available through
+        :meth:`complete_model` for free-form model tasks.
+        """
+        return self.parse_json_object(self.complete_model(prompt)["response"], description=description)
+
     @property
     def previous_supervisor_feedback(self) -> dict[str, object]:
         """Return the latest completed supervisor response for this run.
@@ -1564,6 +1597,56 @@ class RunnerContext:
                         and str(proposal.get("status") or "").lower() == "accepted"
                     ]
                 return feedback
+        return {}
+
+    @property
+    def current_issue_assessment(self) -> dict[str, object]:
+        """Return this iteration's first supervisor-assessed actionable issue.
+
+        The post-supervision agent phase uses this as its sole objective.  A
+        rejected issue is deliberately returned too, so the runner can record
+        an explicit skip rather than treating absence as approval.
+        """
+        run_id = self.environment.get("ORBIT_RUN_ID", "").strip()
+        if not run_id:
+            return {}
+        try:
+            values = json.loads(
+                (self.app_data / "data" / "runs" / f"{run_id}.json").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            return {}
+        for record in reversed(values.get("supervisor_results", [])):
+            if not isinstance(record, dict) or record.get("stage") != "issue_assessment":
+                continue
+            if int(record.get("iteration", 0)) != self.loop_index:
+                continue
+            response = record.get("response")
+            if not isinstance(response, dict):
+                continue
+            issues = response.get("reported_issues")
+            improvements = response.get("improvements")
+            # Manager templates commonly express a discovered product problem
+            # as an improvement proposal.  It is still an Issue for this
+            # lifecycle once the supervisor has scored and decided it. Prefer
+            # that user-facing proposal so the agent changes the same Issue
+            # shown in Issue Management rather than creating a parallel row.
+            candidates = [
+                {**improvement, "_orbit_issue_id": f"{run_id}:{self.loop_index}:{index}"}
+                for index, improvement in enumerate(improvements)
+                if isinstance(improvements, list) and isinstance(improvement, dict)
+            ]
+            candidates.extend(
+                {**issue, "_orbit_issue_id": f"{run_id}:{self.loop_index}:issue:{index}"}
+                for index, issue in enumerate(issues)
+                if isinstance(issues, list) and isinstance(issue, dict)
+            )
+            if candidates:
+                for issue in candidates:
+                    assessment = issue.get("evaluation")
+                    if not isinstance(assessment, dict) or assessment.get("approval") != "rejected":
+                        return issue
+                return candidates[0] if candidates else {}
         return {}
 
     def log(self, message: str) -> None:
@@ -1647,6 +1730,155 @@ class RunnerContext:
             ``None``. The evidence is emitted to Orbit's runner protocol.
         """
         print("__ORBIT_RESULT__" + json.dumps(values, ensure_ascii=False), flush=True)
+
+    def register_evaluation(
+        self,
+        feedback: str,
+        *,
+        subject: str = "agent_change",
+        changed_files: list[str] | None = None,
+        validation: str = "",
+        improvement_fingerprint: str = "",
+    ) -> dict[str, object]:
+        """Register an AI-agent result that should receive a supervisor evaluation.
+
+        Register only after the agent has completed a meaningful change or
+        produced actionable feedback.  Merely running an iteration does not
+        create an evaluation, score, or approval decision.
+
+        Args:
+            feedback: Concise account of the agent's completed work and its evidence.
+            subject: Stable evaluation subject.  ``agent_change`` is the supported
+                default for autonomous SDK agents.
+            changed_files: Repository-relative files changed by the agent, if any.
+            validation: Verification performed by the agent after its work.
+
+        Returns:
+            The structured evaluation request emitted for the current step.
+        """
+        normalized_feedback = feedback.strip()
+        if not normalized_feedback:
+            raise ValueError("evaluation feedback must not be empty")
+        if subject != "agent_change":
+            raise ValueError("evaluation subject must be agent_change")
+        normalized_files = [
+            str(path).strip() for path in (changed_files or []) if isinstance(path, str) and path.strip()
+        ]
+        request = {
+            "subject": subject,
+            "feedback": normalized_feedback,
+            "changed_files": list(dict.fromkeys(normalized_files)),
+            "validation": validation.strip(),
+            "improvement_fingerprint": improvement_fingerprint.strip(),
+        }
+        self.emit_result({"evaluation_request": request})
+        return request
+
+    def run_ai_agent(
+        self,
+        prompt: str,
+        *,
+        provider: str,
+        options: str = "",
+        timeout: int = 1_800,
+    ) -> dict[str, object]:
+        """Run a locally installed coding agent and retain its completion evidence.
+
+        The agent must print ``ORBIT_AGENT_FEEDBACK: <summary>`` as its final
+        feedback line to opt its work into evaluation.  This keeps a silent or
+        no-op agent run from creating a score for the iteration.
+        """
+        normalized_prompt = prompt.strip()
+        if not normalized_prompt:
+            raise ValueError("AI agent prompt must not be empty")
+        # Agent edits are proposals, never writes to the evaluated repository.
+        # A proposal branch/worktree gives the coding agent a real Git checkout while
+        # preserving the operator's working tree and its uncommitted changes.
+        self._git_repository_root()
+        run_id = str(self.environment.get("ORBIT_RUN_ID") or "manual")
+        worktree_id = f"{run_id}-{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        worktree = ORBIT_APP_DATA / "agent-worktrees" / worktree_id
+        worktree.parent.mkdir(parents=True, exist_ok=True)
+        base_revision = self.git_head()
+        if not base_revision:
+            raise ValueError("AI agent proposals require a checked-out Git revision")
+        branch = f"orbit/agent-proposal/{run_id}/{self.loop_index}-{uuid.uuid4().hex[:8]}"
+        self.exec(
+            ["git", "worktree", "add", "-b", branch, str(worktree), base_revision],
+            cwd=self.project_root,
+            target_log_source="ai-agent",
+        )
+        output = ""
+        changed_files: list[str] = []
+        patch = ""
+        keep_worktree = False
+        try:
+            output = self.exec(
+                build_coding_agent_command(provider, options=options, prompt=normalized_prompt),
+                cwd=worktree,
+                timeout=timeout,
+                target_log_source="ai-agent",
+            )
+            # Include newly-created files in the review patch without creating
+            # a commit.  Intent-to-add is local to this disposable proposal
+            # worktree and is finalized only after Issue approval.
+            self.exec(["git", "add", "--intent-to-add", "--all"], cwd=worktree)
+            changed_files = [
+                line
+                for line in self.exec(["git", "diff", "--name-only", "--"], cwd=worktree).splitlines()
+                if line
+            ]
+            patch = self.exec(["git", "diff", "--binary", "--"], cwd=worktree)
+            feedback = next(
+                (
+                    line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                    for line in reversed(output.splitlines())
+                    if line.startswith("ORBIT_AGENT_FEEDBACK:")
+                    and line.removeprefix("ORBIT_AGENT_FEEDBACK:").strip()
+                ),
+                "",
+            )
+            keep_worktree = bool(feedback and patch)
+        finally:
+            if not keep_worktree:
+                subprocess.run(
+                    ["git", "worktree", "remove", "--force", str(worktree)],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=self.project_root,
+                    env=self.environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        artifact = (
+            self.write_artifact(f"agent-proposals/{worktree_id}.patch", patch, content_type="text/x-diff")
+            if patch
+            else None
+        )
+        result = {
+            "provider": provider,
+            "feedback": feedback,
+            "changed_files": changed_files,
+            "output": output[-12_000:],
+            "proposal": {
+                "worktree_id": worktree_id,
+                "base_revision": base_revision,
+                "branch": branch if keep_worktree else "",
+                "worktree_path": str(worktree) if keep_worktree else "",
+                "diff": patch,
+                "fingerprint": _sha256(patch.encode("utf-8")) if patch else "",
+                "diff_artifact": artifact,
+            },
+        }
+        self.emit_result({"agent_run": result})
+        return result
 
     def playwright_journey(self, cases: list[dict[str, object]] | None = None) -> dict[str, object]:
         """Run bounded, read-only Playwright page checks for the supplied cases.
@@ -1736,6 +1968,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         input: str | None = None,
         target_log_source: str | None = None,
         target_log_exclude_prefixes: tuple[str, ...] = (),
+        merge_stderr: bool = True,
     ) -> str:
         """Run one bounded child command and return its captured output.
 
@@ -1754,9 +1987,13 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
                 the target-log stream under this source name.
             target_log_exclude_prefixes: Output prefixes retained for the caller
                 but excluded from target logs, for structured child results.
+            merge_stderr: When ``True`` (the default), include standard error in
+                the returned output. Set to ``False`` when a child reserves
+                standard output for a machine-readable response; standard error
+                is still printed and forwarded to target logs.
 
         Returns:
-            Combined standard output and standard error from the child.
+            Standard output, plus standard error when ``merge_stderr`` is true.
 
         Raises:
             subprocess.TimeoutExpired: If the child exceeds ``timeout``.
@@ -1770,7 +2007,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             text=True,
             stdin=subprocess.PIPE if input is not None else None,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.STDOUT if merge_stderr else subprocess.PIPE,
         )
         lines: list[str] = []
 
@@ -1779,16 +2016,29 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             process.stdin.write(input)
             process.stdin.close()
 
-        def forward_output() -> None:
-            assert process.stdout is not None
-            for line in process.stdout:
-                lines.append(line)
+        def forward_output(stream, *, retain: bool) -> None:
+            for line in stream:
+                if retain:
+                    lines.append(line)
                 print(line, end="", flush=True)
                 if target_log_source and line.strip() and not line.startswith(target_log_exclude_prefixes):
                     self.target_log(line.strip(), source=target_log_source)
 
-        reader = threading.Thread(target=forward_output, daemon=True)
-        reader.start()
+        assert process.stdout is not None
+        readers = [
+            threading.Thread(
+                target=forward_output, args=(process.stdout,), kwargs={"retain": True}, daemon=True
+            )
+        ]
+        if not merge_stderr:
+            assert process.stderr is not None
+            readers.append(
+                threading.Thread(
+                    target=forward_output, args=(process.stderr,), kwargs={"retain": False}, daemon=True
+                )
+            )
+        for reader in readers:
+            reader.start()
         try:
             process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -1796,13 +2046,107 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
             process.wait()
             raise
         finally:
-            reader.join()
+            for reader in readers:
+                reader.join()
         output = "".join(lines)
         if process.returncode:
             self.log(f"exec failed with exit code {process.returncode}: {' '.join(command)}")
             raise SystemExit(process.returncode)
         self.log(f"exec completed: {' '.join(command)}")
         return output
+
+    def command_from_env(self, command_env: str) -> list[str]:
+        """Parse one externally configured command from the runner environment.
+
+        The value may be a shell-style command string or a JSON array of
+        strings. The executable must be present; empty arguments remain valid
+        because some tools use them intentionally.
+        """
+        configured = self.environment.get(command_env, "").strip()
+        if not configured:
+            raise ValueError(f"Set {command_env} to an external tool command")
+        try:
+            command = json.loads(configured) if configured.startswith("[") else shlex.split(configured)
+        except (json.JSONDecodeError, ValueError) as error:
+            raise ValueError(f"{command_env} must be a JSON string array or command") from error
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(item, str) for item in command)
+            or not command[0].strip()
+        ):
+            raise ValueError(f"{command_env} must be a non-empty JSON string array or command")
+        return command
+
+    def run_command_action(
+        self,
+        *,
+        command_env: str,
+        action: str,
+        timeout: int | None = None,
+        env: dict[str, str] | None = None,
+        log_source: str | None = None,
+        log_exclude_prefixes: tuple[str, ...] = (),
+        stdout_only: bool = False,
+    ) -> str:
+        """Run one action of an externally configured command.
+
+        Args:
+            command_env: Environment variable holding the command configuration.
+            action: Final argument passed to the external command.
+            timeout: Maximum duration in seconds.
+            env: Additional environment values for the child command.
+            log_source: Optional target-log source for child output.
+            log_exclude_prefixes: Child-output prefixes excluded from target logs.
+            stdout_only: Return only stdout, preserving stderr for logs. Use for
+                commands whose stdout is a structured response.
+        """
+        return self.exec(
+            [*self.command_from_env(command_env), action],
+            cwd=self.project_root,
+            timeout=timeout,
+            env=env,
+            target_log_source=log_source,
+            target_log_exclude_prefixes=log_exclude_prefixes,
+            merge_stderr=not stdout_only,
+        )
+
+    def parse_json_object(self, output: str, *, description: str = "command output") -> dict[str, object]:
+        """Parse and require exactly one JSON object from command output."""
+        try:
+            result = json.loads(output)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(f"{description} did not return JSON") from error
+        if not isinstance(result, dict):
+            raise RuntimeError(f"{description} must return a JSON object")
+        return result
+
+    def run_json_action(
+        self,
+        *,
+        command_env: str,
+        action: str,
+        input_env: str,
+        input_data: dict[str, object],
+        timeout: int | None = None,
+        log_source: str | None = None,
+    ) -> dict[str, object]:
+        """Run one external action that returns a JSON object on standard output."""
+        payload = json.dumps({**input_data, "action": action}, ensure_ascii=False)
+        output = self.run_command_action(
+            command_env=command_env,
+            action=action,
+            timeout=timeout,
+            env={input_env: payload},
+            log_source=log_source,
+            stdout_only=True,
+        )
+        return self.parse_json_object(output, description=f"Action {action!r}")
+
+    def require_test_cases(self, *, label: str = "fixed test case") -> None:
+        """Require at least one declared fixed test case for a runner contract."""
+        if not self.test_cases:
+            raise ValueError(f"Select at least one {label}")
 
 
 class Runner:
@@ -1812,7 +2156,7 @@ class Runner:
         self._handlers: dict[str, Callable[[RunnerContext], None]] = {}
 
     def phase(
-        self, name: str
+        self, name: str, *, step_id: str | None = None
     ) -> Callable[[Callable[[RunnerContext], None]], Callable[[RunnerContext], None]]:
         """Register a function as a handler for one runner lifecycle phase.
 
@@ -1827,7 +2171,8 @@ class Runner:
 
         def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
             phase = canonical_phase(name)
-            self._handlers[phase] = handler
+            key = f"{phase}:{step_id}" if step_id else phase
+            self._handlers[key] = handler
             setattr(handler, "__orbit_phase__", phase)
             return handler
 
@@ -1846,13 +2191,15 @@ class Runner:
         parser = argparse.ArgumentParser(description="Orbit runner phase")
         command = parser.add_mutually_exclusive_group(required=True)
         command.add_argument("--phase")
+        parser.add_argument("--step")
         command.add_argument("--graph", action="store_true")
         args = parser.parse_args()
         if args.graph:
             print(json.dumps(graph.definition(), ensure_ascii=False))
             return
         phase = canonical_phase(args.phase)
-        handler = self._handlers.get(phase)
+        handler = self._handlers.get(f"{phase}:{args.step}") if args.step else None
+        handler = handler or self._handlers.get(phase)
         if handler is None:
             raise SystemExit(f"runner does not define phase: {args.phase}")
         context = RunnerContext(

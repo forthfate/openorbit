@@ -1,147 +1,120 @@
-"""Run a portable, bounded external agent cycle.
+"""Run the configured external AI evaluator through explicit runner phases.
 
-Set ORBIT_AGENT_COMMAND to a JSON argument array or a shell-like command
-prefix. The external tool receives one action at a time: ``status`` or
-``run-once``. It must write one JSON object to stdout and must never start a
-daemon or scheduler; OpenOrbit owns repetition, timing, and supervision.
+The evaluator receives fixed test cases through ``ORBIT_CYCLE_INPUT`` and must
+return one JSON object per action. Orbit retains that structured evidence for
+supervision; this runner never infers an evaluation result itself.
 """
-
-import json
-import os
-import shlex
 
 from orbit_sdk import graph, runner
 
-graph.connect("check-agent", "record-inputs")
-graph.connect("record-inputs", "run-agent", label="bounded input")
-graph.connect("run-agent", "confirm-agent-state", kind="data", label="agent result")
-graph.connect("confirm-agent-state", "close-cycle")
-graph.connect("close-cycle", "record-inputs", kind="loop", label="next cycle")
-graph.connect("close-cycle", "finalize-agent", kind="condition", label="completed")
-
-
-def agent_command():
-    """Read an explicit command prefix without depending on target source files."""
-    configured = os.environ.get("ORBIT_AGENT_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_AGENT_COMMAND to the external agent command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_AGENT_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
-
-
-def cycle_input(ctx, action):
-    """Expose non-secret evaluation context through one documented JSON contract."""
-    return json.dumps(
-        {
-            "action": action,
-            "iteration": ctx.loop_index,
-            "build": ctx.build,
-            "test_cases": ctx.test_cases,
-        },
-        ensure_ascii=False,
-    )
-
 
 def invoke(ctx, action):
-    """Run one bounded action and require structured evidence from the agent."""
-    output = ctx.exec(
-        [*agent_command(), action],
-        cwd=ctx.project_root,
+    """Run one external evaluator action through the SDK command contract."""
+    return ctx.run_json_action(
+        command_env="ORBIT_AGENT_COMMAND",
+        action=action,
+        input_env="ORBIT_CYCLE_INPUT",
+        input_data={"iteration": ctx.loop_index, "build": ctx.build, "test_cases": ctx.test_cases},
         timeout=3600,
-        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
+        log_source="agent-cycle",
     )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"External agent action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"External agent action {action!r} must return a JSON object")
-    return result
 
 
-@graph.step("check-agent", title="Check agent readiness", phase="before_all", outputs=["agent_status"])
-@runner.phase("before_all")
-def before_all(ctx):
-    # Check availability once; later phases must not start an independent loop.
-    status = invoke(ctx, "status")
-    ctx.emit_result({"agent_cycle": {"status": status}})
+graph.connect("validate-agent-cycle-contract", "preflight-agent-cycle")
+graph.connect("preflight-agent-cycle", "prepare-agent-cycle", label="prepared inputs")
+graph.connect("prepare-agent-cycle", "run-agent-cycle", kind="data", label="action result")
+graph.connect("run-agent-cycle", "collect-agent-cycle")
+graph.connect("collect-agent-cycle", "close-agent-cycle")
+graph.connect("close-agent-cycle", "prepare-agent-cycle", kind="loop", label="next cycle")
+graph.connect("close-agent-cycle", "finalize-agent-cycle", kind="condition", label="completed")
 
 
 @graph.step(
-    "record-inputs",
-    title="Record cycle inputs",
+    "validate-agent-cycle-contract",
+    title="Validate external agent contract",
+    phase="before_all",
+    outputs=["contract"],
+)
+@runner.phase("before_all", step_id="validate-agent-cycle-contract")
+def validate_contract(ctx):
+    """Require at least one fixed AI experience test case."""
+    ctx.require_test_cases()
+
+
+@graph.step(
+    "preflight-agent-cycle",
+    title="Check external agent readiness",
+    phase="before_all",
+    inputs=["contract"],
+    outputs=["preflight"],
+)
+@runner.phase("before_all", step_id="preflight-agent-cycle")
+def preflight(ctx):
+    """Capture the external evaluator's readiness."""
+    ctx.emit_result({"agent_cycle": {"preflight": invoke(ctx, "status")}})
+
+
+@graph.step(
+    "prepare-agent-cycle",
+    title="Prepare external agent",
     phase="before_each",
-    inputs=["agent_status"],
-    outputs=["cycle_input"],
+    inputs=["preflight"],
+    outputs=["prepared"],
 )
-@runner.phase("before_each")
-def before_each(ctx):
-    # Record the fixed inputs so every external action is auditable.
+@runner.phase("before_each", step_id="prepare-agent-cycle")
+def prepare(ctx):
+    """Prepare the evaluator for the current iteration."""
+    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "prepared": invoke(ctx, "prepare")}})
+
+
+@graph.step(
+    "run-agent-cycle", title="Run external agent", phase="execute", inputs=["prepared"], outputs=["result"]
+)
+@runner.phase("execute", step_id="run-agent-cycle")
+def execute(ctx):
+    """Run the external AI experience evaluation once."""
+    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": invoke(ctx, "run-once")}})
+
+
+@graph.step(
+    "collect-agent-cycle",
+    title="Collect external agent evidence",
+    phase="verify",
+    inputs=["result"],
+    outputs=["evidence"],
+)
+@runner.phase("verify", step_id="collect-agent-cycle")
+def verify(ctx):
+    """Collect structured evidence for supervision."""
     ctx.emit_result(
-        {
-            "agent_cycle": {
-                "iteration": ctx.loop_index,
-                "test_case_ids": [str(case.get("id", "")) for case in ctx.test_cases],
-            }
-        }
+        {"agent_cycle": {"iteration": ctx.loop_index, "evidence": invoke(ctx, "collect-evidence")}}
     )
 
 
 @graph.step(
-    "run-agent",
-    title="Run bounded agent cycle",
-    phase="execute",
-    inputs=["cycle_input"],
-    outputs=["agent_result"],
-)
-@runner.phase("execute")
-def execute(ctx):
-    # Exactly one unit of agent work; OpenOrbit schedules a future iteration.
-    result = invoke(ctx, "run-once")
-    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "result": result}})
-
-
-@graph.step(
-    "confirm-agent-state",
-    title="Confirm agent state",
-    phase="verify",
-    inputs=["agent_result"],
-    outputs=["verified_status"],
-)
-@runner.phase("verify")
-def verify(ctx):
-    # Re-read status rather than assuming the prior action completed correctly.
-    status = invoke(ctx, "status")
-    ctx.emit_result({"agent_cycle": {"iteration": ctx.loop_index, "status": status}})
-
-
-@graph.step(
-    "close-cycle",
-    title="Close cycle",
+    "close-agent-cycle",
+    title="Close external agent cycle",
     phase="after_each",
-    inputs=["verified_status"],
-    outputs=["cycle_complete"],
+    inputs=["evidence"],
+    outputs=["complete"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="close-agent-cycle")
 def after_each(ctx):
-    # The external process has already returned; no daemon cleanup is required.
+    """Close one bounded AI experience iteration."""
     ctx.log("Completed one bounded external agent cycle")
 
 
 @graph.step(
-    "finalize-agent",
-    title="Finalize agent evaluation",
+    "finalize-agent-cycle",
+    title="Finalize external agent",
     phase="after_all",
-    inputs=["cycle_complete"],
-    outputs=["final_status"],
+    inputs=["complete"],
+    outputs=["final"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="finalize-agent-cycle")
 def after_all(ctx):
-    ctx.log("Finalized the external agent evaluation")
+    """Finalize the external evaluator run."""
+    ctx.log("Finalized the external agent")
 
 
 if __name__ == "__main__":

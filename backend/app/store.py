@@ -29,6 +29,7 @@ from opentelemetry.trace import Status, StatusCode
 
 from orbit import load_bundle
 
+from .assistant_tools import DEFAULT_MCP_URL
 from .assistant_tools import normalize_settings as normalize_assistant_tools
 from .models import PHASE_ALIASES, Run, Step, Workflow
 from .observability import configure_telemetry
@@ -82,8 +83,10 @@ CONFIG = APP_DATA / "config"
 TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
 EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
 TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+PERSONAS = CONFIG / "personas.yaml"
 CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
 ISSUE_MANAGEMENT = CONFIG / "issue-management.yaml"
+ASSISTANT_MCP_CONFIG = CONFIG / "assistant-mcp.json"
 DEFAULT_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
 Preserve the task safety boundary, collect observable evidence, and never
 claim success without stated acceptance evidence. Escalate required approvals
@@ -96,8 +99,8 @@ __ORBIT_MANAGER_OUTPUT_LANGUAGE__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_trace\": {\"persona_goal\":\"string\",\"current_action\":\"string\",\"decision\":\"string\",\"next_action\":\"string\",\"evidence\":\"string\"}},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
-  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+  \"improvements\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 For an evaluated AI, include behavior_trace and fill every field. This is an evidence-backed persona journey, not the evaluator's procedure and not hidden reasoning. Keep the visible journey concise and written from the persona's perspective: persona_goal is the persona's stable wish; current_action is the one meaningful action taken in this iteration; decision is the resulting judgment or choice; next_action is the one specific, safe next action. Write each field as one to three natural sentences in the selected output language. Follow that language's normal grammar, ellipsis, and point of view; do not mechanically repeat a subject or pronoun across fields. Do not describe navigation, waits, screenshots, generic control inspection, or other repeated mechanics in any visible journey field. evidence is a concise source-backed factual record for the evidence drawer, not a visible journey item. Use the persona's wording where useful, but do not invent motives, feelings, beliefs, or facts beyond the declared persona and observed evidence. Do not reveal hidden reasoning or evaluator chain-of-thought. Do not include behavior_trace for non-AI targets. behavior_summary is deprecated and should be omitted. Always include both array keys, using empty arrays when there are no items."""
 LEGACY_OPERATIONAL_MANAGER_PROMPT = """You are an approval-first operations manager for recurring AI evaluations.
@@ -110,8 +113,8 @@ __ORBIT_MANAGER_AI_PROMPT__
 Your final response must be exactly one JSON object:
 {
   \"evaluation\": {\"score\":\"number from 0 to 10\",\"approval\":\"approved|rejected|pending\",\"summary\":\"string\",\"behavior_summary\":\"string, only when the evaluated target is an AI\"},
-  \"improvements\": [{\"title\":\"string\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
-  \"reported_issues\": [{\"title\":\"string\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
+  \"improvements\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"status\":\"proposed|acceptable|rejected\",\"rationale\":\"string\",\"acceptanceEvidence\":\"string\"}],
+  \"reported_issues\": [{\"title\":\"string\",\"category\":\"accuracy_grounding|safety_privacy|task_completion|user_experience|other\",\"severity\":\"low|medium|high|critical\",\"evidence\":\"string\",\"reproduction\":\"string\",\"status\":\"open|acknowledged|resolved\"}]
 }
 Include behavior_summary only when the evaluated target is an AI. It must describe the AI's observed responses, decisions, tool use, refusals, or other behavior in plain language; do not describe pass/fail outcomes, metrics, baselines, or the evaluator's actions. Omit behavior_summary for non-AI targets. Always include both array keys, using empty arrays when there are no items."""
 PROPOSAL_DECISION_POLICY = """# Improvement decision policy
@@ -148,12 +151,13 @@ def configure_application_data(path: str) -> Path:
 
     global APP_DATA, CONFIG, TARGET_TEST_CASE_SETS, EXECUTION_ENVIRONMENTS, TARGET_ENVIRONMENTS
     global CYCLE_INTERVENTIONS, DATA, RUNS, TELEMETRY, SETTINGS, TOOL_TIMES, RUNNERS
-    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS
+    global RUNNER_TEMPLATES, QUICK_STARTS, QUICK_START_INSTANCES, TEMPLATE_TRANSLATIONS, PERSONAS
     APP_DATA = target
     CONFIG = APP_DATA / "config"
     TARGET_TEST_CASE_SETS = CONFIG / "target-ai-test-case-sets.yaml"
     EXECUTION_ENVIRONMENTS = CONFIG / "execution-environments.yaml"
     TARGET_ENVIRONMENTS = CONFIG / "target-environments.yaml"
+    PERSONAS = CONFIG / "personas.yaml"
     CYCLE_INTERVENTIONS = CONFIG / "cycle-interventions.yaml"
     DATA = APP_DATA / "data"
     RUNS = DATA / "runs"
@@ -175,7 +179,14 @@ def now() -> datetime:
 class ConsoleStore:
     """File-backed local state. Commands are always executed without a shell."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, recover_interrupted_runs: bool = False) -> None:
+        """Open local state without claiming ownership of the scheduler.
+
+        Only the long-lived API service may recover unfinished local pipelines.
+        Diagnostic scripts also create a store to inspect assets; allowing those
+        short-lived processes to recover runs would incorrectly cancel the
+        pipeline owned by the already-running API service.
+        """
         self._initialize_application_data()
         RUNS.mkdir(parents=True, exist_ok=True)
         RUNNERS.mkdir(parents=True, exist_ok=True)
@@ -190,7 +201,8 @@ class ConsoleStore:
         self._test_sessions: dict[str, Run] = {}
         self._runner_graph_drafts: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
-        self._recover_interrupted_runs()
+        if recover_interrupted_runs:
+            self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
 
     @staticmethod
@@ -1126,6 +1138,42 @@ class ConsoleStore:
         self._open_in_vscode(self._runner_entry_path(runner_id, int(self._runner(runner_id)["version"])))
         return {"status": "opened"}
 
+    def assistant_mcp_config(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            return {
+                "path": str(ASSISTANT_MCP_CONFIG),
+                "content": json.dumps(
+                    {"mcpServers": {"openorbit": {"url": DEFAULT_MCP_URL}}},
+                    indent=2,
+                )
+                + "\n",
+            }
+        return {
+            "path": str(ASSISTANT_MCP_CONFIG),
+            "content": ASSISTANT_MCP_CONFIG.read_text(encoding="utf-8"),
+        }
+
+    def save_assistant_mcp_config(self, content: str) -> dict[str, str]:
+        try:
+            document = json.loads(content)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"MCP configuration must be valid JSON: {error.msg}") from error
+        if not isinstance(document, dict):
+            raise ValueError("MCP configuration must be a JSON object")
+        ASSISTANT_MCP_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+        temporary = ASSISTANT_MCP_CONFIG.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(ASSISTANT_MCP_CONFIG)
+        return self.assistant_mcp_config()
+
+    def open_assistant_mcp_config_in_vscode(self) -> dict[str, str]:
+        if not ASSISTANT_MCP_CONFIG.exists():
+            self.save_assistant_mcp_config(
+                json.dumps({"mcpServers": {"openorbit": {"url": DEFAULT_MCP_URL}}})
+            )
+        self._open_in_vscode(ASSISTANT_MCP_CONFIG)
+        return {"status": "opened"}
+
     def delete_runner(self, runner_id: str) -> None:
         self._runner(runner_id)
         if any(build.get("runner_id") == runner_id for build in self.builds()):
@@ -1136,6 +1184,47 @@ class ConsoleStore:
     def _runner_execution_plan(self, runner_id: str, runner_version: int | None = None) -> Workflow:
         """Build the lifecycle declared by a runner without a workflow asset."""
         runner = self._runner(runner_id)
+        definition = self._runner_graph_definition(runner_id, None, runner_version)
+        graph_nodes = definition.get("nodes", []) if isinstance(definition, dict) else []
+        lifecycle_phases = {"before_all", "before_each", "execute", "verify", "after_each", "after_all"}
+        if isinstance(graph_nodes, list) and graph_nodes:
+            steps = [
+                Step(
+                    id=str(node["id"]),
+                    phase=str(node["phase"]),
+                    name=str(node.get("title") or node["id"]),
+                    command=[
+                        sys.executable,
+                        str(self._runner_entry_path(runner_id, runner_version)),
+                        "--phase",
+                        str(node["phase"]),
+                        "--step",
+                        str(node["id"]),
+                    ],
+                    working_directory=str(ROOT),
+                    timeout_seconds=86_400 if node["phase"] == "execute" else 300,
+                    approval="not_required",
+                    on_failure="stop",
+                    after_supervision=bool(node.get("after_supervision", False)),
+                )
+                for node in graph_nodes
+                if isinstance(node, dict) and node.get("phase") in lifecycle_phases
+            ]
+            if steps:
+                return Workflow(
+                    id=runner_id,
+                    name=runner["name"],
+                    description=runner["description"],
+                    kind="improvement"
+                    if runner.get("template_id") == "native-improvement-cycle"
+                    else "simulation",
+                    enabled=True,
+                    risk="medium",
+                    runner_id=runner_id,
+                    runner_version=runner_version or int(runner["version"]),
+                    steps=steps,
+                    test_steps=deepcopy(steps),
+                )
         source = runner["source"]
         if runner_version is not None:
             selected = next(
@@ -1149,7 +1238,14 @@ class ConsoleStore:
             if selected is None:
                 raise ValueError(f"runner version {runner_version} does not exist")
             source = str(selected["source"])
-        lifecycle_order = ("before_all", "before_each", "execute", "verify", "after_each", "after_all")
+        lifecycle_order = (
+            "before_all",
+            "before_each",
+            "execute",
+            "verify",
+            "after_each",
+            "after_all",
+        )
         declared = {
             PHASE_ALIASES.get(phase, phase)
             for phase in re.findall(r'@runner\.phase\(\s*["\']([^"\']+)["\']\s*\)', source)
@@ -1280,8 +1376,10 @@ class ConsoleStore:
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
             build.setdefault("created_at", fallback)
-            dates = [run.created_at for run in runs if run.build_id == build["id"]]
+            build_runs = [run for run in runs if run.build_id == build["id"]]
+            dates = [run.created_at for run in build_runs]
             build["last_run_at"] = max(dates).isoformat() if dates else None
+            build["run_count"] = len(build_runs)
         return builds
 
     def _hydrate_build_environment(self, build: dict[str, Any]) -> None:
@@ -1639,6 +1737,103 @@ class ConsoleStore:
             else []
         )
 
+    def personas(self) -> list[dict[str, Any]]:
+        values = yaml.safe_load(PERSONAS.read_text(encoding="utf-8")) if PERSONAS.exists() else []
+        return (
+            [
+                {**item, "definition": self._persona_definition(item)}
+                for item in values
+                if isinstance(item, dict)
+            ]
+            if isinstance(values, list)
+            else []
+        )
+
+    @staticmethod
+    def _persona_definition(values: dict[str, Any]) -> str:
+        """Migrate legacy goal/constraint arrays into one Markdown definition."""
+        definition = str(values.get("definition", "")).strip()
+        if definition:
+            return definition
+        sections = []
+        goals = [str(goal).strip() for goal in values.get("goals", []) if str(goal).strip()]
+        constraints = [
+            str(constraint).strip() for constraint in values.get("constraints", []) if str(constraint).strip()
+        ]
+        if goals:
+            sections.append("# Goals\n\n" + "\n".join(f"- {goal}" for goal in goals))
+        if constraints:
+            sections.append("# Constraints\n\n" + "\n".join(f"- {constraint}" for constraint in constraints))
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _validated_persona(values: dict[str, Any], persona_id: str) -> dict[str, Any]:
+        name = str(values.get("name", "")).strip()
+        locale, timezone = str(values.get("locale", "")).strip(), str(values.get("timezone", "")).strip()
+        definition, windows, context = (
+            str(values.get("definition", "")).strip(),
+            values.get("activity_windows", []),
+            values.get("context", {}),
+        )
+        if not name or not locale or not timezone or not definition:
+            raise ValueError("persona requires a name, locale, timezone, and Markdown definition")
+        if not isinstance(windows, list) or not all(isinstance(window, dict) for window in windows):
+            raise ValueError("persona activity windows must be a list of objects")
+        if not isinstance(context, dict):
+            raise ValueError("persona context must be an object")
+        return {
+            "id": persona_id,
+            "name": name,
+            "locale": locale,
+            "timezone": timezone,
+            "activity_windows": windows,
+            "definition": definition,
+            "context": context,
+        }
+
+    def create_persona(self, values: dict[str, Any]) -> dict[str, Any]:
+        persona_id = str(values.get("id", "")).strip()
+        personas = self.personas()
+        if not persona_id or any(item.get("id") == persona_id for item in personas):
+            raise ValueError("persona ID is required and must be unique")
+        persona = self._validated_persona(values, persona_id)
+        persona["created_at"] = now().isoformat()
+        personas.append(persona)
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(personas, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(PERSONAS)
+        return persona
+
+    def update_persona(self, persona_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        personas = self.personas()
+        index = next((i for i, item in enumerate(personas) if item.get("id") == persona_id), None)
+        if index is None:
+            raise KeyError(persona_id)
+        persona = self._validated_persona(values, persona_id)
+        persona["created_at"] = personas[index].get("created_at", now().isoformat())
+        personas[index] = persona
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(yaml.safe_dump(personas, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        temporary.replace(PERSONAS)
+        return persona
+
+    def delete_persona(self, persona_id: str) -> None:
+        personas = self.personas()
+        if not any(item.get("id") == persona_id for item in personas):
+            raise KeyError(persona_id)
+        if any(persona_id in build.get("persona_ids", []) for build in self.builds()):
+            raise ValueError("persona is used by a build")
+        temporary = PERSONAS.with_suffix(".tmp")
+        temporary.write_text(
+            yaml.safe_dump(
+                [item for item in personas if item.get("id") != persona_id],
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+        temporary.replace(PERSONAS)
+
     @staticmethod
     def _validated_target_test_case_set(values: dict[str, Any], set_id: str) -> dict[str, Any]:
         name, description = str(values.get("name", "")).strip(), str(values.get("description", "")).strip()
@@ -1955,6 +2150,12 @@ class ConsoleStore:
             raise ValueError("AI model profile does not exist")
         if not any(item.get("id") == values.get("test_case_set_id") for item in self.target_test_case_sets()):
             raise ValueError("target-AI test case set does not exist")
+        persona_ids = [str(item) for item in values.get("persona_ids", [])]
+        if len(set(persona_ids)) != len(persona_ids) or any(
+            not any(persona.get("id") == persona_id for persona in self.personas())
+            for persona_id in persona_ids
+        ):
+            raise ValueError("persona selection contains an unknown or duplicate persona")
         build = {
             "id": build_id,
             "name": values["name"],
@@ -1975,6 +2176,7 @@ class ConsoleStore:
             "model_profile_name": values.get("model_profile_name", "Default"),
             "task_instruction": values.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
+            "persona_ids": persona_ids,
             "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
             "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
@@ -2041,6 +2243,12 @@ class ConsoleStore:
             raise ValueError("AI model profile does not exist")
         if not any(item.get("id") == values.get("test_case_set_id") for item in self.target_test_case_sets()):
             raise ValueError("target-AI test case set does not exist")
+        persona_ids = [str(item) for item in values.get("persona_ids", [])]
+        if len(set(persona_ids)) != len(persona_ids) or any(
+            not any(persona.get("id") == persona_id for persona in self.personas())
+            for persona_id in persona_ids
+        ):
+            raise ValueError("persona selection contains an unknown or duplicate persona")
         existing = builds[index]
         build = {
             "id": build_id,
@@ -2062,6 +2270,7 @@ class ConsoleStore:
             "model_profile_name": values.get("model_profile_name", "Default"),
             "task_instruction": existing.get("task_instruction", ""),
             "test_case_set_id": values["test_case_set_id"],
+            "persona_ids": persona_ids,
             "browser_base_url": str(target_environment.get("browser_base_url", "")).strip(),
             "browser_executable_path": str(execution_environment.get("browser_executable_path", "")).strip(),
             "browser_library_path": str(execution_environment.get("browser_library_path", "")).strip(),
@@ -2114,6 +2323,66 @@ class ConsoleStore:
         path = CONFIG / "improvements.yaml"
         return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else []
 
+    @staticmethod
+    def _issue_category(value: Any) -> str:
+        """Normalize persisted categories; legacy implementation targets are never categories."""
+        categories = {"accuracy_grounding", "safety_privacy", "task_completion", "user_experience", "other"}
+        return str(value) if str(value) in categories else "other"
+
+    def _known_unresolved_issues(self, run: Run, *, limit: int = 12) -> list[dict[str, str]]:
+        """Return compact, active Issue context for a supervisor prompt.
+
+        Issue Management is derived from immutable supervisor results, so this
+        deliberately scans earlier issue-assessment responses instead of a
+        separate mutable issue store. Resolved and deleted items are excluded:
+        a later observation of either may be a genuine regression.
+        """
+        records = self._issue_management_records()
+        candidates = [item for item in self.runs() if item.build_id == run.build_id]
+        if all(item.id != run.id for item in candidates):
+            candidates.append(run)
+        values: list[dict[str, str]] = []
+        for source_run in candidates:
+            for result in source_run.supervisor_results:
+                if (
+                    not isinstance(result, dict)
+                    or result.get("stage", "issue_assessment") != "issue_assessment"
+                ):
+                    continue
+                response = result.get("response")
+                if not isinstance(response, dict):
+                    continue
+                improvements = response.get("improvements")
+                reported = response.get("reported_issues")
+                proposals = improvements if isinstance(improvements, list) and improvements else reported
+                if not isinstance(proposals, list):
+                    continue
+                for index, proposal in enumerate(proposals):
+                    if not isinstance(proposal, dict):
+                        continue
+                    proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:{index}"
+                    if proposals is reported:
+                        proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:issue:{index}"
+                    management = records.get(proposal_id, {})
+                    if management.get("status") in {"resolved", "deleted"}:
+                        continue
+                    if str(proposal.get("status") or "").lower() == "rejected":
+                        continue
+                    values.append(
+                        {
+                            "id": proposal_id,
+                            "title": str(proposal.get("title") or "")[:240],
+                            "category": self._issue_category(proposal.get("category")),
+                            "rationale": str(
+                                proposal.get("rationale") or proposal.get("acceptanceEvidence") or ""
+                            )[:700],
+                            "evidence": str(proposal.get("evidence") or proposal.get("reproduction") or "")[
+                                :700
+                            ],
+                        }
+                    )
+        return values[-limit:]
+
     def cycle_interventions(self) -> list[dict[str, Any]]:
         return (
             yaml.safe_load(CYCLE_INTERVENTIONS.read_text(encoding="utf-8"))
@@ -2143,6 +2412,7 @@ class ConsoleStore:
                         "response": run.supervisor_response,
                     }
                 ]
+            seen_agent_improvements: set[str] = set()
             for record in records:
                 if not isinstance(record, dict):
                     continue
@@ -2182,14 +2452,41 @@ class ConsoleStore:
                         if isinstance(persona, str) and persona not in personas:
                             personas.append(persona)
                 improvements = response.get("improvements", [])
+                reported_issues = response.get("reported_issues", [])
                 evaluation = response.get("evaluation")
                 score = evaluation.get("score") if isinstance(evaluation, dict) else None
                 if isinstance(score, bool) or not isinstance(score, (int, float)):
                     score = None
-                if not isinstance(improvements, list):
+                if not isinstance(improvements, list) or not isinstance(reported_issues, list):
                     continue
-                for index, proposal in enumerate(improvements):
+                # The first supervision pass produces Issue proposals and their
+                # operator-facing rationale. A later agent-proposal assessment
+                # evaluates a worktree diff; its generated improvements are
+                # review feedback, not new persona/Issue proposals.
+                # Improvements are the operator-facing Issue proposals. A
+                # reported issue is used only when no improvement was made,
+                # preventing one supervisor observation from becoming two
+                # indistinguishable Issue Management rows.
+                issue_proposals = []
+                if record.get("stage") != "agent_proposal_assessment":
+                    issue_proposals = (
+                        [
+                            (f"{run.id}:{record.get('iteration', 0)}:{index}", proposal)
+                            for index, proposal in enumerate(improvements)
+                        ]
+                        if improvements
+                        else [
+                            (f"{run.id}:{record.get('iteration', 0)}:issue:{index}", proposal)
+                            for index, proposal in enumerate(reported_issues)
+                        ]
+                    )
+                for proposal_id, proposal in issue_proposals:
                     if not isinstance(proposal, dict):
+                        continue
+                    # A supervisor may retain fresh evidence against an active
+                    # Issue by referring to its stable ID. It is not a new
+                    # Issue Management row until the original issue is resolved.
+                    if str(proposal.get("known_issue_id") or "").strip():
                         continue
                     source_status = str(proposal.get("status") or "proposed").lower()
                     decision = (
@@ -2203,9 +2500,11 @@ class ConsoleStore:
                     )
                     values.append(
                         {
-                            "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                            "proposal_id": proposal_id,
                             "title": str(proposal.get("title") or "Untitled proposal"),
-                            "target": str(proposal.get("target") or "prompt"),
+                            "category": self._issue_category(proposal.get("category")),
+                            # target is legacy execution metadata. Do not expose it as an Issue category.
+                            "target": str(proposal.get("target") or ""),
                             "proposal": proposal,
                             "decision": decision,
                             "score": score,
@@ -2223,9 +2522,9 @@ class ConsoleStore:
                             "prompt_version": None,
                             "events": [
                                 {
-                                    "id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "id": proposal_id,
                                     "event_type": "decision",
-                                    "proposal_id": f"{run.id}:{record.get('iteration', 0)}:{index}",
+                                    "proposal_id": proposal_id,
                                     "decision": decision,
                                     "rationale": str(proposal.get("rationale") or ""),
                                     "recorded_at": record.get("recorded_at") or run.updated_at.isoformat(),
@@ -2236,6 +2535,90 @@ class ConsoleStore:
                             ],
                         }
                     )
+                # Coding-agent changes are first-class review proposals too.
+                # They are emitted by the SDK only when the agent supplied
+                # explicit feedback, and their immutable worktree diff stays
+                # attached to the resulting Issue.
+                if record.get("stage") != "agent_proposal_assessment":
+                    continue
+                for step in run.step_results:
+                    if not isinstance(step, dict) or step.get("loop_index") != iteration:
+                        continue
+                    result = step.get("result")
+                    agent = result.get("agent_run") if isinstance(result, dict) else None
+                    if not isinstance(agent, dict) or not str(agent.get("feedback") or "").strip():
+                        continue
+                    proposal_data = agent.get("proposal")
+                    proposal_data = proposal_data if isinstance(proposal_data, dict) else {}
+                    agent_proposal = result.get("agent_proposal") if isinstance(result, dict) else {}
+                    linked_issue = agent_proposal.get("issue") if isinstance(agent_proposal, dict) else None
+                    fingerprint = str(proposal_data.get("fingerprint") or "")
+                    if not fingerprint or fingerprint in seen_agent_improvements:
+                        continue
+                    seen_agent_improvements.add(fingerprint)
+                    approval = (
+                        str(evaluation.get("approval") or "pending").lower()
+                        if isinstance(evaluation, dict)
+                        else "pending"
+                    )
+                    decision = (
+                        "accepted"
+                        if approval == "approved"
+                        else "rejected"
+                        if approval == "rejected"
+                        else "pending"
+                    )
+                    parent_id = (
+                        str(linked_issue.get("_orbit_issue_id") or "")
+                        if isinstance(linked_issue, dict)
+                        else ""
+                    )
+                    parent = next(
+                        (item for item in reversed(values) if item["proposal_id"] == parent_id), None
+                    )
+                    # Backward-compatible attachment for evidence retained before stable IDs existed.
+                    if parent is None and isinstance(linked_issue, dict):
+                        linked_title = str(linked_issue.get("title") or "")
+                        parent = next(
+                            (
+                                item
+                                for item in reversed(values)
+                                if item.get("run_id") == run.id
+                                and item.get("iteration") == iteration
+                                and item.get("title") == linked_title
+                            ),
+                            None,
+                        )
+                    if parent is None:
+                        candidates = [
+                            item
+                            for item in values
+                            if item.get("run_id") == run.id and item.get("iteration") == iteration
+                        ]
+                        if len(candidates) == 1:
+                            parent = candidates[0]
+                    if parent is None:
+                        continue
+                    parent_proposal = parent.get("proposal")
+                    if not isinstance(parent_proposal, dict):
+                        continue
+                    parent_proposal["agent_change"] = {
+                        "feedback": str(agent.get("feedback")).strip(),
+                        "changed_files": agent.get("changed_files", []),
+                        "diff": proposal_data.get("diff", ""),
+                        "diff_artifact": proposal_data.get("diff_artifact"),
+                        "base_revision": proposal_data.get("base_revision"),
+                        "branch": proposal_data.get("branch", ""),
+                        "worktree_path": proposal_data.get("worktree_path", ""),
+                        "fingerprint": fingerprint,
+                        "review": {
+                            "decision": decision,
+                            "score": score,
+                            "summary": (evaluation or {}).get("summary", "")
+                            if isinstance(evaluation, dict)
+                            else "",
+                        },
+                    }
         if status:
             values = [item for item in values if item["status"] == status or item["decision"] == status]
         return sorted(values, key=lambda item: str(item.get("recorded_at", "")), reverse=True)
@@ -2271,13 +2654,31 @@ class ConsoleStore:
             # management-level tombstone, not deletion of the underlying run.
             if record.get("status") == "deleted":
                 continue
+            agent_change = (proposal.get("proposal") or {}).get("agent_change") or {}
+            review = agent_change.get("review") if isinstance(agent_change, dict) else None
+            review_comment = []
+            if isinstance(review, dict) and str(review.get("summary") or "").strip():
+                review_comment = [
+                    {
+                        "body": str(review["summary"]).strip(),
+                        "assigner": "AI supervisor",
+                        "recorded_at": proposal.get("recorded_at", ""),
+                        "kind": "agent_change_review",
+                        "decision": review.get("decision"),
+                    }
+                ]
             values.append(
                 {
                     **proposal,
                     "management_status": record.get("status", "unreviewed"),
+                    "proposal_action": record.get("proposal_action", "pending"),
+                    "proposal_branch": str(
+                        ((proposal.get("proposal") or {}).get("agent_change") or {}).get("branch") or ""
+                    ),
+                    "proposal_commit": str(record.get("proposal_commit") or ""),
                     "assigner": record.get("assigner", ""),
-                    "comments": record.get("comments", []),
-                    "management_events": record.get("events", []),
+                    "comments": [*review_comment, *record.get("comments", [])],
+                    "management_events": [*review_comment, *record.get("events", [])],
                 }
             )
         return values
@@ -2340,52 +2741,113 @@ class ConsoleStore:
         self._save_issue_management_records(records)
         return {"deleted": deleted}
 
-    def improvement_iteration_data(self, build_id: str | None = None) -> list[dict[str, Any]]:
-        """List SDK-saved data files by persisted evaluation run and iteration.
+    def issue_management_diff(self, proposal_id: str) -> dict[str, Any]:
+        """Return the immutable worktree patch attached to an agent Issue."""
+        item = next(
+            (value for value in self.issue_management_items() if value["proposal_id"] == proposal_id), None
+        )
+        if item is None:
+            raise KeyError(proposal_id)
+        proposal = item.get("proposal")
+        agent_change = proposal.get("agent_change") if isinstance(proposal, dict) else None
+        if agent_change is None and isinstance(proposal, dict) and proposal.get("kind") == "agent_change":
+            agent_change = proposal
+        if not isinstance(agent_change, dict):
+            return {"diff": "", "changed_files": []}
+        changed_files = agent_change.get("changed_files")
+        return {
+            "diff": str(agent_change.get("diff") or ""),
+            "changed_files": changed_files if isinstance(changed_files, list) else [],
+            "base_revision": agent_change.get("base_revision"),
+        }
 
-        These entries intentionally exist even when a supervisor did not make a
-        proposal. The proposal-decision history uses them to expose the full
-        iteration record rather than hiding developer-retained evidence behind
-        a proposal requirement.
-        """
-        values: list[dict[str, Any]] = []
-        for run in self.runs():
-            if build_id and run.build_id != build_id:
-                continue
-            grouped: dict[int, list[dict[str, Any]]] = {}
-            timestamps: dict[int, str] = {}
-            for step in run.step_results:
-                if not isinstance(step, dict) or not isinstance(step.get("loop_index"), int):
-                    continue
-                iteration = step["loop_index"]
-                for data_file in step.get("data_files", []):
-                    if not isinstance(data_file, dict):
-                        continue
-                    path, filename = data_file.get("path"), data_file.get("filename")
-                    if not isinstance(path, str) or not isinstance(filename, str):
-                        continue
-                    grouped.setdefault(iteration, []).append(
-                        {
-                            "label": str(data_file.get("label") or "")[:256],
-                            "filename": filename,
-                            "path": path,
-                            "relative_path": str(data_file.get("relative_path") or ""),
-                            "content_type": str(data_file.get("content_type") or ""),
-                        }
-                    )
-                    timestamps.setdefault(iteration, str(step.get("ended_at") or run.updated_at.isoformat()))
-            for iteration, data_files in grouped.items():
-                values.append(
-                    {
-                        "build_id": run.build_id,
-                        "build_name": run.build_name,
-                        "run_id": run.id,
-                        "iteration": iteration,
-                        "recorded_at": timestamps[iteration],
-                        "data_files": data_files,
-                    }
+    def decide_agent_issue(self, proposal_id: str, decision: str) -> dict[str, Any]:
+        """Commit or discard a pending agent worktree proposal from its Issue."""
+        if decision not in {"approve", "reject"}:
+            raise ValueError("decision must be approve or reject")
+        item = next(
+            (value for value in self.issue_management_items() if value["proposal_id"] == proposal_id), None
+        )
+        if item is None:
+            raise KeyError(proposal_id)
+        proposal = item.get("proposal")
+        agent_change = proposal.get("agent_change") if isinstance(proposal, dict) else None
+        if agent_change is None and isinstance(proposal, dict) and proposal.get("kind") == "agent_change":
+            agent_change = proposal
+        if not isinstance(agent_change, dict):
+            raise ValueError("only agent worktree proposals can be decided from an Issue")
+        branch = str(agent_change.get("branch") or "").strip()
+        worktree_value = str(agent_change.get("worktree_path") or "").strip()
+        if not branch or not worktree_value:
+            raise ValueError("this agent proposal was created before worktree review was enabled")
+        worktree = Path(worktree_value).resolve()
+        worktree_root = (APP_DATA / "agent-worktrees").resolve()
+        if worktree_root not in worktree.parents:
+            raise ValueError("agent proposal worktree is outside Orbit storage")
+        source_repository = Path(self._load(str(item.get("run_id") or "")).repository).resolve()
+        if not source_repository.is_dir():
+            raise ValueError("agent proposal source repository is no longer available")
+        records = self._issue_management_records()
+        record = records.setdefault(proposal_id, {"status": "unreviewed", "comments": [], "events": []})
+        previous = str(record.get("proposal_action") or "pending")
+        if previous != "pending":
+            return next(
+                value for value in self.issue_management_items() if value["proposal_id"] == proposal_id
+            )
+        timestamp = now().isoformat()
+        if decision == "approve":
+            if not worktree.is_dir():
+                raise ValueError("agent proposal worktree is no longer available")
+            changed = subprocess.run(
+                ["git", "diff", "--quiet", "--"], cwd=worktree, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if changed.returncode == 0:
+                raise ValueError("agent proposal has no uncommitted changes")
+            if changed.returncode > 1:
+                raise ValueError(
+                    changed.stderr.decode("utf-8", "replace").strip() or "cannot inspect agent proposal"
                 )
-        return sorted(values, key=lambda item: str(item["recorded_at"]), reverse=True)
+            subprocess.run(
+                ["git", "add", "--all"],
+                cwd=worktree,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            message = f"Orbit agent proposal: {str(agent_change.get('feedback') or 'approved change')[:160]}"
+            subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=worktree,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, text=True, stdout=subprocess.PIPE
+            ).stdout.strip()
+            record.update({"proposal_action": "approved", "proposal_commit": commit, "status": "resolved"})
+            record["events"].append(
+                {"type": "proposal_approved", "branch": branch, "commit": commit, "recorded_at": timestamp}
+            )
+        else:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            record.update({"proposal_action": "rejected", "status": "resolved"})
+            record["events"].append({"type": "proposal_rejected", "branch": branch, "recorded_at": timestamp})
+        self._save_issue_management_records(records)
+        return next(value for value in self.issue_management_items() if value["proposal_id"] == proposal_id)
 
     def _save_cycle_interventions(self, values: list[dict[str, Any]]) -> None:
         temporary = CYCLE_INTERVENTIONS.with_suffix(".tmp")
@@ -2603,51 +3065,6 @@ class ConsoleStore:
             elif isinstance(after, str) and path:
                 current_by_path[path] = after
         return [*initial_revisions, *ordered]
-
-    def commit_changes(self, run_id: str) -> list[dict[str, Any]]:
-        """Return commit ranges automatically retained by SDK runner phases."""
-        run = self._load(run_id)
-        changes: list[dict[str, Any]] = []
-        for step in run.step_results:
-            result = step.get("result")
-            event = result.get("commit_change") if isinstance(result, dict) else None
-            if not isinstance(event, dict) and isinstance(result, dict):
-                jgent = result.get("jgent_paired")
-                candidate = jgent.get("committed_source_candidate") if isinstance(jgent, dict) else None
-                event = candidate if isinstance(candidate, dict) else None
-            if not isinstance(event, dict):
-                continue
-            before, after = str(event.get("before") or ""), str(event.get("after") or "")
-            if not before or not after or before == after:
-                continue
-            artifact = event.get("diff_artifact") if isinstance(event.get("diff_artifact"), dict) else None
-            diff: str | None = None
-            if artifact:
-                raw_path = artifact.get("path")
-                candidate = Path(str(raw_path)).resolve() if isinstance(raw_path, str) else None
-                artifacts_root = (APP_DATA / "artifacts").resolve()
-                if candidate and artifacts_root in candidate.parents:
-                    try:
-                        if candidate.stat().st_size <= 500_000:
-                            diff = candidate.read_text(encoding="utf-8")
-                    except (OSError, UnicodeDecodeError):
-                        pass
-            changes.append(
-                {
-                    "iteration": step.get("loop_index"),
-                    "phase": step.get("phase"),
-                    "recorded_at": step.get("ended_at"),
-                    "before": before,
-                    "after": after,
-                    "changed_paths": event.get("changed_paths")
-                    if isinstance(event.get("changed_paths"), list)
-                    else [],
-                    "commits": event.get("commits") if isinstance(event.get("commits"), list) else [],
-                    "diff_artifact": artifact,
-                    "diff": diff,
-                }
-            )
-        return sorted(changes, key=lambda item: str(item.get("recorded_at") or ""), reverse=True)
 
     def run_artifact(self, run_id: str, loop_index: int, relative_path: str) -> Path:
         """Resolve one retained run artifact without permitting path traversal."""
@@ -3227,6 +3644,7 @@ class ConsoleStore:
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "coding_agent_provider": "none",
                 "assistant_tools": normalize_assistant_tools(None),
             }
         stored = json.loads(SETTINGS.read_text(encoding="utf-8"))
@@ -3236,6 +3654,7 @@ class ConsoleStore:
                 "manager_prompt_template": DEFAULT_OPERATIONAL_MANAGER_PROMPT,
                 "manager_output_locale": "en",
                 "chat_model_profile_name": "",
+                "coding_agent_provider": "none",
                 "assistant_tools": normalize_assistant_tools(None),
             }
         prompt = str(values.get("manager_prompt_template", "")).strip()
@@ -3248,6 +3667,12 @@ class ConsoleStore:
             "manager_prompt_template": prompt or DEFAULT_OPERATIONAL_MANAGER_PROMPT,
             "manager_output_locale": output_locale,
             "chat_model_profile_name": str(values.get("chat_model_profile_name", "")).strip(),
+            "coding_agent_provider": (
+                str(values.get("coding_agent_provider", "none")).strip()
+                if str(values.get("coding_agent_provider", "none")).strip()
+                in {"kiro", "claude-code", "codex"}
+                else "none"
+            ),
             "assistant_tools": normalize_assistant_tools(values.get("assistant_tools")),
         }
 
@@ -3272,6 +3697,12 @@ class ConsoleStore:
             ).strip(),
             "manager_output_locale": output_locale,
             "chat_model_profile_name": chat_profile_name,
+            "coding_agent_provider": (
+                str(values.get("coding_agent_provider", current["coding_agent_provider"])).strip()
+                if str(values.get("coding_agent_provider", current["coding_agent_provider"])).strip()
+                in {"none", "kiro", "claude-code", "codex"}
+                else "none"
+            ),
             "assistant_tools": normalize_assistant_tools(
                 values.get("assistant_tools", current["assistant_tools"])
             ),
@@ -3384,6 +3815,10 @@ class ConsoleStore:
                 None,
             )
             resources["test_cases"] = selected.get("cases", []) if selected else build.get("test_cases", [])
+            selected_personas = set(build.get("persona_ids", []))
+            resources["personas"] = [
+                persona for persona in self.personas() if persona.get("id") in selected_personas
+            ]
             profile_name = str(build.get("model_profile_name", ""))
             resources["model_profile"] = next(
                 (profile for profile in self.profiles() if profile.get("profile_name") == profile_name),
@@ -3396,7 +3831,14 @@ class ConsoleStore:
         if workflow.runner_id:
             runner_path = self._runner_entry_path(workflow.runner_id, run.runner_version)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
-                step.command = [sys.executable, str(runner_path), "--phase", step.phase]
+                step.command = [
+                    sys.executable,
+                    str(runner_path),
+                    "--phase",
+                    step.phase,
+                    "--step",
+                    step.id,
+                ]
                 step.working_directory = run.repository or str(ROOT)
         with self.tracer.start_as_current_span(
             "workflow.run",
@@ -3415,8 +3857,13 @@ class ConsoleStore:
             self._save(run)
             steps = workflow.steps_for(run.execution_mode)
             before_all = [step for step in steps if step.phase == "before_all"]
-            loop_steps = [step for step in steps if step.phase in {"before_each", "execute", "verify"}]
-            after_each = [step for step in steps if step.phase == "after_each"]
+            loop_steps = [
+                step
+                for step in steps
+                if step.phase in {"before_each", "execute", "verify"} and not step.after_supervision
+            ]
+            post_supervision_steps = [step for step in steps if step.after_supervision]
+            after_each = [step for step in steps if step.phase == "after_each" and not step.after_supervision]
             after_all = [step for step in steps if step.phase == "after_all"]
             if not self._wait_for_schedule(run_id):
                 return
@@ -3513,15 +3960,23 @@ class ConsoleStore:
                         self._execute_step(run_id, step, loop_index, resources)
                         if self._load(run_id).status in {"failed", "cancelled"}:
                             break
-                # Cleanup is part of the lifecycle contract, not merely the
-                # happy path. Run it after an earlier phase fails or a user
-                # cancels the Run; the terminal status remains unchanged.
+                # Retain all iteration evidence before the supervisor selects
+                # an Issue. The post-supervision agent work is displayed as an
+                # after_each step, but runs only after that selection exists.
                 for step in after_each:
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
-                if self._load(run_id).status in {"failed", "cancelled"}:
-                    break
+                # The supervisor first assesses discovered issues. The agent
+                # may then create a proposal for an issue the supervisor did
+                # not reject; only that concrete proposal receives the second,
+                # independent score/decision.
                 if run.execution_mode == "run" and self._load(run_id).status == "running":
                     self._complete_supervision(run_id)
+                    for step in post_supervision_steps:
+                        self._execute_step(run_id, step, loop_index, resources)
+                    if post_supervision_steps and self._load(run_id).status == "running":
+                        self._complete_supervision(run_id, stage="agent_proposal_assessment")
+                if self._load(run_id).status in {"failed", "cancelled"}:
+                    break
                 if (
                     loop_index < run.loop_limit
                     and run.repeat_interval_minutes
@@ -3603,7 +4058,7 @@ class ConsoleStore:
         return False
 
     @staticmethod
-    def _validated_supervisor_result(text: str) -> dict[str, Any]:
+    def _validated_supervisor_result(text: str, *, require_evaluation: bool = False) -> dict[str, Any]:
         """Validate the exact structured result required by the manager template."""
         try:
             result = json.loads(text)
@@ -3611,10 +4066,8 @@ class ConsoleStore:
             raise ValueError("supervisor did not return valid JSON") from error
         if not isinstance(result, dict) or not {"improvements", "reported_issues"}.issubset(result):
             raise ValueError("supervisor JSON must contain improvements and reported_issues")
-        if set(result) not in (
-            {"improvements", "reported_issues"},
-            {"evaluation", "improvements", "reported_issues"},
-        ):
+        allowed_keys = {"evaluation", "persona_journeys", "improvements", "reported_issues"}
+        if not set(result).issubset(allowed_keys):
             raise ValueError("supervisor JSON contains unsupported result fields")
         if not all(
             isinstance(result[key], list) and all(isinstance(item, dict) for item in result[key])
@@ -3622,6 +4075,32 @@ class ConsoleStore:
         ):
             raise ValueError("supervisor improvements and reported_issues must be arrays of objects")
         evaluation = result.get("evaluation")
+        if require_evaluation and evaluation is None:
+            raise ValueError("supervisor evaluation is required for a registered agent result")
+        if evaluation is not None:
+            ConsoleStore._validate_evaluation(evaluation)
+        journeys = result.get("persona_journeys", [])
+        if not isinstance(journeys, list) or not all(isinstance(item, dict) for item in journeys):
+            raise ValueError("supervisor persona_journeys must be an array of objects")
+        for journey in journeys:
+            if (
+                set(journey) != {"persona_id", "behavior_trace"}
+                or not isinstance(journey["persona_id"], str)
+                or not journey["persona_id"].strip()
+            ):
+                raise ValueError("supervisor persona journey is invalid")
+            ConsoleStore._validate_persona_journey_trace(journey["behavior_trace"])
+        for issue in result["reported_issues"]:
+            issue_evaluation = issue.get("evaluation")
+            if issue_evaluation is not None:
+                ConsoleStore._validate_evaluation(issue_evaluation)
+        for issue in [*result["reported_issues"], *result["improvements"]]:
+            issue["category"] = ConsoleStore._issue_category(issue.get("category"))
+        return result
+
+    @staticmethod
+    def _validate_evaluation(evaluation: Any) -> None:
+        """Validate either an issue assessment or an agent-proposal assessment."""
         if evaluation is not None:
             if (
                 not isinstance(evaluation, dict)
@@ -3685,9 +4164,56 @@ class ConsoleStore:
                     or not all(isinstance(trace[field], str) and trace[field].strip() for field in trace)
                 ):
                     raise ValueError("supervisor evaluation behavior_trace is invalid")
-        return result
 
-    def _complete_supervision(self, run_id: str) -> None:
+    @staticmethod
+    def _validate_persona_journey_trace(trace: Any) -> None:
+        required = {"persona_goal", "current_action", "decision", "next_action", "evidence"}
+        if (
+            not isinstance(trace, dict)
+            or set(trace) != required
+            or not all(isinstance(trace[field], str) and trace[field].strip() for field in required)
+        ):
+            raise ValueError("supervisor persona journey behavior_trace is invalid")
+
+    @staticmethod
+    def _evaluation_request_for_iteration(
+        run: Run, iteration: int, candidate_id: str | None
+    ) -> dict[str, Any] | None:
+        """Return the explicit SDK evaluation request for this agent result.
+
+        A normal iteration is evidence for improvement feedback, but is not by
+        itself a subject to score.  Only ``RunnerContext.register_evaluation``
+        can opt an agent result into score/approval evaluation.
+        """
+        for step in reversed(run.step_results):
+            if step.get("loop_index") != iteration:
+                continue
+            if candidate_id is not None and step.get("candidate_id") != candidate_id:
+                continue
+            result = step.get("result")
+            request = result.get("evaluation_request") if isinstance(result, dict) else None
+            if not isinstance(request, dict):
+                continue
+            feedback = request.get("feedback")
+            if (
+                request.get("subject") != "agent_change"
+                or not isinstance(feedback, str)
+                or not feedback.strip()
+            ):
+                continue
+            value = {
+                "subject": "agent_change",
+                "feedback": feedback.strip(),
+                "changed_files": request.get("changed_files", []),
+                "validation": request.get("validation", ""),
+            }
+            fingerprint = str(request.get("improvement_fingerprint") or "")
+            if fingerprint:
+                value["improvement_fingerprint"] = fingerprint
+            return value
+        return None
+
+    def _complete_supervision(self, run_id: str, *, stage: str = "issue_assessment") -> None:
         """Ask the configured manager model and retain its validated JSON per Run.
 
         A missing profile is observable but never turns a successfully completed
@@ -3714,6 +4240,26 @@ class ConsoleStore:
             ),
             None,
         )
+        evaluation_request = self._evaluation_request_for_iteration(run, iteration, candidate_id)
+        if stage == "issue_assessment":
+            evaluation_request = None
+        elif stage != "agent_proposal_assessment":
+            raise ValueError(f"unsupported supervision stage: {stage}")
+        elif evaluation_request is None:
+            # No Agent feedback and no retained diff means there is no proposal
+            # to score.  Issue assessment is already retained independently.
+            return
+        if evaluation_request and evaluation_request.get("improvement_fingerprint"):
+            fingerprint = evaluation_request["improvement_fingerprint"]
+            already_evaluated = any(
+                isinstance(record, dict)
+                and record.get("stage") == stage
+                and isinstance(record.get("evaluation_request"), dict)
+                and record["evaluation_request"].get("improvement_fingerprint") == fingerprint
+                for record in run.supervisor_results
+            )
+            if already_evaluated:
+                return
         configured = next(
             (item for item in self.profiles() if item["profile_name"] == run.supervisor_profile_name),
             self.settings(),
@@ -3785,6 +4331,53 @@ class ConsoleStore:
         if cycle_evidence:
             supervisor_prompt += "\n\n# OpenOrbit cycle evidence\n"
             supervisor_prompt += json.dumps(cycle_evidence, ensure_ascii=False, default=str)
+        known_issues = self._known_unresolved_issues(run) if stage == "issue_assessment" else []
+        if known_issues:
+            supervisor_prompt += "\n\n# Known unresolved issues\n"
+            supervisor_prompt += json.dumps(known_issues, ensure_ascii=False)
+            supervisor_prompt += (
+                "\nThese are active problems already reported for this build. Compare every potential "
+                "finding by its underlying cause, user impact, and reproduction, not by title wording or "
+                "language. When it is the same unresolved issue, do not create a new improvement or "
+                "reported issue. If retaining this iteration's evidence against that existing issue is "
+                "necessary, return an item with its exact known_issue_id and evidence only; it will not "
+                "create a new Issue Management row. Create a new item only for a materially distinct cause, "
+                "impact, or reproduction.\n"
+            )
+        supervisor_prompt += (
+            "\n\n# Persona journey timeline required\n"
+            "Always include a top-level persona_journeys array. For every active or processed "
+            "persona supported by this iteration's evidence, emit one object with its exact persona_id "
+            "and behavior_trace: {persona_goal, current_action, decision, next_action, evidence}. "
+            "Write the trace as the supervisor's evidence-backed observation of that persona, not as "
+            "the runner procedure or hidden reasoning. Do not invent a journey for a persona without "
+            "evidence; return [] when there is none. persona_journeys is independent of top-level "
+            "evaluation: include it even when no iteration score is allowed.\n"
+            "The only permitted top-level keys are evaluation (when explicitly requested), "
+            "persona_journeys, improvements, and reported_issues."
+        )
+        if stage == "issue_assessment":
+            supervisor_prompt += (
+                "\n\n# Issue assessment required\n"
+                "Assess every reported_issues and improvements item independently. Each discovered item must include "
+                "evaluation: {score, approval, summary}; approval is approved, pending, or rejected. "
+                "This is the score/decision for the discovered issue, not for the iteration. "
+                "Do not include a top-level evaluation. An agent may only create a proposal for an issue "
+                "whose approval is not rejected."
+            )
+        elif evaluation_request:
+            supervisor_prompt += "\n\n# Agent result to evaluate\n"
+            supervisor_prompt += json.dumps(evaluation_request, ensure_ascii=False, default=str)
+            supervisor_prompt += (
+                "\n\nThe SDK explicitly registered this completed agent result for evaluation. "
+                "Include evaluation and score only this agent result; do not score the iteration itself."
+            )
+        else:
+            supervisor_prompt += (
+                "\n\nNo SDK agent result was registered for evaluation in this iteration. "
+                "Keep improvements and reported_issues as usual, but omit evaluation entirely. "
+                "Do not assign a score or approval to the iteration."
+            )
         with self.tracer.start_as_current_span(
             "supervisor.evaluate",
             attributes={
@@ -3806,7 +4399,25 @@ class ConsoleStore:
                 response_text = provider.complete(settings, supervisor_prompt)
                 span.set_attributes(_telemetry_text_metadata("gen_ai.response", response_text))
                 span.add_event("gen_ai.response.received")
-                result = self._validated_supervisor_result(response_text)
+                result = self._validated_supervisor_result(
+                    response_text, require_evaluation=evaluation_request is not None
+                )
+                known_issue_ids = {item["id"] for item in known_issues}
+                for proposal in [*result["improvements"], *result["reported_issues"]]:
+                    known_issue_id = str(proposal.get("known_issue_id") or "").strip()
+                    if known_issue_id and known_issue_id not in known_issue_ids:
+                        # Never let a model-invented ID suppress a new Issue.
+                        proposal.pop("known_issue_id", None)
+                if stage == "issue_assessment" and any(
+                    not isinstance(item.get("evaluation"), dict)
+                    for item in [*result["reported_issues"], *result["improvements"]]
+                ):
+                    raise ValueError("every supervisor-discovered issue must include score and decision")
+                # Manager templates created before agent-result evaluation can
+                # still return an evaluation by default.  A score is invalid
+                # without the SDK's explicit registration, so never retain it.
+                if evaluation_request is None:
+                    result.pop("evaluation", None)
                 evaluation = result.get("evaluation")
                 if evaluation is not None:
                     threshold = (
@@ -3835,9 +4446,11 @@ class ConsoleStore:
                     {
                         "iteration": iteration,
                         "candidate_id": candidate_id,
+                        "stage": stage,
                         "status": "completed",
                         "prompt": supervisor_prompt,
                         "response": result,
+                        "evaluation_request": evaluation_request,
                         "recorded_at": now().isoformat(),
                     }
                 )

@@ -12,6 +12,24 @@
       "savedHint": "Your draft is saved locally. Saving creates a new version."
     },
     "assetsText": {
+      "tabsLabel": "Asset categories",
+      "tabAI": "AI configuration",
+      "tabTestDesign": "Test design",
+      "tabRunSetup": "Run setup",
+      "personas": "Personas",
+      "persona": "Persona",
+      "personaDescription": "Define user characteristics and intent to validate real user journeys.",
+      "emptyPersonas": "No personas yet.",
+      "locale": "Locale",
+      "timezone": "Timezone",
+      "localeSearch": "Search locales…",
+      "timezoneSearch": "Search timezones…",
+      "noMatchingOptions": "No matching options.",
+      "definition": "Persona definition",
+      "definitionPlaceholder": "# Goals\n\n- The outcome this user wants\n\n# Constraints\n\n- A boundary that must be respected",
+      "activityContext": "Activity windows / context",
+      "activityContextHint": "JSON",
+      "invalidPersonaJson": "Activity windows and context must be valid JSON",
       "profiles": "AI model profiles",
       "templates": "Manager prompt templates",
       "tests": "Target-AI fixed test cases",
@@ -23,6 +41,7 @@
       "id": "ID",
       "name": "Name",
       "columnName": "Name",
+      "columnUsage": "Uses",
       "columnCreated": "Created",
       "columnActions": "Actions",
       "version": "Version",
@@ -56,14 +75,23 @@
       "toolsAvailable": "Available tools",
       "noToolsAvailable": "No tools are currently available.",
       "workspace": "Workspace",
+      "mcpServerUrl": "MCP server URL",
       "fileRead": "Read files",
       "fileSearch": "Search files",
       "runProcess": "Run processes",
-      "terminalVisible": "Show terminal mode in deployment",
+      "codingAgent": "Coding Agent",
+      "uiContext": "View UI",
+      "uiInteraction": "Control UI",
       "saveTools": "Save tools",
       "empty": "Ask about your evaluation work, runners, or the control room.",
       "requestFailed": "Chat request failed.",
-      "thinking": "Thinking…",
+      "thinkingStatus": "Thinking",
+      "workingStatus": "Working",
+      "reviewingRequest": "Reviewing your request",
+      "reviewingResults": "Reviewing the results",
+      "usingTool": "Using tool: {tool}",
+      "usingUiContext": "Checking the current UI",
+      "usingUiInteract": "Interacting with the UI",
       "message": "Message",
       "placeholder": "Message Orbit…",
       "send": "Send message"
@@ -71,6 +99,25 @@
     "appMeta": {
       "title": "OpenOrbit",
       "titleSeparator": " - "
+    },
+    "systemReadiness": {
+      "title": "System setup required",
+      "description": "Essential system requirements are unavailable, so OpenOrbit's core features cannot operate normally.",
+      "openSettings": "Open settings",
+      "checks": {
+        "system_ai": {
+          "title": "System AI",
+          "details": {
+            "profile_not_selected": "Select a System AI model.",
+            "profile_not_found": "The selected System AI profile no longer exists.",
+            "model_not_set": "The selected profile needs a model or deployment name.",
+            "endpoint_not_set": "The selected Azure profile needs an endpoint.",
+            "secret_not_available": "The selected profile's secret environment variable is unavailable.",
+            "credentials_not_available": "Configure AWS credentials or an AWS CLI profile."
+          }
+        },
+        "git": { "title": "Git", "details": { "not_installed": "Install Git, then restart the OpenOrbit server." } }
+      }
     },
     "navigationAccessibility": {
       "expandNavigation": "Expand navigation",
@@ -81,11 +128,10 @@
     },
     "shell": {
       "dashboard": "Monitor task health, recent activity, and operational events at a glance.",
-      "assets": "Manage the reusable environments, runners, templates, test cases, and workflows used by tasks.",
+      "assets": "Manage reusable assets for AI configuration, test design, and run setup.",
       "builds": "Combine reusable assets into tasks, then run or test them.",
       "runs": "Inspect active and completed runs, their evidence, and approval decisions.",
       "improvements": "Review run feedback, proposed improvements, and their outcomes over time.",
-      "issues": "Review build proposals and record development actions and verification.",
       "settings": "Configure console preferences, AI connection profiles, and operational manager instructions."
     },
     "settingsPage": {
@@ -112,6 +158,29 @@
         "selectChatProfile": "Select a system AI model",
         "saveChatProfile": "Save",
         "chatProfileSaved": "System AI model saved."
+      },
+      "codingAgent": {
+        "title": "Orbit Assistant Coding Agent",
+        "description": "Choose the locally installed coding agent that Orbit Assistant can use for workspace tasks.",
+        "select": "Coding Agent",
+        "none": "Not selected",
+        "save": "Save",
+        "saved": "Coding Agent saved."
+      },
+      "mcp": {
+        "title": "MCP connections",
+        "description": "Manage MCP servers available to local coding agents.",
+        "edit": "Edit",
+        "save": "Save",
+        "reset": "Reset",
+        "openInVsCode": "Open in VS Code",
+        "name": "Name",
+        "url": "URL",
+        "status": "Status",
+        "enabled": "Enabled",
+        "disabled": "Disabled",
+        "noServers": "No servers configured",
+        "saved": "MCP configuration saved."
       },
       "storage": {
         "title": "Application data",
@@ -185,8 +254,8 @@
         "hint": "The target application or service being evaluated."
       },
       "executionEnvironment": {
-        "label": "Execution environment",
-        "hint": "Where Orbit runs the selected runner."
+        "label": "Execution environment (optional)",
+        "hint": "Optional browser runtime and settings for the selected runner."
       },
       "purpose": {
         "label": "Purpose",
@@ -199,6 +268,11 @@
       "testCaseSet": {
         "label": "Test case set",
         "hint": "The reusable fixed inputs and acceptance evidence for the target AI."
+      },
+      "persona": {
+        "label": "Persona (optional)",
+        "hint": "A reusable user perspective supplied to the runner.",
+        "none": "None"
       },
       "aiProfile": {
         "label": "AI model profile",
@@ -336,7 +410,6 @@
       "trend": "Compare hourly supervisor feedback with acceptable proposals from the same period."
     },
     "settings": "Settings",
-    "issues": "Issue management",
     "issueManagementPage": {
       "title": "Issue management",
       "description": "Review build proposals and retain action history.",
@@ -365,7 +438,6 @@
       "acceptable": "Acceptable",
       "accepted": "Accepted",
       "rejected": "Rejected",
-      "score": "Score",
       "taskId": "Task ID",
       "iteration": "Iteration",
       "run": "Run",
@@ -373,10 +445,18 @@
       "saved": "Saved.",
       "build": "Build",
       "proposal": "Proposal",
+      "accuracyGrounding": "Accuracy & evidence",
+      "safetyPrivacy": "Safety & privacy",
+      "taskCompletion": "Task completion",
+      "userExperience": "User experience",
+      "other": "Other",
       "details": "Details",
       "statusHint": "The task build that produced this proposal.",
       "managementStatusHint": "Track the developer review and remediation progress.",
       "commentHint": "Record what a developer checked or changed.",
+      "discussion": "Discussion",
+      "noComments": "No comments yet.",
+      "sendComment": "Send comment",
       "assignerHint": "Record who wrote this comment.",
       "verificationHint": "Select the run history that verified the change.",
       "historyHint": "Status changes and comments are retained chronologically.",
@@ -384,7 +464,15 @@
       "deleteSelected": "Delete selected",
       "deleteSelectedTitle": "Delete selected issues?",
       "deleteSelectedDescription": "{count} issues will be hidden from Issue management. The source run and evidence are retained.",
-      "delete": "Delete"
+      "delete": "Delete",
+      "agentProposalDiff": "Agent proposal diff",
+      "noAgentProposalChanges": "No file changes were proposed.",
+      "agentProposalBranch": "Agent proposal branch",
+      "committed": "Committed",
+      "approveAndCommit": "Approve and commit",
+      "rejectAndRemove": "Reject and remove",
+      "agentProposalCommitted": "Agent proposal committed to its branch.",
+      "agentProposalRemoved": "Agent proposal worktree and branch removed."
     },
     "settingsLogs": {
       "title": "Orbit operational logs",
@@ -683,20 +771,9 @@
       "runHealth": "Run health",
       "accepted": "Accepted",
       "score": "Score",
-      "history": "Proposal decision history",
-      "historyHint": "Review the auditable history of proposed, accepted, rejected, and applied improvements.",
-      "allBuilds": "All builds",
-      "allStates": "All states",
       "acceptable": "Acceptable",
       "rejected": "Rejected",
       "proposed": "Proposed",
-      "decisionReason": "Decision reason",
-      "timeline": "Timeline",
-      "noProposals": "No proposal history.",
-      "savedDataFiles": "Saved data files",
-      "fileName": "File name",
-      "copyFileName": "Copy file name",
-      "copyPath": "Copy path",
       "iteration": "Iteration",
       "run": "Run",
       "feedbackCount": "Feedback count",
@@ -747,7 +824,7 @@
       },
       "openorbit.agent-self-improvement": {
         "name": "Agent self-improvement",
-        "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile."
+        "description": "Evaluate a managed AI prompt and let an agent create one reviewable self-improvement in an isolated worktree. The source repository is never changed automatically."
       },
       "openorbit.ai-slo-drift-monitor": {
         "name": "AI SLO and behavior drift monitor",
@@ -763,9 +840,6 @@
       "detail": "Run detail",
       "workflowGraph": "Workflow graph",
       "noWorkflowGraph": "This task has no declared workflow to display.",
-      "workflow": "Workflow logs",
-      "workflowDescription": "Review phase-by-phase execution logs and browser evidence.",
-      "workflowDataHint": "Entries appear when a before_all, before_each, execute, verify, after_each, or after_all phase leaves output or evidence.",
       "logs": "Logs",
       "logsDescription": "View all execution output together in chronological order.",
       "logsDataHint": "Entries appear when Orbit writes process output or a runner sends target logs with ctx.target_log().",
@@ -777,34 +851,13 @@
       "result": "Result",
       "resultDescription": "Review scores, decisions, proposed improvements, and reported issues.",
       "resultDataHint": "Scores, decisions, proposals, and issues appear after the runner submits results or the supervisor review finishes.",
-      "promptChanges": "Prompt changes",
-      "promptChangesDescription": "Compare the prompt changes recorded across run iterations.",
-      "promptDataHint": "Entries appear when a managed prompt file changes or a change request is held or blocked.",
-      "commitChanges": "Commit changes",
-      "commitChangesDescription": "Inspect commits, changed files, and retained diffs created during this run.",
-      "commitsDataHint": "Changes appear when Git commits or changed files are detected before and after execution.",
-      "noCommitChanges": "No commit changes were recorded for this run.",
-      "commits": "Commits",
-      "changedFiles": "Changed files",
-      "noChangedFiles": "No changed files were recorded.",
-      "diffArtifact": "Retained diff",
-      "loadingCommitDiff": "Loading retained diff…",
-      "previousCommitChange": "Previous commit change",
-      "nextCommitChange": "Next commit change",
-      "commitVersion": "Change {0} of {1}",
-      "noPromptChanges": "No prompt changes were recorded for this iteration.",
-      "noPromptSnapshot": "This older revision has no retained comparison snapshot.",
-      "initialPromptState": "Initial prompt state",
-      "initialPromptHint": "The managed prompt before any recorded change.",
-      "promptinitial": "Initial",
-      "promptapplied": "Applied",
-      "promptblocked": "Awaiting approval",
-      "promptrolled_back": "Rolled back",
-      "promptunchanged": "No change",
-      "promptBlockedHint": "The human-approval policy blocked this write before the file changed.",
-      "previousPromptChange": "Previous prompt change",
-      "nextPromptChange": "Next prompt change",
-      "promptVersion": "Change {0} of {1}",
+      "worktrees": "Worktrees",
+      "worktreesDescription": "Review issue-linked agent worktrees created for this run.",
+      "worktreesDataHint": "Only worktrees linked to an Issue Management proposal from this run are shown.",
+      "noWorktrees": "No issue-linked worktrees were created for this run.",
+      "worktreeBranch": "Branch",
+      "worktreePath": "Worktree",
+      "worktreeDiff": "Worktree diff",
       "score": "Score",
       "decision": "Decision",
       "proposals": "Proposed improvements",
@@ -840,7 +893,6 @@
       "noSupervisorPrompt": "No supervisor prompt was recorded for this run.",
       "noLogs": "No process output is available yet.",
       "noResults": "No data recorded for this iteration.",
-      "noCommandsForPhase": "No commands were executed for this phase.",
       "openTelemetryTrace": "OpenTelemetry trace",
       "loadingOpenTelemetryTrace": "Loading OpenTelemetry trace…",
       "noOpenTelemetrySpans": "No exported OpenTelemetry spans are available yet.",
@@ -890,12 +942,13 @@
       "assetTemplates": "Templates are versioned reusable instructions; selecting one in a build does not modify its saved source.",
       "assetTests": "A test-case set supplies fixed prompts and acceptance evidence that runners can reuse across builds.",
       "assetRunners": "Runners contain project-specific automation and can be shared by multiple builds.",
-      "executionEnvironment": "Choose local or remote execution details here; each runner uses the environment selected by its build.",
+      "executionEnvironment": "Set optional browser runtime and settings for the selected runner.",
       "targetEnvironment": "Repository, browser URL, and managed prompt path are used only by builds that select this target.",
       "applicationSettings": "Language affects the console and manager-result display; theme changes are saved locally in this browser.",
       "applicationData": "Changing the location affects future local state and evidence; existing data is not moved automatically.",
       "managerPrompt": "The manager prompt template selected by a build is inserted at __ORBIT_MANAGER_AI_PROMPT__.",
       "systemAiModel": "This profile powers Orbit system features such as chat and cycle analysis.",
+      "orbitAssistantCodingAgent": "The selected local CLI is used when Orbit Assistant delegates coding work in its configured workspace.",
       "orbitLogs": "Entries are local operational events. They help diagnose console and runner activity but are not evaluation evidence."
     },
     "chartHints": {

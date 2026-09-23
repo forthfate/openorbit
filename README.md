@@ -278,6 +278,7 @@ OpenOrbit exposes a local, versioned API:
 - Swagger UI: `http://localhost:3000/api/docs`
 - OpenAPI document: `http://localhost:3000/api/openapi.json`
 - API base: `http://localhost:3000/api/v1`
+- MCP (Streamable HTTP): `http://localhost:3000/mcp/`
 
 Read the [API reference](docs/API.md) for endpoint details. To add reusable automation, create a Python runner with explicit lifecycle phases:
 

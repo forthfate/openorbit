@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Build, IssueManagementItem, Run } from "../../domain/models";
+import "./discussion.css";
+import type { IssueManagementItem, Run } from "../../domain/models";
 import { api } from "../../services/api";
 import { StatusBadge } from "../../components/ui/status-badge";
 import { Modal } from "../../components/ui/modal";
@@ -10,6 +11,7 @@ import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
 import { ListFilter, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
+import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PageSizeSelect } from "../../components/ui/page-size-select";
 import { Pagination } from "../../components/ui/pagination";
@@ -38,7 +40,6 @@ type Copy = {
   aiDecision: string;
   decisionRationale: string;
   persona: string;
-  score: string;
   taskId: string;
   iteration: string;
   run: string;
@@ -46,10 +47,18 @@ type Copy = {
   saved: string;
   build: string;
   proposal: string;
+  accuracyGrounding: string;
+  safetyPrivacy: string;
+  taskCompletion: string;
+  userExperience: string;
+  other: string;
   details: string;
   statusHint: string;
   managementStatusHint: string;
   commentHint: string;
+  discussion: string;
+  noComments: string;
+  sendComment: string;
   assignerHint: string;
   verificationHint: string;
   historyHint: string;
@@ -62,6 +71,14 @@ type Copy = {
   acceptable: string;
   accepted: string;
   rejected: string;
+  agentProposalDiff: string;
+  noAgentProposalChanges: string;
+  agentProposalBranch: string;
+  committed: string;
+  approveAndCommit: string;
+  rejectAndRemove: string;
+  agentProposalCommitted: string;
+  agentProposalRemoved: string;
 };
 const statuses = [
   "unreviewed",
@@ -80,25 +97,24 @@ const compactTimestamp = (locale: Locale, value?: string) =>
         minute: "2-digit",
       }).format(new Date(value))
     : "—";
-const lastRunTimestamp = (build: Build) =>
-  build.last_run_at ? Date.parse(build.last_run_at) || 0 : 0;
-export function IssuesPage({
+export function IssueManagementSection({
   locale,
   onNotice,
+  buildId,
 }: {
   locale: Locale;
   onNotice: (message: string, tone?: "success" | "warning") => void;
+  buildId: string;
 }) {
   const t = localeMessages<Copy>(locale, "issueManagementPage"),
     evidenceCopy = localeMessages<Record<string, string>>(locale, "evaluations"),
     [items, setItems] = useState<IssueManagementItem[]>([]),
-    [builds, setBuilds] = useState<Build[]>([]),
     [runs, setRuns] = useState<Run[]>([]),
-    [build, setBuild] = useState(""),
     [managedStatuses, setManagedStatuses] = useState<Set<string>>(new Set()),
     [decisions, setDecisions] = useState<Set<string>>(new Set()),
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
+    [agentDiff, setAgentDiff] = useState<{ proposalId: string; value: string } | null>(null),
     [modalTab, setModalTab] = useState<"details" | "history">("details"),
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
@@ -115,20 +131,14 @@ export function IssuesPage({
       .catch(() => setItems([]));
   useEffect(() => {
     load();
-    api<Build[]>("/api/builds")
-      .then((next) => {
-        const sorted = [...next].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        );
-        setBuilds(next);
-        setBuild((current) => current || sorted[0]?.id || "");
-      })
-      .catch(() => setBuilds([]));
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
-  }, []);
+  }, [buildId]);
+  useEffect(() => {
+    if (!selected || !selected.proposal.agent_change) return;
+    api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
+      .then((result) => setAgentDiff({ proposalId: selected.proposal_id, value: result.diff }))
+      .catch(() => setAgentDiff({ proposalId: selected.proposal_id, value: "" }));
+  }, [selected]);
   useEffect(() => {
     if (!filtersOpen) return;
     const close = (event: PointerEvent) => {
@@ -156,16 +166,14 @@ export function IssuesPage({
         accepted: t.accepted,
         rejected: t.rejected,
       })[v] ?? v,
-    sortedBuilds = useMemo(
-      () =>
-        [...builds].sort(
-          (left, right) =>
-            Number(right.starred) - Number(left.starred) ||
-            lastRunTimestamp(right) - lastRunTimestamp(left) ||
-            left.name.localeCompare(right.name),
-        ),
-      [builds],
-    ),
+    categoryLabel = (v: string) =>
+      ({
+        accuracy_grounding: t.accuracyGrounding,
+        safety_privacy: t.safetyPrivacy,
+        task_completion: t.taskCompletion,
+        user_experience: t.userExperience,
+        other: t.other,
+      })[v] ?? t.other,
     verificationRuns = useMemo(
       () =>
         runs
@@ -177,10 +185,14 @@ export function IssuesPage({
           ),
       [runs, selected?.build_id],
     ),
+    knownAssignees = useMemo(
+      () => [...new Set(items.flatMap((item) => [item.assigner, ...item.comments.map((comment) => comment.assigner)]).filter((value): value is string => Boolean(value?.trim())))].sort((left, right) => left.localeCompare(right)),
+      [items],
+    ),
     rows: IssueRow[] = items
       .filter(
         (x) =>
-          (!build || x.build_id === build) &&
+          x.build_id === buildId &&
           (!managedStatuses.size || managedStatuses.has(x.management_status)) &&
           (!decisions.size || decisions.has(x.status)),
       )
@@ -205,6 +217,20 @@ export function IssuesPage({
         onNotice(t.saved, "success");
       })
       .catch((e) => onNotice(e.message, "warning"));
+  const decideAgentProposal = (decision: "approve" | "reject") =>
+    selected &&
+    api<IssueManagementItem>(
+      `/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/decision`,
+      "POST",
+      { decision },
+    )
+      .then((item) => {
+        setSelected(item);
+        setManagementStatus(item.management_status);
+        load();
+        onNotice(decision === "approve" ? t.agentProposalCommitted : t.agentProposalRemoved, "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
   const allSelected = pagedRows.length > 0 && pagedRows.every((item) => selectedIssueIds.has(item.proposal_id));
   const toggleIssue = (proposalId: string) =>
     setSelectedIssueIds((current) => {
@@ -282,6 +308,9 @@ export function IssuesPage({
       header: t.proposal,
       render: (x) => (
         <span className="issue-proposal">
+          <em className={`issue-category issue-category--${x.category}`}>
+            {categoryLabel(x.category)}
+          </em>
           <strong>{x.title}</strong>
         </span>
       ),
@@ -312,12 +341,6 @@ export function IssuesPage({
       sortValue: (x) => x.assigner,
     },
     {
-      id: "score",
-      header: t.score,
-      render: (x) => (x.score == null ? "—" : `${x.score}/10`),
-      sortValue: (x) => x.score,
-    },
-    {
       id: "decision",
       header: t.aiDecision,
       render: (x) => (
@@ -340,25 +363,6 @@ export function IssuesPage({
   const filterCount = managedStatuses.size + decisions.size;
   return (
     <>
-      <section className="improvements-build-selector">
-        <label>
-          {t.build}
-          <select
-            value={build}
-            onChange={(event) => {
-              setBuild(event.target.value);
-              setPage(1);
-            }}
-          >
-            {sortedBuilds.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.starred ? "★ " : ""}
-                {item.name} ({compactTimestamp(locale, item.last_run_at)})
-              </option>
-            ))}
-          </select>
-        </label>
-      </section>
       <section className="panel active-evaluation-panel issue-management">
         <div className="panel-title-action">
           <div className="panel-title-action__copy">
@@ -452,21 +456,23 @@ export function IssuesPage({
             <Trash2 size={15} />
           </button>
         </div>
-        <DataTable
-          columns={columns}
-          rows={pagedRows}
-          empty={t.empty}
-          onRowClick={(item) => {
-            setSelected(item);
-            setModalTab("details");
-            setComment("");
-            setAssigner("");
-            setManagementStatus(item.management_status);
-            setRun("");
-          }}
-          className="issue-management-table"
-          gridTemplateColumns="36px 42px minmax(230px,2fr) minmax(120px,.85fr) 76px minmax(110px,.8fr) minmax(100px,.75fr) 82px 110px 110px"
-        />
+        <div className="issue-management-table-scroll">
+          <DataTable
+            columns={columns}
+            rows={pagedRows}
+            empty={t.empty}
+            onRowClick={(item) => {
+              setSelected(item);
+              setModalTab("details");
+              setComment("");
+              setAssigner("");
+              setManagementStatus(item.management_status);
+              setRun("");
+            }}
+            className="issue-management-table"
+            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px 110px"
+          />
+        </div>
         <Pagination
           locale={locale}
           page={currentPage}
@@ -529,6 +535,25 @@ export function IssuesPage({
                     <p>{selected.decision_rationale}</p>
                   </section>
                 )}
+                {selected.proposal.agent_change && (
+                  <section className="issue-management-diff">
+                    <h3>{t.agentProposalDiff}</h3>
+                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
+                  </section>
+                )}
+                {selected.proposal.agent_change && (
+                  <section className="issue-management-proposal-action">
+                    <h3>{t.agentProposalBranch}</h3>
+                    <p>{selected.proposal_branch || "—"}</p>
+                    {selected.proposal_commit && <p>{t.committed}: {selected.proposal_commit}</p>}
+                    {selected.proposal_action === "pending" && (
+                      <div className="modal-actions">
+                        <button className="approve" onClick={() => decideAgentProposal("approve")}>{t.approveAndCommit}</button>
+                        <button className="danger" onClick={() => decideAgentProposal("reject")}>{t.rejectAndRemove}</button>
+                      </div>
+                    )}
+                  </section>
+                )}
                 <label className="modal-setting-row">
                   <span>
                     <SectionInfo
@@ -547,47 +572,19 @@ export function IssuesPage({
                     ))}
                   </select>
                 </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo title={t.assigner} description={t.assignerHint} />
-                  </span>
-                  <input
-                    value={assigner}
-                    placeholder={t.assignerPlaceholder}
-                    onChange={(e) => setAssigner(e.target.value)}
-                  />
-                </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo title={t.comment} description={t.commentHint} />
-                  </span>
-                  <textarea
-                    value={comment}
-                    placeholder={t.commentPlaceholder}
-                    onChange={(e) => setComment(e.target.value)}
-                  />
-                </label>
-                <label className="modal-setting-row">
-                  <span>
-                    <SectionInfo
-                      title={t.verificationRun}
-                      description={t.verificationHint}
-                    />
-                  </span>
-                  <select value={run} onChange={(e) => setRun(e.target.value)}>
-                    <option value="">{t.selectVerificationRun}</option>
-                    {verificationRuns.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.id} · {compactTimestamp(locale, item.finished_at ?? item.created_at)} · {item.status}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="modal-actions">
-                  <button className="approve" onClick={save}>
-                    {t.save}
-                  </button>
-                </div>
+                <section className="issue-discussion">
+                  <h3><SectionInfo title={t.discussion} description={t.commentHint} /></h3>
+                  <div className="issue-discussion__messages">
+                    {selected.comments.length ? [...selected.comments].sort((a, b) => Date.parse(a.recorded_at) - Date.parse(b.recorded_at)).map((item, index) => <article className="issue-message" key={`${item.recorded_at}-${index}`}><header><strong>{item.assigner || "—"}</strong><time>{compactTimestamp(locale, item.recorded_at)}</time></header><p>{item.body}</p>{item.verification_run_id && <small>{t.verificationRun} · {item.verification_run_id}</small>}</article>) : <p className="hint">{t.noComments}</p>}
+                  </div>
+                  <div className="issue-discussion__composer">
+                    <input list="issue-comment-authors" value={assigner} placeholder={t.assignerPlaceholder} onChange={(e) => setAssigner(e.target.value)} />
+                    <datalist id="issue-comment-authors">{knownAssignees.map((name) => <option key={name} value={name} />)}</datalist>
+                    <textarea value={comment} placeholder={t.commentPlaceholder} onChange={(e) => setComment(e.target.value)} />
+                    <select value={run} onChange={(e) => setRun(e.target.value)}><option value="">{t.selectVerificationRun}</option>{verificationRuns.map((item) => <option key={item.id} value={item.id}>{item.id} · {compactTimestamp(locale, item.finished_at ?? item.created_at)} · {item.status}</option>)}</select>
+                    <div className="modal-actions"><button className="approve" onClick={save} disabled={!comment.trim()}>{t.sendComment}</button></div>
+                  </div>
+                </section>
               </>
             ) : (
               <section>

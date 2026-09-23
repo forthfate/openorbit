@@ -10,10 +10,15 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { Children, isValidElement, useEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState } from "react";
+import localeCodes from "locale-codes";
+import Select from "react-select";
+import TimezoneSelect from "react-timezone-select";
 import type {
+  Build,
   ExecutionEnvironment,
   PromptTemplate,
+  Persona,
   RunnerAsset,
   RunnerTemplate,
   Settings,
@@ -24,6 +29,7 @@ import type {
   WorkflowGraphDefinition,
   WorkflowStep,
 } from "../../domain/models";
+import { buildAssetUsage, type AssetUsage } from "../../domain/asset-usage";
 import {
   localeMessageMap,
   localeMessages,
@@ -36,6 +42,8 @@ import { ConfirmDialog } from "../../components/ui/confirm-dialog";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { PythonEditor } from "../../components/ui/python-editor";
+import { JsonEditor } from "../../components/ui/json-editor";
+import { MarkdownEditor } from "../../components/ui/markdown-editor";
 import { WorkflowGraph } from "../../components/workflow-graph";
 import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api, upload } from "../../services/api";
@@ -45,12 +53,30 @@ import { ProfileForm, type ProfileFormCopy } from "../builds/page";
 import { SectionSkeleton } from "../../components/ui/section-skeleton";
 
 const text = localeMessageMap<Record<string, string>>("assetsText");
+type AssetTab = "ai" | "test-design" | "run-setup";
+const assetTabIds: AssetTab[] = ["ai", "test-design", "run-setup"];
+const assetTabFromLocation = (): AssetTab => {
+  const value = new URLSearchParams(window.location.search).get("tab");
+  return assetTabIds.includes(value as AssetTab) ? (value as AssetTab) : "ai";
+};
 const testBlank: TargetTestCaseSet = {
   id: "",
   name: "",
   description: "",
   cases: [{ id: "case-1", name: "", prompt: "", acceptance: "" }],
 };
+
+const personaLocaleOptions = Array.from(
+  new Map(
+    localeCodes.all.map((item) => [
+      item.tag,
+      {
+        value: item.tag,
+        label: `${item.name}${item.location ? ` (${item.location})` : ""}${item.local && item.local !== item.name ? ` — ${item.local}` : ""}`,
+      },
+    ]),
+  ).values(),
+).sort((left, right) => left.label.localeCompare(right.label));
 
 function CatalogSkeleton() {
   return <SectionSkeleton rows={3} />;
@@ -95,17 +121,17 @@ function AssetCatalog({
   locale?: Locale;
 }) {
   const [sort, setSort] = useState<{
-    key: "name" | "createdAt";
+    key: "name" | "createdAt" | "usageCount";
     direction: "asc" | "desc";
     }>({ key: "createdAt", direction: "desc" }),
     rows = Children.toArray(children).filter(isValidElement).sort((left, right) => {
       const a = String(
-        (left.props as { name?: string; detail?: string; createdAt?: string })[
+        (left.props as { name?: string; detail?: string; createdAt?: string; usageCount?: number })[
           sort.key
         ] ?? "",
       );
       const b = String(
-        (right.props as { name?: string; detail?: string; createdAt?: string })[
+        (right.props as { name?: string; detail?: string; createdAt?: string; usageCount?: number })[
           sort.key
         ] ?? "",
       );
@@ -132,13 +158,11 @@ function AssetCatalog({
       {loading ? <CatalogSkeleton /> : rows.length ? (
         <>
           <div className="catalog-list__header">
-            {(["name", "createdAt"] as const).map((key) => {
+            {(["name", "usageCount", "createdAt"] as const).map((key) => {
               const Icon = icon(key);
               return (
                 <button key={key} type="button" onClick={() => changeSort(key)}>
-                  {key === "createdAt"
-                    ? text[locale].columnCreated
-                    : text[locale].columnName}
+                  {key === "createdAt" ? text[locale].columnCreated : key === "usageCount" ? text[locale].columnUsage : text[locale].columnName}
                   <Icon size={13} />
                 </button>
               );
@@ -164,6 +188,7 @@ function Catalog({
   runners,
   onRefresh,
   onDelete,
+  runnerUsage,
   loading = false,
   locale,
 }: {
@@ -176,14 +201,15 @@ function Catalog({
   runners?: RunnerAsset[];
   onRefresh?: () => Promise<unknown>;
   onDelete?: (kind: "runner", id: string) => void;
+  runnerUsage?: AssetUsage["runners"];
   loading?: boolean;
   locale: Locale;
 }) {
   const isLegacyWorkflowSection = title === text[locale].flows;
   return (
     <>
-      {showRunners && runners && onRefresh && onDelete && (
-        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} onDelete={onDelete} />
+      {showRunners && runners && onRefresh && onDelete && runnerUsage && (
+        <RunnerCatalog locale={locale} items={runners} onRefresh={onRefresh} loading={loading} onDelete={onDelete} usage={runnerUsage} />
       )}{" "}
       {!isLegacyWorkflowSection && (
         <section className="panel app-settings">
@@ -686,6 +712,7 @@ function AssetRow({
   name,
   detail,
   createdAt,
+  usageCount = 0,
   locale,
   onClick,
   onDelete,
@@ -694,6 +721,7 @@ function AssetRow({
   name: string;
   detail: string;
   createdAt?: string;
+  usageCount?: number;
   locale?: Locale;
   onClick: () => void;
   onDelete: () => void;
@@ -705,6 +733,7 @@ function AssetRow({
         <strong>{name}</strong>
         <span>{detail}</span>
       </button>
+      <span className="catalog-row__usage">{usageCount}</span>
       <time className="catalog-row__created" dateTime={createdAt}>
         {createdAt
           ? new Intl.DateTimeFormat(intlLocales[locale ?? "en"], {
@@ -750,6 +779,7 @@ export function ProfileCatalog({
   tested,
   loading,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   profiles: Settings[];
@@ -760,6 +790,7 @@ export function ProfileCatalog({
   tested: boolean;
   loading: boolean;
   onDelete: (id: string) => void;
+  usage?: AssetUsage["profiles"];
 }) {
   const copy = localeMessages<{
       profiles: ProfileCatalogCopy;
@@ -788,23 +819,26 @@ export function ProfileCatalog({
           {copy.profiles.create}
         </button>
       </div>
-      <AssetCatalog locale={locale} loading={loading} emptyHint={copy.profiles.empty}>
-        {profiles.map((profile) => (
-            <AssetRow
-              key={profile.profile_name}
-              name={profile.profile_name}
-              detail={`${profile.provider} · ${profile.model || "—"}`}
-              createdAt={profile.created_at}
-              locale={locale}
-              onClick={() => {
-                setSettings(profile);
-                setOpen(true);
-              }}
-              onDelete={() => onDelete(profile.profile_name)}
-              deleteLabel={`${copy.profiles.delete} ${profile.profile_name}`}
-            />
+      <div className="settings-section-content">
+        <AssetCatalog locale={locale} loading={loading} emptyHint={copy.profiles.empty}>
+          {profiles.map((profile) => (
+              <AssetRow
+                key={profile.profile_name}
+                name={profile.profile_name}
+                detail={`${profile.provider} · ${profile.model || "—"}`}
+                createdAt={profile.created_at}
+                usageCount={usage?.get(profile.profile_name) ?? 0}
+                locale={locale}
+                onClick={() => {
+                  setSettings(profile);
+                  setOpen(true);
+                }}
+                onDelete={() => onDelete(profile.profile_name)}
+                deleteLabel={`${copy.profiles.delete} ${profile.profile_name}`}
+              />
           ))}
-      </AssetCatalog>
+        </AssetCatalog>
+      </div>
       <Modal
         open={open}
         title={
@@ -831,12 +865,14 @@ function RunnerCatalog({
   onRefresh,
   loading,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   items: RunnerAsset[];
   onRefresh: () => Promise<unknown>;
   loading: boolean;
   onDelete: (kind: "runner", id: string) => void;
+  usage: AssetUsage["runners"];
 }) {
   const [open, setOpen] = useState(false),
     [editing, setEditing] = useState<RunnerAsset | null>(null);
@@ -868,6 +904,7 @@ function RunnerCatalog({
               name={item.name}
               detail={`${item.id} · v${item.version} · ${item.description}`}
               createdAt={item.created_at}
+              usageCount={usage.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setEditing(item);
@@ -1050,6 +1087,8 @@ function LegacyAssetsPage({
   onCreateWorkflow,
   onUpdateWorkflow,
   onDelete,
+  usage,
+  activeTab,
 }: {
   locale: Locale;
   workflows: Workflow[];
@@ -1061,6 +1100,8 @@ function LegacyAssetsPage({
   onCreateWorkflow: (values: unknown) => Promise<unknown>;
   onUpdateWorkflow: (id: string, values: unknown) => Promise<unknown>;
   onDelete: (kind: "template" | "test-set" | "runner" | "workflow", id: string) => void;
+  usage: AssetUsage;
+  activeTab: "ai" | "test-design" | "run-setup";
 }) {
   const createLabel = locales[locale].ui.create,
     l: Record<string, string> = {
@@ -1104,7 +1145,7 @@ function LegacyAssetsPage({
     );
   return (
     <>
-      <Catalog
+      {activeTab === "ai" && <Catalog
         locale={locale}
         loading={loading}
         emptyHint={l.emptyTemplates}
@@ -1133,13 +1174,14 @@ function LegacyAssetsPage({
             name={item.name}
             detail={`${item.id} · v${item.version}`}
             createdAt={item.created_at}
+            usageCount={usage.promptTemplates.get(item.id) ?? 0}
             locale={locale}
             onClick={() => setTemplate(item)}
             onDelete={() => onDelete("template", item.id)}
           />
         ))}
-      </Catalog>
-      <Catalog
+      </Catalog>}
+      {activeTab === "test-design" && <Catalog
         locale={locale}
         loading={loading}
         emptyHint={l.emptyTests}
@@ -1158,17 +1200,19 @@ function LegacyAssetsPage({
             name={item.name}
             detail={`${item.id} · ${item.cases.length}`}
             createdAt={item.created_at}
+            usageCount={usage.testCaseSets.get(item.id) ?? 0}
             locale={locale}
             onClick={() => setTestSet(item)}
             onDelete={() => onDelete("test-set", item.id)}
           />
         ))}
-      </Catalog>
-      <Catalog
+      </Catalog>}
+      {activeTab === "run-setup" && <Catalog
         locale={locale}
         loading={loading}
         showRunners
         runners={runners}
+        runnerUsage={usage.runners}
         onRefresh={onRefresh}
         onDelete={onDelete}
         emptyHint={l.emptyFlows}
@@ -1192,6 +1236,7 @@ function LegacyAssetsPage({
             key={`${item.id}-${index}`}
             name={item.name}
             detail={`${item.id} · ${item.description}`}
+            usageCount={0}
             onClick={() => {
               setEditingWorkflow(item);
               setFlowOpen(true);
@@ -1199,7 +1244,7 @@ function LegacyAssetsPage({
             onDelete={() => onDelete("workflow", item.id)}
           />
         ))}
-      </Catalog>
+      </Catalog>}
       {template && (
         <PromptTemplateEditor
           locale={locale}
@@ -1449,7 +1494,7 @@ function EnvironmentAssets({
             <AssetRow
               key={item.id}
               name={item.name}
-              detail={`${item.id} · ${item.executor.type}`}
+              detail={item.id}
               createdAt={item.created_at}
               onClick={() => {
                 setExecution({
@@ -1529,25 +1574,6 @@ function EnvironmentAssets({
             {field("Name", execution.name, (value) =>
               setExecution({ ...execution, name: value }),
             )}
-            <label className="modal-setting-row">
-              <span>Executor</span>
-              <select
-                value={execution.executor_type}
-                onChange={(event) =>
-                  setExecution({
-                    ...execution,
-                    executor_type: event.target.value,
-                  })
-                }
-              >
-                <option value="local">Local</option>
-                <option value="remote-http">Remote HTTP</option>
-              </select>
-            </label>
-            {execution.executor_type === "remote-http" &&
-              field("Endpoint", execution.remote_endpoint, (value) =>
-                setExecution({ ...execution, remote_endpoint: value }),
-              )}
             {field(
               "Browser executable (optional)",
               execution.browser_executable_path,
@@ -1632,6 +1658,7 @@ function EnvironmentCatalog({
   loading,
   onRefresh,
   onDelete,
+  usage,
 }: {
   locale: Locale;
   executionEnvironments: ExecutionEnvironment[];
@@ -1642,6 +1669,7 @@ function EnvironmentCatalog({
     kind: "execution-environment" | "target-environment",
     id: string,
   ) => void;
+  usage: Pick<AssetUsage, "executionEnvironments" | "targetEnvironments">;
 }) {
   const t = environmentText[locale],
     { pushToast } = useToast();
@@ -1728,8 +1756,9 @@ function EnvironmentCatalog({
             <AssetRow
               key={item.id}
               name={item.name}
-              detail={`${item.id} · ${item.executor.type}`}
+              detail={item.id}
               createdAt={item.created_at}
+              usageCount={usage.executionEnvironments.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setExecution({
@@ -1783,6 +1812,7 @@ function EnvironmentCatalog({
               name={item.name}
               detail={`${item.id} · ${item.repository}`}
               createdAt={item.created_at}
+              usageCount={usage.targetEnvironments.get(item.id) ?? 0}
               locale={locale}
               onClick={() => {
                 setTarget({
@@ -1812,30 +1842,6 @@ function EnvironmentCatalog({
             {field(t.name, help.name, execution.name, (value) =>
               setExecution({ ...execution, name: value }),
             )}
-            <label className="modal-setting-row">
-              <FieldLabel label={t.executor} description={help.executor} />
-              <select
-                value={execution.executor_type}
-                onChange={(event) =>
-                  setExecution({
-                    ...execution,
-                    executor_type: event.target
-                      .value as EnvironmentDraft["executor_type"],
-                  })
-                }
-              >
-                <option value="local">Local</option>
-                <option value="remote-http">Remote HTTP</option>
-              </select>
-            </label>
-            {execution.executor_type === "remote-http" &&
-              field(
-                t.endpoint,
-                help.endpoint,
-                execution.remote_endpoint,
-                (value) =>
-                  setExecution({ ...execution, remote_endpoint: value }),
-              )}
             {field(
               t.executable,
               help.executable,
@@ -1895,8 +1901,32 @@ function EnvironmentCatalog({
   );
 }
 
+function PersonaCatalog({ builds, onRefresh, locale, loading }: { builds: Build[]; onRefresh: () => Promise<unknown>; locale: Locale; loading: boolean }) {
+  const t = text[locale];
+  const [items, setItems] = useState<Persona[]>([]), [draft, setDraft] = useState<Persona | null>(null), [error, setError] = useState(""), [itemsLoading, setItemsLoading] = useState(true);
+  const load = () => {
+    setItemsLoading(true);
+    return api<Persona[]>("/api/personas").then(setItems).finally(() => setItemsLoading(false));
+  };
+  useEffect(() => {
+    void api<Persona[]>("/api/personas").then(setItems).finally(() => setItemsLoading(false));
+  }, []);
+  const save = () => {
+    if (!draft) return;
+    const exists = items.some((item) => item.id === draft.id);
+    api<Persona>(exists ? `/api/personas/${draft.id}` : "/api/personas", exists ? "PUT" : "POST", draft)
+      .then(() => { setDraft(null); setError(""); return Promise.all([load(), onRefresh()]); })
+      .catch((value) => setError(value.message));
+  };
+  const selectedLocale =
+    personaLocaleOptions.find((option) => option.value === draft?.locale) ??
+    (draft ? { value: draft.locale, label: draft.locale } : null);
+  return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], definition: "", context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} loading={loading || itemsLoading} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><Select classNamePrefix="orbit-select" options={personaLocaleOptions} value={selectedLocale} placeholder={t.localeSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => option && setDraft({ ...draft, locale: option.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><TimezoneSelect classNamePrefix="orbit-select" value={draft.timezone} placeholder={t.timezoneSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => setDraft({ ...draft, timezone: option.value })} /></label><label className="modal-setting-row"><span>{t.definition}</span><div className="persona-definition-editor"><MarkdownEditor value={draft.definition} onChange={(definition) => setDraft({ ...draft, definition })} label={t.definition} placeholder={t.definitionPlaceholder} /></div></label><label className="modal-setting-row"><span>{t.activityContext}</span><div className="persona-context-editor"><JsonEditor value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(source) => { try { const value = JSON.parse(source); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} label={t.activityContext} height="260px" /></div></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
+}
+
 export function AssetsPage({
   locale,
+  builds,
   executionEnvironments,
   targetEnvironments,
   profiles,
@@ -1910,6 +1940,7 @@ export function AssetsPage({
   ...legacy
 }: {
   locale: Locale;
+  builds: Build[];
   workflows: Workflow[];
   runners: RunnerAsset[];
   promptTemplates: PromptTemplate[];
@@ -1938,16 +1969,54 @@ export function AssetsPage({
     id: string,
   ) => void;
 }) {
-  if (loading) return <>
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={3} />
-    <SectionSkeleton rows={4} />
-  </>;
+  const usage = useMemo(() => buildAssetUsage(builds), [builds]);
+  const tabs = [
+    { id: "ai" as const, label: text[locale].tabAI },
+    { id: "test-design" as const, label: text[locale].tabTestDesign },
+    { id: "run-setup" as const, label: text[locale].tabRunSetup },
+  ];
+  const [activeTab, setActiveTab] = useState<AssetTab>(assetTabFromLocation);
+  useEffect(() => {
+    const sync = () => setActiveTab(assetTabFromLocation());
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
+  const selectTab = (tab: AssetTab) => {
+    if (tab === activeTab) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    setActiveTab(tab);
+  };
+  const moveTab = (offset: number) => {
+    const index = tabs.findIndex((tab) => tab.id === activeTab);
+    selectTab(tabs[(index + offset + tabs.length) % tabs.length].id);
+  };
   return (
     <>
+      <div className="asset-tabs" role="tablist" aria-label={text[locale].tabsLabel}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            id={`asset-tab-${tab.id}`}
+            role="tab"
+            type="button"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`asset-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            className={activeTab === tab.id ? "selected" : undefined}
+            onClick={() => selectTab(tab.id)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight") { event.preventDefault(); moveTab(1); }
+              if (event.key === "ArrowLeft") { event.preventDefault(); moveTab(-1); }
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div id={`asset-panel-${activeTab}`} role="tabpanel" aria-labelledby={`asset-tab-${activeTab}`}>
+      {activeTab === "ai" && <>
       <ProfileCatalog
         locale={locale}
         profiles={profiles}
@@ -1957,8 +2026,16 @@ export function AssetsPage({
         save={save}
         tested={tested}
         loading={loading}
+        usage={usage.profiles}
         onDelete={(id) => onDelete("profile", id)}
       />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} activeTab="ai" />
+      </>}
+      {activeTab === "test-design" && <>
+      <PersonaCatalog builds={builds} onRefresh={legacy.onRefresh} locale={locale} loading={loading} />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} activeTab="test-design" />
+      </>}
+      {activeTab === "run-setup" && <>
       <EnvironmentCatalog
         locale={locale}
         executionEnvironments={executionEnvironments}
@@ -1966,8 +2043,11 @@ export function AssetsPage({
         loading={loading}
         onRefresh={legacy.onRefresh}
         onDelete={onDelete}
+        usage={usage}
       />
-      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} />
+      <LegacyAssetsPage {...legacy} locale={locale} loading={loading} onDelete={onDelete} usage={usage} activeTab="run-setup" />
+      </>}
+      </div>
     </>
   );
 }

@@ -1,4 +1,9 @@
-"""A safe, stateful persona that chooses one evidence-backed browser action at a time."""
+"""Run a safe, stateful persona journey with one browser action per iteration.
+
+The persona model chooses only from rendered, same-origin, non-destructive
+actions. Persistent state records the observed evidence and next intent without
+changing the evaluated product.
+"""
 
 import json
 import re
@@ -12,14 +17,24 @@ BLOCKED = re.compile(
 )
 MAX_HISTORY, MAX_LEARNINGS, MAX_ISSUES = 24, 12, 8
 
+graph.connect("validate-browser-runtime", "validate")
 graph.connect("validate", "observe")
 graph.connect("observe", "decide", kind="data", label="rendered choices")
 graph.connect("decide", "act", kind="data", label="one safe action")
 graph.connect("act", "reflect", kind="data", label="action evidence")
 graph.connect("reflect", "observe", kind="loop", label="next visit")
+graph.connect("reflect", "finalize", kind="condition", label="completed")
 
 
 def state_path(ctx):
+    """Return the build-scoped path for persistent persona state.
+
+    Args:
+        ctx: The active Orbit runner context.
+
+    Returns:
+        A path outside the evaluated repository.
+    """
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "persona"))
     directory = ctx.app_data / "autonomous-personas"
     directory.mkdir(parents=True, exist_ok=True)
@@ -27,6 +42,7 @@ def state_path(ctx):
 
 
 def load_state(ctx):
+    """Load persisted persona state or initialize it from the first case."""
     if state_path(ctx).exists():
         return json.loads(state_path(ctx).read_text(encoding="utf-8"))
     case = ctx.test_cases[0]
@@ -42,6 +58,7 @@ def load_state(ctx):
 
 
 def save_state(ctx, state):
+    """Persist only bounded persona history to keep recurring runs compact."""
     state["learnings"] = list(state.get("learnings", []))[-MAX_LEARNINGS:]
     state["reported_issues"] = list(state.get("reported_issues", []))[-MAX_ISSUES:]
     state["history"] = list(state.get("history", []))[-MAX_HISTORY:]
@@ -49,18 +66,12 @@ def save_state(ctx, state):
 
 
 def model_json(ctx, prompt):
-    """Use the configured model, but retain only a strict JSON decision record."""
-    response = ctx.complete_model(prompt)["response"]
-    try:
-        value = json.loads(response)
-    except json.JSONDecodeError as error:
-        raise ValueError("persona model must return one JSON object") from error
-    if not isinstance(value, dict):
-        raise ValueError("persona model response must be a JSON object")
-    return value
+    """Request one JSON decision through the SDK's model response contract."""
+    return ctx.complete_model_json(prompt, description="persona model response")
 
 
 def browser(ctx, *, url, screenshot, allowed_href=None):
+    """Capture rendered browser evidence for one pre-approved safe action."""
     """Observe or follow exactly one pre-approved same-origin, non-destructive link."""
     module = str(Path(orbit_sdk.__file__).resolve().parents[1] / "frontend" / "node_modules" / "playwright")
     artifacts = (
@@ -103,11 +114,31 @@ const blocked = /(logout|signout|delete|remove|destroy|payment|checkout|purchase
     return json.loads(result)
 
 
-@graph.step("validate", title="Validate autonomous persona", phase="before_all", outputs=["persona_contract"])
-@runner.phase("before_all")
+@graph.step(
+    "validate-browser-runtime",
+    title="Validate persona browser runtime",
+    phase="before_all",
+    outputs=["browser_target"],
+)
+@runner.phase("before_all", step_id="validate-browser-runtime")
+def validate_browser_runtime(ctx):
+    """Validate the browser base URL before the persona journey starts."""
+    if not ctx.build.get("browser_base_url"):
+        raise ValueError("An autonomous persona needs a browser base URL")
+
+
+@graph.step(
+    "validate",
+    title="Validate autonomous persona contract",
+    phase="before_all",
+    inputs=["browser_target"],
+    outputs=["persona_contract"],
+)
+@runner.phase("before_all", step_id="validate")
 def before_all(ctx):
-    if not ctx.build.get("browser_base_url") or not ctx.test_cases:
-        raise ValueError("An autonomous persona needs a browser base URL and one persona contract")
+    """Require one fixed persona journey case."""
+    if not ctx.test_cases:
+        raise ValueError("An autonomous persona needs one persona contract")
     ctx.log("Validated the autonomous persona contract and safe browser boundary")
 
 
@@ -118,8 +149,9 @@ def before_all(ctx):
     inputs=["persona_contract"],
     outputs=["page_choices"],
 )
-@runner.phase("before_each")
+@runner.phase("before_each", step_id="observe")
 def before_each(ctx):
+    """Observe the current page and persist its safe action choices."""
     state = load_state(ctx)
     url = str(state.get("last_url") or ctx.build["browser_base_url"])
     observation = browser(ctx, url=url, screenshot=f"persona-observation-{ctx.loop_index}.png")
@@ -154,8 +186,9 @@ def before_each(ctx):
     inputs=["page_choices"],
     outputs=["persona_plan"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="decide")
 def execute(ctx):
+    """Ask the persona model to choose one bounded next action."""
     state = load_state(ctx)
     actions = state["observation"]["available_actions"]
     prompt = (
@@ -205,8 +238,9 @@ Persona state:\n"""
     inputs=["persona_plan"],
     outputs=["action_evidence"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="act")
 def verify(ctx):
+    """Execute the selected safe action and retain rendered evidence."""
     state = load_state(ctx)
     action = state["plan"].get("action")
     evidence = browser(
@@ -221,8 +255,16 @@ def verify(ctx):
     ctx.log("Completed one bounded persona action with rendered evidence")
 
 
-@runner.phase("after_each")
+@graph.step(
+    "reflect",
+    title="Reflect persona session",
+    phase="after_each",
+    inputs=["action_evidence"],
+    outputs=["persona_handoff"],
+)
+@runner.phase("after_each", step_id="reflect")
 def after_each(ctx):
+    """Reflect on the action and persist the persona's next intent."""
     state = load_state(ctx)
     prompt = """You are reflecting as a persistent product user after one safe browser action. Return JSON only:
 {"feeling":"brief feeling","learning":"specific observation","issue":{"title":"short or empty","evidence":"observable evidence","severity":"low|medium|high"},"next_intent":"one concrete next action to investigate"}.
@@ -281,8 +323,16 @@ Current state:\n""" + json.dumps(state, ensure_ascii=False)
     ctx.log("Retained persona feeling, learning, deduplicated issues, and next intent")
 
 
-@runner.phase("after_all")
+@graph.step(
+    "finalize",
+    title="Finalize autonomous persona",
+    phase="after_all",
+    inputs=["persona_handoff"],
+    outputs=["final_status"],
+)
+@runner.phase("after_all", step_id="finalize")
 def after_all(ctx):
+    """Finalize the autonomous persona journey."""
     ctx.log("Finalized the autonomous persona journey")
 
 

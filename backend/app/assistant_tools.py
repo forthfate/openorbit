@@ -5,14 +5,24 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
+
+from coding_agents import CODING_AGENT_PROVIDERS, build_coding_agent_command, build_coding_agent_prompt
 
 MAX_RESULT_BYTES = 16 * 1024
 MAX_FILE_LINES = 120
 MAX_SEARCH_RESULTS = 12
 BLOCKED_NAMES = {".env", ".git", ".ssh", "id_rsa", "id_ed25519"}
+DEFAULT_MCP_URL = "http://127.0.0.1:3000/mcp/"
+
+
+def _terminal_visible() -> bool:
+    """Deployment flag; terminal visibility is not an operator UI setting."""
+    value = os.environ.get("ORBIT_ASSISTANT_TERMINAL_VISIBLE", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 def defaults() -> dict[str, Any]:
@@ -21,8 +31,12 @@ def defaults() -> dict[str, Any]:
         "file_read_enabled": True,
         "file_search_enabled": True,
         "run_process_enabled": True,
+        "coding_agent_enabled": True,
+        "ui_context_enabled": True,
+        "ui_interaction_enabled": True,
         "terminal_enabled": True,
-        "terminal_visible": True,
+        "terminal_visible": _terminal_visible(),
+        "mcp_server_url": DEFAULT_MCP_URL,
     }
 
 
@@ -36,24 +50,32 @@ def normalize_settings(value: object) -> dict[str, Any]:
         "file_read_enabled",
         "file_search_enabled",
         "run_process_enabled",
+        "coding_agent_enabled",
+        "ui_context_enabled",
+        "ui_interaction_enabled",
         "terminal_enabled",
-        "terminal_visible",
     ):
         result[key] = bool(value.get(key, result[key]))
+    result["terminal_visible"] = _terminal_visible()
+    result["mcp_server_url"] = (
+        str(value.get("mcp_server_url", result["mcp_server_url"])).strip() or result["mcp_server_url"]
+    )
     return result
 
 
 class AssistantToolExecutor:
-    def __init__(self, settings: dict[str, Any]):
+    def __init__(self, settings: dict[str, Any], coding_agent_provider: str = "none"):
         self.settings = normalize_settings(settings)
         root = self.settings["workspace_root"]
         self.root = Path(root).expanduser().resolve() if root else None
+        self.coding_agent_provider = (
+            coding_agent_provider if coding_agent_provider in CODING_AGENT_PROVIDERS else "none"
+        )
 
     def definitions(self) -> list[dict[str, Any]]:
-        if not self.root or not self.root.is_dir():
-            return []
         definitions = []
-        if self.settings["file_read_enabled"]:
+        workspace_ready = bool(self.root and self.root.is_dir())
+        if workspace_ready and self.settings["file_read_enabled"]:
             definitions.append(
                 {
                     "name": "file_read",
@@ -70,7 +92,7 @@ class AssistantToolExecutor:
                     },
                 }
             )
-        if self.settings["file_search_enabled"]:
+        if workspace_ready and self.settings["file_search_enabled"]:
             definitions.append(
                 {
                     "name": "file_search",
@@ -89,7 +111,7 @@ class AssistantToolExecutor:
                     },
                 }
             )
-        if self.settings["run_process_enabled"]:
+        if workspace_ready and self.settings["run_process_enabled"]:
             definitions.append(
                 {
                     "name": "run_process",
@@ -107,6 +129,22 @@ class AssistantToolExecutor:
                     },
                 }
             )
+        if self.settings["coding_agent_enabled"]:
+            definitions.append(
+                {
+                    "name": "coding_agent",
+                    "description": "Ask the configured local coding agent to inspect, modify, or validate the configured workspace. If no coding agent is selected, returns instructions for configuring one in Settings.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task": {"type": "string", "minLength": 1},
+                            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 1800},
+                        },
+                        "required": ["task"],
+                        "additionalProperties": False,
+                    },
+                }
+            )
         return definitions
 
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
@@ -117,6 +155,8 @@ class AssistantToolExecutor:
                 return self._file_search(arguments)
             if name == "run_process" and self.settings["run_process_enabled"]:
                 return self._run_process(arguments)
+            if name == "coding_agent" and self.settings["coding_agent_enabled"]:
+                return self._coding_agent(arguments)
             return self._result(error="Tool is disabled or unavailable.")
         except (OSError, UnicodeError, ValueError, re.error, subprocess.SubprocessError) as error:
             return self._result(error=str(error))
@@ -229,4 +269,44 @@ class AssistantToolExecutor:
             exit_code=result.returncode,
             output=output,
             truncated=len((result.stdout + result.stderr).encode("utf-8")) > MAX_RESULT_BYTES,
+        )
+
+    def _coding_agent(self, arguments: dict[str, Any]) -> str:
+        if self.coding_agent_provider == "none":
+            return self._result(
+                error="No Coding Agent is selected. Select Kiro, Claude Code, or Codex in Settings.",
+                error_code="coding_agent_not_configured",
+                settings_page="settings",
+            )
+        if not self.root or not self.root.is_dir():
+            return self._result(
+                error="The Assistant workspace is missing. Configure a valid workspace in the Assistant tool settings.",
+                error_code="assistant_workspace_unavailable",
+            )
+        prompt = build_coding_agent_prompt(str(arguments["task"]), self.root)
+        command = build_coding_agent_command(self.coding_agent_provider, prompt=prompt)
+        if not shutil.which(command[0]):
+            return self._result(
+                error=f"The selected Coding Agent ({self.coding_agent_provider}) is not installed or is unavailable on PATH.",
+                error_code="coding_agent_not_installed",
+                provider=self.coding_agent_provider,
+            )
+        result = subprocess.run(
+            command,
+            cwd=self.root,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=min(max(int(arguments.get("timeout_seconds", 600)), 1), 1800),
+            env=os.environ.copy(),
+        )
+        combined_output = result.stdout + result.stderr
+        output = combined_output.encode("utf-8")[:MAX_RESULT_BYTES].decode("utf-8", errors="ignore")
+        return self._result(
+            provider=self.coding_agent_provider,
+            command=command[:-1],
+            working_directory=str(self.root),
+            exit_code=result.returncode,
+            output=output,
+            truncated=len(combined_output.encode("utf-8")) > MAX_RESULT_BYTES,
         )

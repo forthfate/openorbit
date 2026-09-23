@@ -1,0 +1,10 @@
+.issue-discussion { display:grid; gap:12px; }
+.issue-discussion__messages { display:grid; gap:10px; max-height:360px; overflow-y:auto; padding:4px 8px 4px 0; }
+.issue-message { display:grid; gap:6px; padding:12px; border:1px solid var(--line); border-radius:9px; background:var(--surface-raised); }
+.issue-message header { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.issue-message header strong { font-size:12px; }
+.issue-message time,.issue-message small { color:var(--muted); font:10px 'DM Mono',monospace; }
+.issue-message p { white-space:pre-wrap; }
+.issue-discussion__composer { display:grid; gap:8px; padding:12px; border:1px solid var(--line); border-radius:9px; background:var(--bg); }
+.issue-discussion__composer textarea { min-height:96px; resize:vertical; }
+.issue-discussion__composer .modal-actions { justify-content:flex-end; }

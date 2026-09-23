@@ -27,6 +27,69 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_system_readiness_reports_missing_system_ai_and_git(monkeypatch):
+    monkeypatch.setattr(
+        main_module.store,
+        "application_settings",
+        lambda: {"chat_model_profile_name": ""},
+    )
+    monkeypatch.setattr(main_module.store, "profiles", lambda: [])
+    monkeypatch.setattr(main_module.shutil, "which", lambda _: None)
+
+    response = TestClient(app).get("/api/system/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ready": False,
+        "checks": [
+            {
+                "id": "system_ai",
+                "status": "blocked",
+                "detail": "profile_not_selected",
+                "settings_page": "settings",
+            },
+            {"id": "git", "status": "blocked", "detail": "not_installed", "settings_page": None},
+        ],
+    }
+
+
+def test_mcp_server_exposes_openapi_backed_control_room_tools():
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    initialize = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "openorbit-test", "version": "1"},
+        },
+    }
+    with TestClient(app, base_url="http://localhost:3000") as client:
+        connected = client.post("/mcp/", headers=headers, json=initialize)
+        assert connected.status_code == 200
+        session_id = connected.headers["mcp-session-id"]
+        session_headers = {**headers, "mcp-session-id": session_id}
+
+        tools = client.post(
+            "/mcp/",
+            headers=session_headers,
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+        resources = client.post(
+            "/mcp/",
+            headers=session_headers,
+            json={"jsonrpc": "2.0", "id": 3, "method": "resources/list", "params": {}},
+        )
+
+    assert tools.status_code == 200
+    assert '"name":"get_status"' in tools.text
+    assert '"name":"start_pipeline"' in tools.text
+    assert '"name":"act_on_pipeline"' in tools.text
+    assert resources.status_code == 200
+    assert "openorbit://openapi" in resources.text
+
+
 def test_request_locale_prefers_the_browser_accept_language_priority():
     request = Request(
         {
@@ -48,6 +111,32 @@ def test_generated_sdk_docs_are_served_from_the_local_app(tmp_path, monkeypatch)
 
     assert response.status_code == 200
     assert "SDK reference" in response.text
+
+
+def test_diagnostic_store_does_not_recover_an_active_pipeline(tmp_path, monkeypatch):
+    """A second store process must not cancel the API server's live run."""
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    timestamp = store_module.now()
+    owner = store_module.ConsoleStore()
+    owner._save(
+        Run(
+            id="active-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="running",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+
+    diagnostic = store_module.ConsoleStore()
+
+    assert diagnostic.run("active-run").status == "running"
+
+    recovering_server = store_module.ConsoleStore(recover_interrupted_runs=True)
+
+    assert recovering_server.run("active-run").status == "cancelled"
+    assert recovering_server.run("active-run").step_results[-1]["step_id"] == "orbit-restart"
 
 
 def test_cancelling_a_waiting_run_clears_its_current_phase(tmp_path, monkeypatch):
@@ -335,83 +424,6 @@ def test_prompt_revisions_returns_immutable_prompt_diff(tmp_path, monkeypatch):
     assert revisions[2]["status"] == "blocked"
     assert revisions[2]["before"] == "after\n"
     assert revisions[2]["after"] == "after\n"
-
-
-def test_commit_changes_returns_sdk_commit_range(tmp_path, monkeypatch):
-    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
-    store = store_module.ConsoleStore()
-    timestamp = store_module.now()
-    store._save(
-        Run(
-            id="commit-run",
-            workflow_id="workflow",
-            workflow_name="Workflow",
-            status="succeeded",
-            created_at=timestamp,
-            updated_at=timestamp,
-            step_results=[
-                {
-                    "phase": "execute",
-                    "loop_index": 2,
-                    "ended_at": timestamp.isoformat(),
-                    "result": {
-                        "commit_change": {
-                            "before": "a" * 40,
-                            "after": "b" * 40,
-                            "changed_paths": ["src/agent.py"],
-                            "commits": [{"sha": "b" * 40, "subject": "Improve agent"}],
-                            "diff_artifact": {"relative_path": "commits/a..b.patch"},
-                        }
-                    },
-                }
-            ],
-        )
-    )
-
-    changes = store.commit_changes("commit-run")
-
-    assert changes[0]["before"] == "a" * 40
-    assert changes[0]["commits"][0]["subject"] == "Improve agent"
-    assert changes[0]["changed_paths"] == ["src/agent.py"]
-
-
-def test_commit_changes_includes_jgent_committed_source_candidate(tmp_path, monkeypatch):
-    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
-    store = store_module.ConsoleStore()
-    timestamp = store_module.now()
-    store._save(
-        Run(
-            id="jgent-commit-run",
-            workflow_id="workflow",
-            workflow_name="Jgent",
-            status="succeeded",
-            created_at=timestamp,
-            updated_at=timestamp,
-            step_results=[
-                {
-                    "phase": "before_each",
-                    "loop_index": 1,
-                    "ended_at": timestamp.isoformat(),
-                    "result": {
-                        "jgent_paired": {
-                            "committed_source_candidate": {
-                                "status": "committed_source_candidate",
-                                "before": "a" * 40,
-                                "after": "b" * 40,
-                                "changed_paths": ["src/Jgent/Agent.cs"],
-                                "commits": [{"sha": "b" * 40, "subject": "Improve Jgent"}],
-                            }
-                        }
-                    },
-                }
-            ],
-        )
-    )
-
-    changes = store.commit_changes("jgent-commit-run")
-
-    assert changes[0]["changed_paths"] == ["src/Jgent/Agent.cs"]
-    assert changes[0]["commits"][0]["subject"] == "Improve Jgent"
 
 
 @pytest.mark.parametrize("terminal_status", ["failed", "cancelled"])
@@ -919,6 +931,27 @@ def test_deleting_issue_management_items_hides_them_without_deleting_run_evidenc
     assert store.delete_issue_management_items([proposal["proposal_id"]]) == {"deleted": 0}
 
 
+def test_issue_management_exposes_an_agent_worktree_diff(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
+    store = store_module.ConsoleStore()
+    proposal = {
+        "proposal_id": "run-1:1:agent",
+        "proposal": {
+            "kind": "agent_change",
+            "changed_files": ["prompt.md"],
+            "base_revision": "abc123",
+            "diff": "diff --git a/prompt.md b/prompt.md\n",
+        },
+    }
+    monkeypatch.setattr(store, "proposal_lifecycles", lambda: [proposal])
+
+    assert store.issue_management_diff(proposal["proposal_id"]) == {
+        "diff": "diff --git a/prompt.md b/prompt.md\n",
+        "changed_files": ["prompt.md"],
+        "base_revision": "abc123",
+    }
+
+
 def test_legacy_saved_runner_is_planned_with_canonical_phases(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store_module.RUNNERS.mkdir()
@@ -961,8 +994,6 @@ def test_v1_openapi_contract_covers_control_room_assets_and_observability():
         "/api/v1/dashboard",
         "/api/v1/logs",
         "/api/v1/improvements/analytics",
-        "/api/v1/improvements/iterations",
-        "/api/v1/improvements/proposals",
         "/api/v1/template-translations",
     }
     assert expected <= paths.keys()
@@ -1076,7 +1107,6 @@ def test_v1_read_only_control_room_resources_are_available():
         "/api/v1/telemetry",
         "/api/v1/logs",
         "/api/v1/improvements",
-        "/api/v1/improvements/proposals",
         "/api/v1/reported-issues",
     ):
         assert client.get(path).status_code == 200
@@ -1094,11 +1124,56 @@ def test_supervisor_result_requires_the_two_template_return_keys():
         raise AssertionError("invalid supervisor result was accepted")
 
 
+def test_registered_agent_result_requires_a_supervisor_evaluation():
+    with pytest.raises(ValueError, match="registered agent result"):
+        store_module.ConsoleStore._validated_supervisor_result(
+            '{"improvements": [], "reported_issues": []}', require_evaluation=True
+        )
+
+
+def test_evaluation_request_is_limited_to_the_matching_iteration_and_candidate():
+    run = SimpleNamespace(
+        step_results=[
+            {
+                "loop_index": 1,
+                "candidate_id": "1-1",
+                "result": {"evaluation_request": {"subject": "agent_change", "feedback": "Updated retry"}},
+            },
+            {
+                "loop_index": 2,
+                "candidate_id": "2-1",
+                "result": {"evaluation_request": {"subject": "agent_change", "feedback": "Updated parser"}},
+            },
+        ]
+    )
+
+    assert store_module.ConsoleStore._evaluation_request_for_iteration(run, 2, "2-1") == {
+        "subject": "agent_change",
+        "feedback": "Updated parser",
+        "changed_files": [],
+        "validation": "",
+    }
+    assert store_module.ConsoleStore._evaluation_request_for_iteration(run, 2, "2-2") is None
+
+
 def test_supervisor_result_normalizes_a_numeric_string_score():
     result = store_module.ConsoleStore._validated_supervisor_result(
         '{"evaluation":{"score":"8","approval":"pending","summary":"ok"},"improvements":[],"reported_issues":[]}'
     )
     assert result["evaluation"]["score"] == 8.0
+
+
+def test_supervisor_result_accepts_supervisor_observed_persona_journeys():
+    result = store_module.ConsoleStore._validated_supervisor_result(
+        '{"persona_journeys":[{"persona_id":"jp_nisa_beginner","behavior_trace":'
+        '{"persona_goal":"Understand my NISA portfolio",'
+        '"current_action":"I checked the rendered holdings",'
+        '"decision":"I did not record a trade while the values disagree",'
+        '"next_action":"I will verify the displayed allocation",'
+        '"evidence":"The visible ACWI holding is zero"}}],'
+        '"improvements":[],"reported_issues":[]}'
+    )
+    assert result["persona_journeys"][0]["persona_id"] == "jp_nisa_beginner"
 
 
 def test_supervisor_result_accepts_a_persona_journey_trace():
@@ -1234,6 +1309,84 @@ def test_supervision_includes_setup_managed_prompt_evidence(tmp_path, monkeypatc
     assert "Prompt evidence" in captured_prompts[0]
 
 
+def test_supervision_reuses_known_unresolved_issue_without_creating_another_row(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    run = Run(
+        id="known-issue-run",
+        workflow_id="workflow",
+        workflow_name="Workflow",
+        supervisor_profile_name="Supervisor",
+        prompt_snapshot="Evaluate the target.",
+        status="running",
+        created_at=timestamp,
+        updated_at=timestamp,
+        step_results=[{"phase": "execute", "loop_index": 2, "result": {"persona_cycle": {}}}],
+        supervisor_results=[
+            {
+                "iteration": 1,
+                "stage": "issue_assessment",
+                "response": {
+                    "improvements": [
+                        {
+                            "title": "Portfolio calculation basis is unclear",
+                            "rationale": "Users cannot verify the displayed value.",
+                            "status": "proposed",
+                        }
+                    ],
+                    "reported_issues": [],
+                },
+            }
+        ],
+    )
+    store._save(run)
+    captured_prompts = []
+
+    class FakeProvider:
+        def complete(self, _settings, prompt):
+            captured_prompts.append(prompt)
+            return json.dumps(
+                {
+                    "improvements": [
+                        {
+                            "known_issue_id": "known-issue-run:1:0",
+                            "evidence": "The basis is still absent in this iteration.",
+                            "evaluation": {"score": 7, "approval": "pending", "summary": "Known issue."},
+                        }
+                    ],
+                    "reported_issues": [],
+                }
+            )
+
+    monkeypatch.setattr(
+        store,
+        "profiles",
+        lambda: [
+            {
+                "profile_name": "Supervisor",
+                "provider": "azure-openai",
+                "model": "test-model",
+                "endpoint": "https://example.test/openai/v1",
+                "region": "us-east-1",
+                "secret_env": "AZURE_OPENAI_API_KEY",
+                "aws_profile": "",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            }
+        ],
+    )
+    monkeypatch.setattr(store_module, "AzureOpenAIProvider", FakeProvider)
+    monkeypatch.setattr(store, "_review_cycle_improvement", lambda *_args: None)
+
+    store._complete_supervision(run.id)
+
+    assert "# Known unresolved issues" in captured_prompts[0]
+    assert "known-issue-run:1:0" in captured_prompts[0]
+    assert [item["title"] for item in store.proposal_lifecycles()] == [
+        "Portfolio calculation basis is unclear"
+    ]
+
+
 def test_runner_context_uses_the_supplied_model_profile_without_exposing_its_secret(tmp_path, monkeypatch):
     resources = {
         "model_profile": {
@@ -1293,10 +1446,9 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     compile(improvement, "native-improvement-cycle.py", "exec")
     compile(json_agent, "json-agent-cycle.py", "exec")
     compile(probe_gate, "evidence-gated-probe-cycle.py", "exec")
-    assert "playwright_journey" in user_journey
+    assert "@runner.phase" in user_journey
+    assert "orbit_runner_kit" not in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
-    assert "previous_supervisor_feedback" in user_journey
-    assert "user-journey-state" in user_journey
     assert "ORBIT_ADAPTER_COMMAND" in adapter
     assert "playwright_journey" not in improvement
     assert "complete_model" in improvement
@@ -1317,7 +1469,7 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "Jgent" not in probe_gate
 
 
-def test_site_exploration_quick_start_uses_the_langgraph_runner():
+def test_site_exploration_quick_start_declares_its_lifecycle():
     store = store_module.ConsoleStore()
     quick_start = next(
         item for item in store._built_in_quick_starts() if item["id"] == "openorbit.site-exploration-review"
@@ -1325,7 +1477,8 @@ def test_site_exploration_quick_start_uses_the_langgraph_runner():
     runner = quick_start["assets"]["runner"]
     assert "LangGraph" in quick_start["description"]
     assert runner["template_id"] == "site-exploration"
-    assert "StateGraph" in runner["source"]
+    assert "@runner.phase" in runner["source"]
+    assert "orbit_runner_kit" not in runner["source"]
     assert "logout|signout|delete" in runner["source"]
 
 
@@ -1342,6 +1495,21 @@ def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch
 
     assert store.preview_quick_start_graph("openorbit.agent-self-improvement") == expected
     assert "@runner.phase" in captured["source"]
+
+
+def test_shipped_template_graphs_are_previewable_with_unique_nodes():
+    """Every shipped template publishes a valid graph for node-based execution."""
+    store = store_module.ConsoleStore()
+    sources = [item["source"] for item in store.runner_templates()]
+    sources.extend(item["assets"]["runner"]["source"] for item in store._built_in_quick_starts())
+
+    for source in sources:
+        definition = store.preview_runner_graph(source)
+        assert definition is not None
+        nodes = definition["nodes"]
+        assert nodes
+        assert len({node["id"] for node in nodes}) == len(nodes)
+        assert all(node["phase"] for node in nodes)
 
 
 def test_saved_runner_graph_preview_uses_the_selected_version(monkeypatch):
@@ -1378,15 +1546,25 @@ def test_runner_graph_draft_is_previewed_by_id(monkeypatch):
 @pytest.mark.parametrize(
     ("quick_start_id", "phases"),
     [
-        ("openorbit.user-journey-smoke-test", ["before_all", "execute", "verify", "after_all"]),
+        (
+            "openorbit.user-journey-smoke-test",
+            ["before_all", "before_all", "execute", "verify", "after_all"],
+        ),
         ("openorbit.site-exploration-review", ["before_all", "execute", "verify", "after_all"]),
         (
             "openorbit.agent-self-improvement",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "execute",
+                "after_each",
+                "after_each",
+            ],
         ),
         (
             "openorbit.ai-slo-drift-monitor",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -1408,20 +1586,48 @@ def test_quick_start_runner_graph_matches_its_execution_purpose(monkeypatch, qui
 @pytest.mark.parametrize(
     ("template_id", "phases"),
     [
-        ("user-journey-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "user-journey-cycle",
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
+        ),
         (
             "external-command-adapter",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
         (
             "native-improvement-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            [
+                "before_all",
+                "before_all",
+                "before_each",
+                "before_each",
+                "execute",
+                "verify",
+                "after_each",
+                "after_all",
+            ],
         ),
         ("site-exploration", ["before_all", "execute", "verify", "after_all"]),
-        ("json-agent-cycle", ["before_all", "before_each", "execute", "verify", "after_each", "after_all"]),
+        (
+            "source-aware-browser-journey",
+            ["before_all", "execute", "verify", "after_each", "after_all"],
+        ),
+        (
+            "json-agent-cycle",
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+        ),
         (
             "evidence-gated-probe-cycle",
-            ["before_all", "before_each", "execute", "verify", "after_each", "after_all"],
+            ["before_all", "before_all", "before_each", "execute", "verify", "after_each", "after_all"],
         ),
     ],
 )
@@ -1454,6 +1660,22 @@ def test_ai_slo_drift_quick_start_uses_a_recurring_evidence_gate():
     assert "playwright" not in runner["source"].lower()
     assert execution["environment_variables"] == {"ORBIT_PROBE_COMMAND": "${probe_command}"}
     assert "baseline" in quick_start["assets"]["prompt_template"]["content"]
+
+
+def test_agent_self_improvement_quick_start_embeds_agent_parameters_in_its_runner():
+    store = store_module.ConsoleStore()
+    quick_start = next(
+        item for item in store._built_in_quick_starts() if item["id"] == "openorbit.agent-self-improvement"
+    )
+
+    resolved = store._substitute(
+        quick_start["assets"]["runner"]["source"],
+        {"agent_provider": "claude-code", "agent_options": "--model sonnet"},
+    )
+
+    assert 'AGENT_PROVIDER = "claude-code"' in resolved
+    assert 'AGENT_OPTIONS = "--model sonnet"' in resolved
+    assert "agent_provider" not in quick_start["build"]
 
 
 def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monkeypatch):
@@ -1829,6 +2051,25 @@ def test_target_test_case_sets_are_managed_as_assets(tmp_path, monkeypatch):
     assert updated["name"] == "Updated target tests"
 
 
+def test_personas_are_managed_as_reusable_assets(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "PERSONAS", tmp_path / "personas.yaml")
+    store = store_module.ConsoleStore()
+    values = {
+        "id": "careful-investor",
+        "name": "Careful investor",
+        "locale": "en-US",
+        "timezone": "America/New_York",
+        "activity_windows": [{"days": ["mon"], "start": "08:00", "end": "18:00"}],
+        "definition": "# Goals\n\n- Understand the portfolio safely.\n\n# Constraints\n\n- Never place a real order.",
+        "context": {"plan": "free"},
+    }
+    created = store.create_persona(values)
+    assert created["context"] == {"plan": "free"}
+    assert created["definition"].startswith("# Goals")
+    updated = store.update_persona("careful-investor", {**values, "name": "Cautious investor"})
+    assert updated["name"] == "Cautious investor"
+
+
 def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
@@ -1882,24 +2123,83 @@ def test_proposal_history_is_derived_from_evaluation_run_results(tmp_path, monke
             "relative_path": "evidence.json",
         }
     ]
-    assert store.improvement_iteration_data("build-1") == [
-        {
-            "build_id": "build-1",
-            "build_name": "Build 1",
-            "run_id": "run-1",
-            "iteration": 2,
-            "recorded_at": timestamp.isoformat(),
-            "data_files": [
+
+
+def test_issue_management_excludes_agent_assessment_feedback_from_issue_rationales(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    issue = {
+        "title": "Observed policy claim",
+        "evaluation": {"approval": "approved", "score": 6, "summary": "Observed in the response."},
+    }
+    store._save(
+        Run(
+            id="run-agent-review",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            step_results=[
                 {
-                    "label": "Iteration evidence",
-                    "filename": "evidence.json",
-                    "path": "/tmp/orbit/evidence.json",
-                    "relative_path": "evidence.json",
-                    "content_type": "",
+                    "loop_index": 1,
+                    "result": {
+                        "agent_run": {
+                            "feedback": "Added a policy guardrail.",
+                            "changed_files": ["prompt.md"],
+                            "proposal": {"fingerprint": "a" * 64},
+                        },
+                        "agent_proposal": {"issue": issue},
+                    },
                 }
             ],
-        }
-    ]
+            supervisor_results=[
+                {
+                    "iteration": 1,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [
+                            {"title": "Issue proposal", "status": "proposed", "rationale": "Issue reason."}
+                        ],
+                        "reported_issues": [issue],
+                    },
+                },
+                {
+                    "iteration": 1,
+                    "stage": "agent_proposal_assessment",
+                    "response": {
+                        "evaluation": {
+                            "approval": "rejected",
+                            "score": 2,
+                            "summary": "Agent review summary.",
+                        },
+                        "improvements": [
+                            {
+                                "title": "Do not expose this as an Issue",
+                                "status": "proposed",
+                                "rationale": "Agent feedback.",
+                            }
+                        ],
+                        "reported_issues": [],
+                    },
+                },
+            ],
+        )
+    )
+
+    lifecycle = store.proposal_lifecycles()
+
+    assert [item["title"] for item in lifecycle] == ["Issue proposal"]
+    assessed_issue = lifecycle[0]
+    assert assessed_issue["proposal"]["agent_change"]["feedback"] == "Added a policy guardrail."
+    assert assessed_issue["proposal"]["agent_change"]["review"]["summary"] == "Agent review summary."
+    assert lifecycle[0]["decision_rationale"] == "Issue reason."
+    assert all(item["category"] == "other" for item in lifecycle)
+    managed_issue = next(item for item in store.issue_management_items() if item["title"] == "Issue proposal")
+    assert managed_issue["comments"][0]["body"] == "Agent review summary."
+    assert managed_issue["comments"][0]["assigner"] == "AI supervisor"
 
 
 def test_hello_accepts_unsaved_profile_settings():
@@ -1945,13 +2245,18 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
         "manager_prompt_template": expected_prompt,
         "manager_output_locale": "en",
         "chat_model_profile_name": "",
+        "coding_agent_provider": "none",
         "assistant_tools": {
             "workspace_root": str(store_module.ROOT),
             "file_read_enabled": True,
             "file_search_enabled": True,
             "run_process_enabled": True,
+            "coding_agent_enabled": True,
+            "ui_context_enabled": True,
+            "ui_interaction_enabled": True,
             "terminal_enabled": True,
             "terminal_visible": True,
+            "mcp_server_url": "http://127.0.0.1:3000/mcp/",
         },
     }
     store.save_settings(
@@ -1965,6 +2270,9 @@ def test_application_manager_prompt_is_separate_from_model_profiles(tmp_path, mo
         }
     )
     assert store.application_settings()["manager_prompt_template"] == expected_prompt
+    assert (
+        store.save_application_settings({"coding_agent_provider": "kiro"})["coding_agent_provider"] == "kiro"
+    )
     assert (
         store.save_application_settings(
             {
@@ -1991,6 +2299,21 @@ def test_application_manager_prompt_has_a_safe_default(tmp_path, monkeypatch):
         "approval-first operations manager"
         in store_module.ConsoleStore().application_settings()["manager_prompt_template"]
     )
+
+
+def test_assistant_mcp_configuration_uses_a_valid_default_and_persists_json(tmp_path, monkeypatch):
+    mcp_config = tmp_path / "config" / "assistant-mcp.json"
+    monkeypatch.setattr(store_module, "ASSISTANT_MCP_CONFIG", mcp_config)
+    store = store_module.ConsoleStore()
+
+    assert store.assistant_mcp_config()["content"] == (
+        '{\n  "mcpServers": {\n    "openorbit": {\n      "url": "http://127.0.0.1:3000/mcp/"\n    }\n  }\n}\n'
+    )
+    saved = store.save_assistant_mcp_config('{"mcpServers": {"orbit": {"command": "uv"}}}')
+
+    assert saved["content"] == '{\n  "mcpServers": {\n    "orbit": {\n      "command": "uv"\n    }\n  }\n}\n'
+    with pytest.raises(ValueError, match="valid JSON"):
+        store.save_assistant_mcp_config("not json")
 
 
 def test_exact_legacy_manager_prompt_is_migrated_but_custom_prompt_is_preserved(tmp_path, monkeypatch):

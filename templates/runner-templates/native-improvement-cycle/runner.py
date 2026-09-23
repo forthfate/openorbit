@@ -1,9 +1,9 @@
-# Requirements
-# - PROJECT_ROOT is a Git repository.
-# - The build selects fixed target-AI prompts and a configured model
-#   profile, plus a readable managed_prompt_path on its Target Environment.
-# - Only human-accepted feedback is applied to the prompt.
-# This runner never commits target changes; ctx.update_file keeps rollback versions.
+"""Iteratively validate and reversibly improve a managed prompt in a Git repository.
+
+Requires fixed target-AI cases, a model profile, and a readable managed prompt.
+Only accepted feedback is applied, every mutation has a rollback snapshot, and
+the runner never creates a Git commit in the evaluated repository.
+"""
 
 import hashlib
 import json
@@ -13,7 +13,9 @@ from orbit_sdk import graph, runner
 
 REQUIRED_SUFFICIENT_EVALUATIONS = 3
 
-graph.connect("validate-target", "prepare-prompt")
+graph.connect("validate-target", "validate-evaluation-inputs")
+graph.connect("validate-evaluation-inputs", "snapshot-baseline")
+graph.connect("snapshot-baseline", "prepare-prompt")
 graph.connect("prepare-prompt", "exercise-target", label="managed prompt")
 graph.connect("exercise-target", "assess-candidate", kind="data", label="responses")
 graph.connect("assess-candidate", "retain-iteration")
@@ -26,7 +28,14 @@ PROMPT_BLOCK_END = "<!-- OPENORBIT_ACCEPTED_PROPOSALS_END -->"
 
 
 def state_path(ctx):
-    """Return the per-build state file outside the target repository."""
+    """Return the per-build state file outside the target repository.
+
+    Args:
+        ctx: The active Orbit runner context.
+
+    Returns:
+        The persistent state path for this build.
+    """
     build_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(ctx.build.get("id") or "manual"))
     directory = ctx.app_data / "improvement-cycles"
     directory.mkdir(parents=True, exist_ok=True)
@@ -48,7 +57,15 @@ def save_state(ctx, state):
 
 
 def git(ctx, *args):
-    """Run Git in the configured project root without invoking a shell."""
+    """Run Git in the configured project root without invoking a shell.
+
+    Args:
+        ctx: The active Orbit runner context.
+        *args: Git arguments excluding the executable name.
+
+    Returns:
+        Standard output from the Git command.
+    """
     return ctx.exec(["git", *args], cwd=ctx.project_root, timeout=300)
 
 
@@ -105,11 +122,27 @@ def managed_prompt_evidence(ctx):
     }
 
 
-@graph.step("validate-target", title="Validate target", phase="before_all", outputs=["evaluation_contract"])
-@runner.phase("before_all")
+@graph.step(
+    "validate-target", title="Validate target repository", phase="before_all", outputs=["repository_target"]
+)
+@runner.phase("before_all", step_id="validate-target")
 def before_all(ctx):
-    # Process-level validation runs once before the iteration loop begins.
+    """Validate that the configured target is a Git repository."""
+    # Repository validation runs once before the iteration loop begins.
     git(ctx, "rev-parse", "--show-toplevel")
+
+
+@graph.step(
+    "validate-evaluation-inputs",
+    title="Validate evaluation inputs",
+    phase="before_all",
+    inputs=["repository_target"],
+    outputs=["evaluation_contract"],
+)
+@runner.phase("before_all", step_id="validate-evaluation-inputs")
+def validate_evaluation_inputs(ctx):
+    """Validate fixed target-AI cases and the selected model profile."""
+    """Validate the fixed evidence contract independently of the repository."""
     if not ctx.test_cases:
         raise ValueError("Select at least one fixed target-AI prompt for a native improvement cycle")
     if not isinstance(ctx.resource("model_profile", {}), dict) or not ctx.resource("model_profile", {}).get(
@@ -120,17 +153,29 @@ def before_all(ctx):
 
 
 @graph.step(
+    "snapshot-baseline",
+    title="Snapshot iteration baseline",
+    phase="before_each",
+    inputs=["evaluation_contract"],
+    outputs=["baseline_snapshot"],
+)
+@runner.phase("before_each", step_id="snapshot-baseline")
+def snapshot_baseline(ctx):
+    """Save a reversible checkpoint before mutating the target prompt."""
+    """Capture the reversible target state before preparing this iteration."""
+    ctx.save_before_each_snapshot()
+
+
+@graph.step(
     "prepare-prompt",
     title="Prepare prompt candidate",
     phase="before_each",
-    inputs=["evaluation_contract"],
+    inputs=["baseline_snapshot"],
     outputs=["managed_prompt"],
 )
-@runner.phase("before_each")
+@runner.phase("before_each", step_id="prepare-prompt")
 def before_each(ctx):
-    # Keep the target's complete pre-evaluation state outside commit history.
-    # The call is idempotent because before_each runs for every iteration.
-    ctx.save_before_each_snapshot()
+    """Apply eligible prompt feedback and emit the candidate evidence."""
     # Apply only feedback accepted by a human before the next validation.
     feedback = ctx.previous_supervisor_feedback
     accepted = [
@@ -176,8 +221,9 @@ def before_each(ctx):
     inputs=["managed_prompt"],
     outputs=["target_responses"],
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="exercise-target")
 def execute(ctx):
+    """Exercise the managed prompt with every fixed target-AI case."""
     # Exercise the evaluated AI with the current managed prompt. The raw reply
     # is retained as supervisor evidence instead of treating a browser page as
     # proof that a prompt instruction was followed.
@@ -230,8 +276,9 @@ def execute(ctx):
     inputs=["target_responses"],
     outputs=["candidate_verdict"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="assess-candidate")
 def verify(ctx):
+    """Track whether the current candidate is stable enough for approval."""
     # Promote a candidate only after the required number of stable evaluations.
     state = load_state(ctx)
     fingerprint, changed = candidate(ctx)
@@ -275,8 +322,9 @@ def verify(ctx):
     inputs=["candidate_verdict"],
     outputs=["iteration_snapshot"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="retain-iteration")
 def after_each(ctx):
+    """Retain a recovery checkpoint and iteration evidence."""
     # Preserve the first evaluated state as a named recovery checkpoint.
     ctx.save_first_after_each_snapshot()
     # Per-iteration evidence remains available for supervisor review.
@@ -290,8 +338,9 @@ def after_each(ctx):
     inputs=["iteration_snapshot"],
     outputs=["restored_target"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="restore-baseline")
 def after_all(ctx):
+    """Restore the original target after the recurring evaluation completes."""
     # Return the target to its exact baseline without creating a Git commit.
     ctx.restore_before_each_snapshot()
     ctx.log("Restored the native improvement target without committing changes")

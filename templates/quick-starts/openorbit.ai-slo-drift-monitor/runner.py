@@ -1,146 +1,121 @@
-"""Run a portable evidence-gated probe matrix through an external tool.
+"""Run the configured AI SLO evaluator through explicit runner phases.
 
-Set ORBIT_PROBE_COMMAND to a JSON argument array or a shell-like command
-prefix. The tool must support ``preflight``, ``prepare``, ``run-probes``, and
-``collect-evidence`` actions. Every action receives ORBIT_CYCLE_INPUT and
-returns one JSON object. The tool may create disposable workspaces, but it
-must not schedule itself or commit changes to the target repository.
+The external evaluator owns probe execution. This runner passes the fixed probe
+matrix, validates its JSON action responses, and retains evidence for Orbit's
+supervisor to assess quality, safety, latency, or cost drift.
 """
-
-import json
-import os
-import shlex
 
 from orbit_sdk import graph, runner
 
-graph.connect("preflight-probes", "prepare-probes")
-graph.connect("prepare-probes", "run-probe-matrix", label="prepared inputs")
-graph.connect("run-probe-matrix", "collect-probe-evidence", kind="data", label="probe report")
-graph.connect("collect-probe-evidence", "close-probe-cycle")
-graph.connect("close-probe-cycle", "prepare-probes", kind="loop", label="next cycle")
-graph.connect("close-probe-cycle", "finalize-probe-monitor", kind="condition", label="completed")
-
-
-def probe_command():
-    """Read the explicit probe command prefix configured by the operator."""
-    configured = os.environ.get("ORBIT_PROBE_COMMAND", "").strip()
-    if not configured:
-        raise ValueError("Set ORBIT_PROBE_COMMAND to the evidence-gate command")
-    if configured.startswith("["):
-        value = json.loads(configured)
-        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-            raise ValueError("ORBIT_PROBE_COMMAND JSON must be an array of strings")
-        return value
-    return shlex.split(configured)
-
-
-def cycle_input(ctx, action):
-    """Pass selected probes and non-secret evaluation context to the tool."""
-    return json.dumps(
-        {
-            "action": action,
-            "iteration": ctx.loop_index,
-            "build": ctx.build,
-            "probes": ctx.test_cases,
-        },
-        ensure_ascii=False,
-    )
+COMMAND_ENV = "ORBIT_PROBE_COMMAND"
+NAMESPACE = "probe_gate"
 
 
 def invoke(ctx, action):
-    """Run one gate action and reject unstructured evidence early."""
-    output = ctx.exec(
-        [*probe_command(), action],
-        cwd=ctx.project_root,
+    """Run one evaluator action through the SDK command contract."""
+    return ctx.run_json_action(
+        command_env=COMMAND_ENV,
+        action=action,
+        input_env="ORBIT_CYCLE_INPUT",
+        input_data={"iteration": ctx.loop_index, "build": ctx.build, "probes": ctx.test_cases},
         timeout=3600,
-        env={"ORBIT_CYCLE_INPUT": cycle_input(ctx, action)},
-        target_log_source="evidence-probe",
+        log_source="probe-gate",
     )
-    try:
-        result = json.loads(output)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(f"Probe action {action!r} did not return JSON") from error
-    if not isinstance(result, dict):
-        raise RuntimeError(f"Probe action {action!r} must return a JSON object")
-    return result
+
+
+graph.connect("validate-probe-gate-contract", "preflight-probe-gate")
+graph.connect("preflight-probe-gate", "prepare-probe-gate", label="prepared inputs")
+graph.connect("prepare-probe-gate", "run-probe-gate", kind="data", label="action result")
+graph.connect("run-probe-gate", "collect-probe-gate")
+graph.connect("collect-probe-gate", "close-probe-gate")
+graph.connect("close-probe-gate", "prepare-probe-gate", kind="loop", label="next cycle")
+graph.connect("close-probe-gate", "finalize-probe-gate", kind="condition", label="completed")
 
 
 @graph.step(
-    "preflight-probes", title="Preflight probe matrix", phase="before_all", outputs=["probe_contract"]
+    "validate-probe-gate-contract",
+    title="Validate probe matrix contract",
+    phase="before_all",
+    outputs=["contract"],
 )
-@runner.phase("before_all")
-def before_all(ctx):
-    # A fixed probe set keeps the gate repeatable and its evidence comparable.
-    if not ctx.test_cases:
-        raise ValueError("Select a fixed test case set before running an evidence gate")
-    preflight = invoke(ctx, "preflight")
-    ctx.emit_result({"probe_gate": {"preflight": preflight}})
+@runner.phase("before_all", step_id="validate-probe-gate-contract")
+def validate_contract(ctx):
+    """Require at least one fixed SLO probe."""
+    ctx.require_test_cases(label="fixed probe case")
 
 
 @graph.step(
-    "prepare-probes",
-    title="Prepare probes",
+    "preflight-probe-gate",
+    title="Check probe matrix readiness",
+    phase="before_all",
+    inputs=["contract"],
+    outputs=["preflight"],
+)
+@runner.phase("before_all", step_id="preflight-probe-gate")
+def preflight(ctx):
+    """Capture evaluator readiness before iterative probes begin."""
+    ctx.emit_result({NAMESPACE: {"preflight": invoke(ctx, "preflight")}})
+
+
+@graph.step(
+    "prepare-probe-gate",
+    title="Prepare probe matrix",
     phase="before_each",
-    inputs=["probe_contract"],
-    outputs=["prepared_probes"],
+    inputs=["preflight"],
+    outputs=["prepared"],
 )
-@runner.phase("before_each")
-def before_each(ctx):
-    # Prepare disposable inputs without mutating the target repository.
-    prepared = invoke(ctx, "prepare")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "prepared": prepared}})
+@runner.phase("before_each", step_id="prepare-probe-gate")
+def prepare(ctx):
+    """Prepare the evaluator for this SLO iteration."""
+    ctx.emit_result({NAMESPACE: {"iteration": ctx.loop_index, "prepared": invoke(ctx, "prepare")}})
 
 
 @graph.step(
-    "run-probe-matrix",
-    title="Run probe matrix",
-    phase="execute",
-    inputs=["prepared_probes"],
-    outputs=["probe_report"],
+    "run-probe-gate", title="Run probe matrix", phase="execute", inputs=["prepared"], outputs=["result"]
 )
-@runner.phase("execute")
+@runner.phase("execute", step_id="run-probe-gate")
 def execute(ctx):
-    # Run the complete fixed matrix once and retain the tool's structured report.
-    report = invoke(ctx, "run-probes")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "report": report}})
+    """Run the fixed SLO probe matrix."""
+    ctx.emit_result({NAMESPACE: {"iteration": ctx.loop_index, "result": invoke(ctx, "run-probes")}})
 
 
 @graph.step(
-    "collect-probe-evidence",
-    title="Collect probe evidence",
+    "collect-probe-gate",
+    title="Collect probe matrix evidence",
     phase="verify",
-    inputs=["probe_report"],
-    outputs=["evidence_gate"],
+    inputs=["result"],
+    outputs=["evidence"],
 )
-@runner.phase("verify")
+@runner.phase("verify", step_id="collect-probe-gate")
 def verify(ctx):
-    # Collect final evidence separately so a supervisor can make an independent decision.
-    evidence = invoke(ctx, "collect-evidence")
-    ctx.emit_result({"probe_gate": {"iteration": ctx.loop_index, "evidence": evidence}})
+    """Collect evidence for supervisor assessment."""
+    ctx.emit_result({NAMESPACE: {"iteration": ctx.loop_index, "evidence": invoke(ctx, "collect-evidence")}})
 
 
 @graph.step(
-    "close-probe-cycle",
-    title="Close probe cycle",
+    "close-probe-gate",
+    title="Close probe matrix cycle",
     phase="after_each",
-    inputs=["evidence_gate"],
-    outputs=["cycle_complete"],
+    inputs=["evidence"],
+    outputs=["complete"],
 )
-@runner.phase("after_each")
+@runner.phase("after_each", step_id="close-probe-gate")
 def after_each(ctx):
-    ctx.log("Completed one evidence-gated probe matrix")
+    """Close one bounded SLO monitoring iteration."""
+    ctx.log("Completed one bounded probe matrix cycle")
 
 
 @graph.step(
-    "finalize-probe-monitor",
-    title="Finalize drift monitor",
+    "finalize-probe-gate",
+    title="Finalize probe matrix",
     phase="after_all",
-    inputs=["cycle_complete"],
-    outputs=["final_status"],
+    inputs=["complete"],
+    outputs=["final"],
 )
-@runner.phase("after_all")
+@runner.phase("after_all", step_id="finalize-probe-gate")
 def after_all(ctx):
-    ctx.log("Finalized the evidence-gated probe evaluation")
+    """Finalize the SLO monitoring run."""
+    ctx.log("Finalized the probe matrix")
 
 
 if __name__ == "__main__":

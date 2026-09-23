@@ -14,14 +14,16 @@ export function OrbitLogs({ logs, locale }: { logs: OrbitLog[]; locale: Locale }
           <p className="hint section-description">{t.description}</p>
         </div>
       </div>
-      <div className="orbit-log-output">
-        {logs.length ? logs.map((log, index) => (
-          <div key={`${log.time}-${index}`} className={log.status === "ERROR" ? "error-log" : ""}>
-            <time>{log.time ? new Date(log.time).toLocaleTimeString(intlLocales[locale]) : "—"}</time>
-            <strong>{log.name}</strong>
-            <span>{log.message || log.status}</span>
-          </div>
-        )) : <p className="hint">{t.empty}</p>}
+      <div className="settings-section-content">
+        <div className="orbit-log-output">
+          {logs.length ? logs.map((log, index) => (
+            <div key={`${log.time}-${index}`} className={log.status === "ERROR" ? "error-log" : ""}>
+              <time>{log.time ? new Date(log.time).toLocaleTimeString(intlLocales[locale]) : "—"}</time>
+              <strong>{log.name}</strong>
+              <span>{log.message || log.status}</span>
+            </div>
+          )) : <p className="hint">{t.empty}</p>}
+        </div>
       </div>
     </section>
   );

@@ -1,21 +1,21 @@
 {
   "schema_version": 1,
   "id": "openorbit.agent-self-improvement",
-  "version": "1.1.2",
+  "version": "1.3.0",
   "name": "Agent self-improvement",
-  "description": "Improve a managed prompt from retained responses of the real target AI. Requires a Git repository, prompt file, and configured model profile.",
+  "description": "Evaluate a managed AI prompt and let an agent create one reviewable self-improvement in an isolated worktree. The source repository is never changed automatically.",
   "publisher": {
     "name": "OpenOrbit"
   },
   "parameters": [
     {
       "key": "build_name",
-      "label": "Evaluation name",
+      "label": "Improvement name",
       "type": "string",
       "required": true,
       "default": "Agent self-improvement",
       "placeholder": "e.g. Support agent prompt improvement",
-      "tooltip": "Name the build that OpenOrbit creates for this recurring evaluation."
+      "tooltip": "Name the build that OpenOrbit creates for this recurring self-improvement workflow."
     },
     {
       "key": "repository",
@@ -27,12 +27,12 @@
     },
     {
       "key": "managed_prompt_path",
-      "label": "Agent prompt file path",
+      "label": "Managed prompt path",
       "type": "string",
       "required": true,
       "default": "examples/agent-improvement-sample-prompt.md",
       "placeholder": "e.g. prompts/system.md",
-      "tooltip": "Path relative to the repository for the prompt file managed by the improvement cycle."
+      "tooltip": "Path relative to the repository for the prompt evaluated before the coding agent creates its isolated proposal."
     },
     {
       "key": "journey_name",
@@ -65,23 +65,44 @@
       "type": "model_profile",
       "required": true,
       "tooltip": "Select an existing AI model profile, or create one for this build."
+    },
+    {
+      "key": "agent_provider",
+      "label": "AI coding agent",
+      "type": "select",
+      "required": true,
+      "default": "codex",
+      "options": [
+        {"value": "codex", "label": "Codex"},
+        {"value": "claude-code", "label": "Claude Code"},
+        {"value": "kiro", "label": "Kiro"}
+      ],
+      "tooltip": "Select the locally installed coding agent that will inspect, modify, and validate a change in an isolated proposal worktree."
+    },
+    {
+      "key": "agent_options",
+      "label": "Agent CLI options",
+      "type": "string",
+      "default": "",
+      "placeholder": "e.g. --model ...",
+      "tooltip": "Optional command-line arguments passed to the selected agent."
     }
   ],
   "assets": {
     "runner": {
       "name": "${build_name} runner",
-      "description": "Agent self-improvement runner created by Quick Start.",
+      "description": "Isolated agent self-improvement runner created by Quick Start.",
       "template_id": "native-improvement-cycle",
       "source_file": "runner.py"
     },
     "prompt_template": {
       "name": "${build_name} policy",
       "version": 1,
-      "content": "Evaluate the managed agent prompt strictly against retained responses from the real target AI. Compare each response with its fixed user request and acceptance criterion. Check scope and task clarity; grounding in observable product evidence; uncertainty and missing-context handling; safety and refusal boundaries; and an actionable next step. For every unmet criterion observed in an actual response, return one concrete, non-duplicative prompt improvement with validation and rollback evidence. Never repeat an instruction already present in the managed prompt or its accepted-proposals block. Mark a low-risk, additive, reversible prompt-only improvement acceptable only when it is directly supported by the observed response and has measurable response-level acceptance evidence. Keep code, infrastructure, policy, or insufficiently evidenced changes proposed. Return empty arrays only when every criterion is demonstrably met."
+      "content": "Evaluate the managed AI prompt strictly against retained responses from the real target AI. Compare every response with its fixed user request and acceptance criterion. Check task clarity, grounding in observable evidence, uncertainty and missing-context handling, safety boundaries, and actionable next steps. For each unmet criterion observed in an actual response, report one concrete, non-duplicative issue with the evidence needed to validate a change. Do not claim that a source change has been applied. Keep the recommendation specific enough for a coding agent to create one small, reviewable diff in an isolated worktree. Return empty arrays only when every criterion is demonstrably met."
     },
     "test_case_set": {
       "name": "${build_name} validation",
-      "description": "A fixed agent validation journey created by Quick Start.",
+      "description": "A fixed managed-AI validation case created by Quick Start.",
       "cases": [
         {
           "id": "agent-journey",
@@ -103,11 +124,11 @@
   },
   "build": {
     "name": "${build_name}",
-    "purpose": "Validate and improve a managed prompt with retained responses from the real target AI.",
+    "purpose": "Evaluate a managed AI prompt and create one reviewable isolated-worktree self-improvement from evidence retained from the real target AI.",
     "model_profile_name": "${model_profile_name}",
     "timezone": "Asia/Tokyo",
     "repeat_interval_minutes": 30,
-    "run_limit": 3,
+    "run_limit": 1,
     "approval_score": 8,
     "enabled": true
   }
