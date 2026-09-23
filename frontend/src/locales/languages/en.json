@@ -745,6 +745,8 @@
       "customScript": "Custom Script",
       "visualConnectHint": "Connect nodes for execution order. Select an edge to make it a typed data connection.",
       "nodeTitle": "Title",
+      "nodeType": "Type",
+      "starterWorkflow": "Starter workflow",
       "phase": "Phase",
       "inputs": "Inputs",
       "outputs": "Outputs",

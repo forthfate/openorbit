@@ -744,6 +744,8 @@
       "customScript": "커스텀 스크립트",
       "visualConnectHint": "실행 순서를 정하려면 노드를 연결하세요. 데이터 연결로 바꾸려면 엣지를 선택하세요.",
       "nodeTitle": "제목",
+      "nodeType": "유형",
+      "starterWorkflow": "시작 워크플로우",
       "phase": "단계",
       "inputs": "입력",
       "outputs": "출력",

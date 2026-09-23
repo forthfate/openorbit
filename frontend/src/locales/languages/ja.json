@@ -739,6 +739,8 @@
       "customScript": "カスタムスクリプト",
       "visualConnectHint": "実行順序を定義するにはノードを接続します。データ接続にするにはエッジを選択します。",
       "nodeTitle": "タイトル",
+      "nodeType": "種類",
+      "starterWorkflow": "スターターワークフロー",
       "phase": "フェーズ",
       "inputs": "入力",
       "outputs": "出力",
