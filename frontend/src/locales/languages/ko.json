@@ -734,6 +734,8 @@
       "loadingGraph": "워크플로우 그래프를 생성하는 중...",
       "noWorkflowGraph": "이 러너에는 표시할 선언된 워크플로우가 없습니다.",
       "visualMode": "비주얼 모드",
+      "editInVisualMode": "비주얼 모드로 편집",
+      "visualModeCodeWarning": "이 러너는 비주얼 모드로 생성되었습니다. 코드를 직접 수정하면 이후 비주얼 모드에서 수정하지 못할 수 있습니다.",
       "visualModeDetached": "이 코드는 직접 수정되어 더 이상 비주얼 모드에서 열 수 없습니다. 생성된 버전을 복원하거나 코드 러너로 저장하세요.",
       "visualEditorTitle": "비주얼 러너 편집기",
       "visualNodes": "노드",

@@ -417,7 +417,7 @@ function RunnerModal({
     [graphError, setGraphError] = useState(""),
     [visualEditorOpen, setVisualEditorOpen] = useState(false),
     [visualBlueprint, setVisualBlueprint] = useState<VisualRunnerBlueprint | undefined>(editing?.visual_blueprint),
-    [visualDetached, setVisualDetached] = useState(false);
+    [visualDetached, setVisualDetached] = useState(Boolean(editing && !editing.visual_blueprint));
   const importInput = useRef<HTMLInputElement>(null);
   const draftSource = useRef(draft?.source ?? ""), graphInFlight = useRef<string | null>(null);
   const emptyTemplate: RunnerTemplate = {
@@ -677,9 +677,12 @@ function RunnerModal({
         <div className="runner-editor-tabs" role="tablist" aria-label={copy.source}>
           <button className={editorTab === "code" ? "selected" : ""} role="tab" aria-selected={editorTab === "code"} type="button" onClick={() => setEditorTab("code")}><SectionInfo title={copy.source} description={fieldHelp[locale].source} /></button>
           <button className={editorTab === "graph" ? "selected" : ""} role="tab" aria-selected={editorTab === "graph"} type="button" onClick={() => { setEditorTab("graph"); refreshWorkflowGraph(); }}>{copy.workflowGraph}</button>
-          <button type="button" disabled={visualDetached} title={visualDetached ? copy.visualModeDetached : undefined} onClick={() => setVisualEditorOpen(true)}>{copy.visualMode}</button>
         </div>
         {editorTab === "code" ? <div className="runner-source">
+          <div className="runner-source__toolbar">
+            {visualBlueprint && <p className="runner-visual-warning">{copy.visualModeCodeWarning}</p>}
+            <button className="ghost" type="button" disabled={visualDetached} title={visualDetached ? copy.visualModeDetached : undefined} onClick={() => setVisualEditorOpen(true)}>{copy.editInVisualMode}</button>
+          </div>
           <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => { setDraft({ ...draft, source }); if (visualBlueprint) { setVisualBlueprint(undefined); setVisualDetached(true); } }} onBlur={() => refreshWorkflowGraph()} />
           {visualDetached && <p className="runner-visual-detached">{copy.visualModeDetached}</p>}
         </div> : <section className="runner-workflow-graph">
