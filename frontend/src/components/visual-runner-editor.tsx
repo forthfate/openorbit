@@ -6,11 +6,12 @@ import type { VisualRunnerBlueprint, VisualRunnerEdge, VisualRunnerNode, VisualR
 import { localeMessageMap, locales, type Locale } from "../locales";
 import { api } from "../services/api";
 import { Modal } from "./ui/modal";
+import { WorkflowNodeCard } from "./workflow-node-card";
 
 export type { VisualRunnerBlueprint } from "../domain/models";
 
 const phases = ["before_all", "before_each", "execute", "verify", "after_supervision", "after_each", "after_all"];
-const visualNodeWidth = 230;
+const visualNodeWidth = 250;
 const visualNodeHeight = 140;
 const phaseGroupPadding = 26;
 const phaseGroupTitleHeight = 38;
@@ -32,7 +33,7 @@ const catalogGroups = (locale: Locale, items: VisualNodeCatalog[], starters: Vis
 };
 
 function VisualNode({ data }: NodeProps<Node<VisualRunnerNode>>) {
-  return <div className="visual-runner-node"><Handle type="target" position={Position.Left} /><header><small>{data.kind.replaceAll("_", " ")}</small><strong>{data.title}</strong></header><footer><span>{data.inputs.map((port) => `← ${port}`).join(", ") || "—"}</span><span>{data.outputs.map((port) => `${port} →`).join(", ") || "—"}</span></footer><Handle type="source" position={Position.Right} /></div>;
+  return <WorkflowNodeCard className="workflow-graph-node" title={data.title} inputs={data.inputs} outputs={data.outputs} leading={<Handle type="target" position={Position.Left} />} trailing={<Handle type="source" position={Position.Right} />} />;
 }
 type PhaseGroupData = { title: string; phase: string; count: number };
 function VisualPhaseGroup({ data }: NodeProps<Node<PhaseGroupData>>) {
