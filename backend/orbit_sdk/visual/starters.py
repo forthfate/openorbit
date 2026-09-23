@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from .layout import initial_positions
+
 
 def _node(
     suffix: str,
@@ -86,8 +88,6 @@ def _cycle_starter(
                 inputs=[outputs[index - 1]],
                 outputs=[outputs[index]],
                 config=config,
-                x=100 + index * 250,
-                y=120 + (index % 2) * 170,
             )
         )
     nodes.extend(
@@ -100,8 +100,6 @@ def _cycle_starter(
                 inputs=[outputs[4]],
                 outputs=[outputs[5]],
                 config={"message": close_message},
-                x=1350,
-                y=290,
             ),
             _node(
                 names[6],
@@ -111,10 +109,11 @@ def _cycle_starter(
                 inputs=[outputs[5]],
                 outputs=[outputs[6]],
                 config={"message": final_message},
-                x=1600,
             ),
         ]
     )
+    for node, position in zip(nodes, initial_positions(node["phase"] for node in nodes)):
+        node["position"] = position
     edges = [{"source": names[index], "target": names[index + 1], "kind": "execution"} for index in range(6)]
     edges.extend(
         [

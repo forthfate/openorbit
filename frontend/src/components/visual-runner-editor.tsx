@@ -9,7 +9,7 @@ import { Modal } from "./ui/modal";
 
 export type { VisualRunnerBlueprint } from "../domain/models";
 
-const phases = ["before_all", "before_each", "execute", "verify", "after_each", "after_all"];
+const phases = ["before_all", "before_each", "execute", "verify", "after_supervision", "after_each", "after_all"];
 const visualNodeWidth = 230;
 const visualNodeHeight = 140;
 const phaseGroupPadding = 26;

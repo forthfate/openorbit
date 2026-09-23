@@ -18,6 +18,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Mapping
 
+from .layout import initial_positions
+
 _ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATE_ROOT = _ROOT / "templates"
 _CANONICAL_ROOT = Path(__file__).resolve().parent / "canonical"
@@ -198,7 +200,7 @@ _PROBE_PAYLOAD = {
 }
 
 
-def _node(step: TemplateStep, kind: str, config: Mapping[str, object], index: int) -> dict[str, object]:
+def _node(step: TemplateStep, kind: str, config: Mapping[str, object]) -> dict[str, object]:
     """Create a persisted node while retaining the template's public graph ID."""
     return {
         "id": step.id,
@@ -210,7 +212,6 @@ def _node(step: TemplateStep, kind: str, config: Mapping[str, object], index: in
         "description": step.description,
         "config": dict(config),
         "script": "",
-        "position": {"x": 100 + index * 280, "y": 130 + (index % 2) * 180},
     }
 
 
@@ -533,11 +534,13 @@ def definitions() -> dict[str, TemplateDefinition]:
         # same step evidence as the canonical source.
         ids = {step.id: step.id for step in template.steps}
         nodes = []
-        for index, step in enumerate(template.steps):
+        for step in template.steps:
             material = _material_for_step(template, step)
             if material is None:
                 raise RuntimeError(f"no reusable visual material is defined for {template.id}/{step.id}")
-            nodes.append(_node(step, material[0], material[1], index))
+            nodes.append(_node(step, material[0], material[1]))
+        for node, position in zip(nodes, initial_positions(step.phase for step in template.steps)):
+            node["position"] = position
         edges = [
             {**edge, "source": ids[edge["source"]], "target": ids[edge["target"]]}
             for edge in template.edges

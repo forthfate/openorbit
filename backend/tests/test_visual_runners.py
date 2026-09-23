@@ -7,6 +7,16 @@ from app.visual_runners import generate_source, validate_blueprint
 from orbit_sdk.visual import builtin_template_catalog, starter_catalog, visual_nodes
 from orbit_sdk.visual.bindings import evaluate, resolve
 from orbit_sdk.visual.builtin_templates import definitions, instantiate_definition, templates
+from orbit_sdk.visual.layout import initial_positions
+
+
+def test_initial_visual_layout_matches_the_phase_columns_in_workflow_preview():
+    assert initial_positions(["before_all", "execute", "execute", "after_all"]) == [
+        {"x": 30, "y": 72},
+        {"x": 370, "y": 72},
+        {"x": 370, "y": 260},
+        {"x": 710, "y": 72},
+    ]
 
 
 def blueprint() -> dict:
