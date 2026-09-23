@@ -182,6 +182,18 @@ def test_template_definitions_preserve_canonical_lifecycle_step_ids_and_edges():
             assert f"step_id={step.id!r}" in source
 
 
+def test_shipped_template_graphs_connect_each_lifecycle_step():
+    for template in templates().values():
+        incoming = {step.id: 0 for step in template.steps}
+        for edge in template.edges:
+            if edge["target"] in incoming:
+                incoming[edge["target"]] += 1
+        disconnected = [
+            step.id for step in template.steps if step.phase != "before_all" and incoming[step.id] == 0
+        ]
+        assert not disconnected, f"{template.id} has disconnected steps: {disconnected}"
+
+
 def test_template_definitions_use_only_reusable_material_nodes():
     for definition in definitions().values():
         kinds = {node["kind"] for node in definition.blueprint["nodes"]}

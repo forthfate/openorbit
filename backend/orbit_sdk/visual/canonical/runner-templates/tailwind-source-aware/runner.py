@@ -4,6 +4,9 @@ from orbit_sdk import graph, runner
 
 graph.connect("inspect-source", "run-browser")
 graph.connect("run-browser", "publish-evidence")
+graph.connect("publish-evidence", "close-tailwind-cycle")
+graph.connect("close-tailwind-cycle", "run-browser", kind="loop", label="next iteration")
+graph.connect("close-tailwind-cycle", "finalize-tailwind-journey", kind="condition", label="completed")
 
 
 @graph.step(

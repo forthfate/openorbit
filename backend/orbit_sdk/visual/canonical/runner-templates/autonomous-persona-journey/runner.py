@@ -18,6 +18,7 @@ graph.connect("observe", "decide", kind="data", label="rendered choices")
 graph.connect("decide", "act", kind="data", label="one safe action")
 graph.connect("act", "reflect", kind="data", label="action evidence")
 graph.connect("reflect", "observe", kind="loop", label="next visit")
+graph.connect("reflect", "finalize-persona-journey", kind="condition", label="completed")
 
 
 def state_path(ctx):

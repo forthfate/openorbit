@@ -9,6 +9,9 @@ from orbit_sdk import graph, runner
 graph.connect("ready", "prepare")
 graph.connect("prepare", "run", kind="data", label="one Selenium cycle")
 graph.connect("run", "collect")
+graph.connect("collect", "close-selenium-cycle")
+graph.connect("close-selenium-cycle", "prepare", kind="loop", label="next cycle")
+graph.connect("close-selenium-cycle", "finalize-selenium-journey", kind="condition", label="completed")
 
 
 def command():
