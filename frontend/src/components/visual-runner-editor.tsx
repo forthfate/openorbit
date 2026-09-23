@@ -29,7 +29,7 @@ const textFor = (locale: Locale, key: string, fallback: string) => key.split("."
 const catalogGroups = (locale: Locale, items: VisualNodeCatalog[], starters: VisualStarter[]): { id: string; label: string; items: PaletteItem[] }[] => {
   const groups = new Map<string, VisualNodeCatalog[]>();
   for (const item of items) groups.set(item.group_key, [...(groups.get(item.group_key) ?? []), item]);
-  const nodeGroups = [...groups].map(([id, members]) => ({ id, label: textFor(locale, `visual.groups.${id}`, id), items: members.map((item) => ({ kind: item.kind, label: textFor(locale, item.title_key, item.display_name), description: textFor(locale, item.description_key, ""), inputs: item.default_inputs, outputs: item.default_outputs, config: item.default_config })) }));
+  const nodeGroups = [...groups].map(([id, members]) => ({ id, label: textFor(locale, `visual.groups.${id}`, id), items: members.map((item) => ({ kind: item.kind, label: textFor(locale, item.title_key, item.display_name), description: textFor(locale, `visual.nodeGuidance.${item.kind}`, textFor(locale, item.description_key, "")), inputs: item.default_inputs, outputs: item.default_outputs, config: item.default_config })) }));
   return starters.length ? [{ id: "starters", label: textFor(locale, "visual.groups.starters", "Starter workflows"), items: starters.map((starter) => ({ kind: "custom_script", label: textFor(locale, starter.title_key, starter.display_name ?? starter.id), description: textFor(locale, starter.description_key, ""), starter })) }, ...nodeGroups] : nodeGroups;
 };
 
