@@ -5,6 +5,26 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-09-23
+
+### Added
+
+- Added a Visual Runner editor that lets authors compose Runner workflows visually from the Runner Code screen.
+- Added localized palette tooltips that explain each Visual Runner node's purpose, type, inputs, and outputs.
+- Added reusable visual workflow definitions for bundled Quick Starts and Runner templates.
+
+### Changed
+
+- Unified Visual Runner and Workflow Graph node presentation around the same component and layout behavior.
+- Aligned initial Visual Runner node placement with Workflow Graph layout, and improved loop, reverse-link, and edge-label rendering.
+- Expanded English, Korean, and Japanese Visual Runner node guidance with practical template-oriented descriptions.
+
+### Fixed
+
+- Fixed Visual Runner Python generation for boolean and null configuration values, browser runtime Playwright resolution, and duplicate site-exploration visits.
+- Fixed runner-template execution environment support for source-contract and Selenium command settings.
+- Improved SupportOps example adapter compatibility with external AI-experience Runner actions.
+
 ## [0.11.0] - 2026-09-15
 
 ### Added
@@ -263,3 +283,4 @@ and this project uses [Semantic Versioning](https://semver.org/).
 [0.9.0]: https://github.com/forthfate/openorbit/releases/tag/v0.9.0
 [0.10.0]: https://github.com/forthfate/openorbit/releases/tag/v0.10.0
 [0.11.0]: https://github.com/forthfate/openorbit/releases/tag/v0.11.0
+[0.12.0]: https://github.com/forthfate/openorbit/releases/tag/v0.12.0
