@@ -8,17 +8,13 @@
 
 # OpenOrbit
 
-> **AI 시스템을 지속적으로 평가하고, 감독하고, 개선하기 위한 로컬 컨트롤 플레인.**
+> **AI 에이전트를 자율적으로 개선하고, AI 페르소나로 사용자 여정을 시뮬레이션하는 로컬 워크스페이스.**
 
-OpenOrbit는 단순히 작업을 자동화하기 위해 AI를 사용하지 않습니다. AI 시스템 자체를 둘러싼 운영 사이클을 자동화합니다. 즉, 정해진 주기로 평가하고, 증거를 보존하고, 감독자(supervisor) 피드백을 검토하며, 개선 이력을 관찰 가능하게 만듭니다.
+프롬프트, 모델, 도구, 제품 동작이 바뀌어도 AI 에이전트가 실제 사용자에게 어떤 경험을 주는지 계속 확인해야 하는 팀을 위한 도구입니다.
 
-컨트롤룸을 로컬에서 실행하고, 운영 기록을 여러분 자신의 AppData에 보관하며, 어떤 변경을 승인할지 여러분이 직접 결정하세요.
+OpenOrbit은 AI 페르소나로 사용자 여정을 반복 시뮬레이션하고, 그 과정에서 수집한 AI 응답, 로그, 브라우저 증거를 바탕으로 개선안을 만듭니다. 매 실행의 평가 결과, 감독자 피드백, 개선 제안과 결정은 하나의 이력으로 남아, AI 시스템이 실제로 나아지고 있는지 추적할 수 있습니다.
 
-## OpenOrbit 실제 동작 살펴보기
-
-Quick Start로 시작해 평가 루프가 만들어지는 과정을 지켜보고, 증거에 기반한 개선 결과를 한곳에서 검토하세요.
-
-![OpenOrbit dashboard opening the Agent self-improvement Quick Start](../../docs/images/openorbit-quick-start.gif)
+모든 과정은 로컬에서 실행되며, 운영 기록은 여러분의 AppData에 보관됩니다. AI 에이전트는 증거에 기반한 개선안을 제시하지만, 어떤 변경을 적용할지는 여러분이 결정합니다.
 
 ## 왜 OpenOrbit인가?
 
@@ -26,77 +22,34 @@ AI 기능은 데모에서는 정상으로 보이더라도 프롬프트, 모델, 
 
 ```mermaid
 flowchart LR
-  A[AI system] --> B[Recurring evaluation]
-  B --> C[Logs, browser evidence, and traces]
-  C --> D[Supervisor review]
-  D --> E[Issues and improvement proposals]
-  E --> F[Human-approved changes]
-  F --> A
+  A[AI persona<br/>simulates a user journey]
+  B[Recurring evaluation]
+  C[Responses, logs,<br/>and browser evidence]
+  D[Supervisor review]
+  E[AI-created issues<br/>and change proposals]
+  F[Human review<br/>and approval]
+  G[Updated AI system]
+
+  A --> B --> C --> D --> E --> F --> G --> A
 ```
+
+OpenOrbit은 매번의 평가를 보존된 운영 기록으로 남깁니다. 그래서 팀은 무엇이 바뀌었는지 확인하고, 증거를 검토하며, 개선안을 안전하게 적용할 수 있는지 결정할 수 있습니다.
 
 ## 할 수 있는 일
 
 - 타깃, 워크플로, 러너, 고정 테스트 케이스, 매니저 프롬프트, AI 모델 프로필로부터 재사용 가능한 **빌드(build)** 를 정의합니다.
+- 가이드형 Quick Start로 시작하고, 평가 워크플로를 시각적으로 구성하거나, 고유한 자동화가 필요할 때 Python으로 확장합니다.
 - 빌드를 저장하기 전에 일회성 **테스트(test)** 를 실행하거나, 명확한 승인 경계 아래에서 구성된 라이프사이클을 반복 실행합니다.
 - 프로세스 로그, 구조화된 증거, 브라우저 스크린샷, 감독자 응답, OpenTelemetry 트레이스를 통해 모든 단계를 점검합니다.
 - 보고된 이슈와 제안된 개선안을 지속적인 의사결정 이력 안에서 검토합니다.
 - 단일 모델 응답을 전부로 취급하는 대신, 반복(iteration) 전반에 걸친 PDCA 사이클을 관찰합니다.
 - 하나의 로컬 컨트롤룸에서 진행 중인 작업을 중지합니다.
 
-## 제품 둘러보기
-
-OpenOrbit는 각 단계에서 운영자가 필요로 하는 정보를 중심으로 설계되었습니다.
-
-| 영역 | 답해 주는 질문 |
-| --- | --- |
-| **Dashboard** | 지금 AI 시스템은 건강한가? 최근에 무엇이 바뀌었는가? |
-| **Builds** | 정확히 무엇이, 어떤 자산과 정책으로 평가되고 있는가? |
-| **Run detail** | 각 단계에서 무슨 일이 있었고, 어떤 증거가 그 결과를 뒷받침하는가? |
-| **Improvements** | 피드백, 의사결정, 점수가 시간이 지나며 실제로 개선되고 있는가? |
-
-아래 스크린샷은 고객 지원 AI가 보존된 평가 증거와 개선 사이클을 거치는 과정을 따라갑니다.
-
-### 평가된 AI가 실제로 무엇을 했는지 확인하기
-
-보존된 실행(run)을 열어 각 반복에서 평가된 AI로부터 관찰된 동작을 검토하세요. 그런 다음 그 동작을 제안된 개선안 및 이를 뒷받침하는 증거와 비교하세요.
-
-![OpenOrbit Evaluation result showing observed target-AI behavior across two iterations and an adopted prompt improvement](../../docs/images/evaluation-result-approved.png)
-
-### 개선 사이클 전반의 증거 검토하기
-
-여러 빌드에 걸쳐 피드백 양, 채택된 변경, 점수, 실행 건강도를 비교하세요. 이 이력은 운영 사이클이 시간이 지나며 AI 시스템을 개선하고 있는지 분명하게 보여줍니다.
-
-![OpenOrbit improvements with feedback trends and proposal-decision history](../../docs/images/improvement-cycle-healthy.png)
-
-### 다음에 무엇을 할지 AI 어시스턴트에게 묻기
-
-System AI 모델을 구성하면 내장 Chat Assistant를 사용해 평가 작업, 러너, 컨트롤룸에 관해 질문할 수 있습니다. 여러분 자신의 AI 에이전트도 OpenOrbit의 버전 관리 API를 통해 동일한 로컬 운영 데이터와 함께 작업할 수 있습니다.
-
-![OpenOrbit Chat Assistant asking what to improve next for a build](../../docs/images/chat-assistant-question.png)
-
-## 개발 파트너
-
-<table>
-  <tr>
-    <td align="center" width="240">
-      <a href="https://insighta.cloud">
-        <img src="../../docs/images/insighta-cloud-icon.png" width="72" alt="insighta cloud Inc. logo" />
-        <br /><br />
-        <strong>insighta cloud Inc.</strong>
-        <br />
-        <sub>Development partner</sub>
-      </a>
-    </td>
-  </tr>
-</table>
-
-## 함께 만들어요
-
-우리는 AI 시스템이 관찰 가능하고, 통제 가능하며, 지속적으로 개선되어야 한다는 믿음을 공유하는 사려 깊은 협력자를 찾고 있습니다. 특히 에이전트 하네스, 브라우저 평가(Playwright 포함), 로컬 자동화, 증거 기반 운영 루프 분야에서 일하는 분들의 기여를 환영합니다. 포크를 시작하거나, 작은 이슈를 열거나, 문서를 개선하거나, 더 큰 아이디어를 함께 다듬어 주세요. 모든 기여를 환영합니다.
-
-프로젝트가 처음이신가요? [good first issues](https://github.com/forthfate/openorbit/labels/good%20first%20issue)를 둘러보거나, [Issues](https://github.com/forthfate/openorbit/issues)에서 질문하거나 아이디어를 나누고, 풀 리퀘스트를 열기 전에 [기여 가이드](CONTRIBUTING.md)를 읽어 보세요.
-
 ## Quick start
+
+몇 분 안에 단순한 테스트 하나가 아니라, 러너·타깃·증거·감독 정책·승인 경계가 연결된 완전한 평가 루프를 만들 수 있습니다.
+
+![OpenOrbit dashboard opening the Agent self-improvement Quick Start](../../docs/images/openorbit-quick-start.gif)
 
 ### Quick Start로 10초 만에 시작하기
 
@@ -117,6 +70,55 @@ Dashboard의 **Quick starts** 섹션을 열고, 가이드 템플릿을 선택한
 4. 빌드를 생성하고 실행합니다. OpenOrbit는 실제 타깃 AI 응답을 보존하고, 감독자에게 그 증거를 검토하도록 요청하며, 다음 반복에서 채택된 되돌릴 수 있는 프롬프트 개선만 적용합니다.
 
 Quick Start는 제공자 키를 절대 저장하지 않습니다. 선택한 모델 프로필에 이미 구성된 환경 변수 이름을 참조할 뿐입니다.
+
+## 첫 번째 평가 루프
+
+1. **Assets** 에서 AI 모델 프로필을 생성하거나 선택합니다.
+2. 평가하려는 AI 시스템을 기술하는 러너, 워크플로, 고정 테스트 케이스, 타깃 환경을 추가합니다.
+3. 이 자산들로부터 **Build** 를 생성합니다.
+4. **Test** 를 사용해 빌드를 한 번 실행하고, 평가 실행 이력에 추가하지 않은 채로 전체 실행 상세를 점검합니다.
+5. 준비가 되면 정기 실행을 시작한 뒤, **Runs** 에서 증거와 감독자 결과를 검토합니다.
+6. **Improvements** 를 사용해 시간에 따른 점수, 피드백, 의사결정, 사이클 건강도를 비교합니다.
+
+## 제품 둘러보기
+
+하나의 로컬 컨트롤룸에서 “무언가가 바뀌었다”는 사실부터, 그 증거와 결정, 다음에 취할 안전한 조치까지 이어서 확인할 수 있습니다. OpenOrbit는 각 단계에서 운영자가 필요로 하는 정보를 중심으로 설계되었습니다.
+
+| 영역 | 답해 주는 질문 |
+| --- | --- |
+| **Dashboard** | 지금 AI 시스템은 건강한가? 최근에 무엇이 바뀌었는가? |
+| **Builds** | 정확히 무엇이, 어떤 자산과 정책으로 평가되고 있는가? |
+| **Run detail** | 각 단계에서 무슨 일이 있었고, 어떤 증거가 그 결과를 뒷받침하는가? |
+| **Improvements** | 피드백, 의사결정, 점수가 시간이 지나며 실제로 개선되고 있는가? |
+| **Issue management** | AI가 어떤 작업을 제안했고, 무엇이 사람의 승인을 기다리는가? |
+
+아래 스크린샷은 고객 지원 AI가 보존된 평가 증거와 개선 사이클을 거치는 과정을 따라갑니다.
+
+### 실행의 워크플로와 증거 확인하기
+
+보존된 실행(run)을 열어 워크플로, 라이프사이클 진행 상태, 각 단계에서 수집된 증거를 검토하세요. 그런 다음 관찰된 동작을 감독자 피드백 및 제안된 개선안과 비교하세요.
+
+![OpenOrbit Run detail showing a completed evaluation workflow and its retained evidence](../../docs/images/evaluation-result-approved.png)
+
+### 개선 사이클 전반의 증거 검토하기
+
+여러 빌드에 걸쳐 피드백 양, 채택된 변경, 점수, 실행 건강도를 비교하세요. 이 이력은 운영 사이클이 시간이 지나며 AI 시스템을 개선하고 있는지 분명하게 보여줍니다.
+
+![OpenOrbit improvements with feedback trends and proposal-decision history](../../docs/images/improvement-cycle-healthy.png)
+
+### 적용 전 AI가 만든 작업 검토하기
+
+보존된 증거가 구체적인 변경을 뒷받침하면 OpenOrbit는 근거, 수용 증거, 격리된 변경 산출물을 갖춘 AI 생성 제안을 등록할 수 있습니다. 제안된 diff를 검토한 뒤 승인하거나, 거절하거나, 계속 검토 상태로 둘 수 있으며, 결정 없이는 어떤 변경도 적용되지 않습니다.
+
+![OpenOrbit Issue management reviewing an AI-created prompt change and its isolated diff](../../docs/images/ai-created-proposal-review.png)
+
+### 다음에 무엇을 할지 AI 어시스턴트에게 묻기
+
+System AI 모델을 구성하면 내장 Chat Assistant를 사용해 평가 작업, 러너, 컨트롤룸에 관해 질문할 수 있습니다. 여러분 자신의 AI 에이전트도 OpenOrbit의 버전 관리 API를 통해 동일한 로컬 운영 데이터와 함께 작업할 수 있습니다.
+
+![OpenOrbit Chat Assistant asking what to improve next for a build](../../docs/images/chat-assistant-question.png)
+
+## 설치 및 개발
 
 ### 요구 사항
 
@@ -206,16 +208,9 @@ OpenOrbit는 독립 실행형(standalone)이며 로컬 우선(local-first) 컨�
 
 브라우저 여정을 실행하는 빌드만 Chromium 브라우저와 플랫폼별 시스템 라이브러리가 필요합니다. OpenOrbit를 시작하거나, 자산을 생성하거나, 실행을 검토하거나, 브라우저가 아닌 러너를 사용하는 데에는 필요하지 않습니다.
 
-## 첫 번째 평가 루프
-
-1. **Assets** 에서 AI 모델 프로필을 생성하거나 선택합니다.
-2. 평가하려는 AI 시스템을 기술하는 러너, 워크플로, 고정 테스트 케이스, 타깃 환경을 추가합니다.
-3. 이 자산들로부터 **Build** 를 생성합니다.
-4. **Test** 를 사용해 빌드를 한 번 실행하고, 평가 실행 이력에 추가하지 않은 채로 전체 실행 상세를 점검합니다.
-5. 준비가 되면 정기 실행을 시작한 뒤, **Runs** 에서 증거와 감독자 결과를 검토합니다.
-6. **Improvements** 를 사용해 시간에 따른 점수, 피드백, 의사결정, 사이클 건강도를 비교합니다.
-
 ## 핵심 개념
+
+> Build는 운영 루프를 정의하고, Test는 이를 한 번 점검하며, Run은 발생한 일을 보존합니다. Supervisor는 증거를 피드백과 제안으로 바꾸고, 다음 변경은 팀이 결정합니다.
 
 | 개념 | 의미 |
 | --- | --- |
@@ -262,6 +257,12 @@ if __name__ == "__main__":
 
 러너는 의도적으로 제한적입니다. 러너는 컨트롤 플레인에 증거를 제공할 뿐, 자체 스케줄러를 시작하거나 타깃 시스템을 조용히 수정하지 않습니다.
 
+## 함께 만들어요
+
+우리는 AI 시스템이 관찰 가능하고, 통제 가능하며, 지속적으로 개선되어야 한다는 믿음을 공유하는 사려 깊은 협력자를 찾고 있습니다. 특히 에이전트 하네스, 브라우저 평가(Playwright 포함), 로컬 자동화, 증거 기반 운영 루프 분야에서 일하는 분들의 기여를 환영합니다. 포크를 시작하거나, 작은 이슈를 열거나, 문서를 개선하거나, 더 큰 아이디어를 함께 다듬어 주세요. 모든 기여를 환영합니다.
+
+프로젝트가 처음이신가요? [good first issues](https://github.com/forthfate/openorbit/labels/good%20first%20issue)를 둘러보거나, [Issues](https://github.com/forthfate/openorbit/issues)에서 질문하거나 아이디어를 나누고, 풀 리퀘스트를 열기 전에 [기여 가이드](CONTRIBUTING.md)를 읽어 보세요.
+
 ## 기여하기
 
 기여를 환영합니다. 버그 리포트, 평가 러너 템플릿, 문서 개선, 제품 피드백 모두 도움이 됩니다.
@@ -274,6 +275,22 @@ pnpm --filter agent-improvement-console-ui run build
 ```
 
 `main`에 직접 푸시하지 말고 풀 리퀘스트를 열어 주세요. 개발, 검사, 릴리스 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요.
+
+## 개발 파트너
+
+<table>
+  <tr>
+    <td align="center" width="240">
+      <a href="https://insighta.cloud">
+        <img src="../../docs/images/insighta-cloud-icon.png" width="72" alt="insighta cloud Inc. logo" />
+        <br /><br />
+        <strong>insighta cloud Inc.</strong>
+        <br />
+        <sub>Development partner</sub>
+      </a>
+    </td>
+  </tr>
+</table>
 
 ## 라이선스
 
