@@ -48,6 +48,16 @@ def test_visual_runner_source_is_explicit_and_compilable():
     assert "ctx.publish_visual_node_outputs('score_journey', outputs)" in source
 
 
+def test_visual_runner_source_uses_python_literals_for_node_config():
+    value = blueprint()
+    value["nodes"][0].update({"kind": "browser_journey", "config": {"fail_on_unpassed": True}})
+
+    source = generate_source(value)
+
+    compile(source, "visual-runner.py", "exec")
+    assert "'fail_on_unpassed': True" in source
+
+
 def test_visual_runner_rejects_unknown_nodes_and_edges():
     invalid = blueprint()
     invalid["nodes"][0]["kind"] = "shell"

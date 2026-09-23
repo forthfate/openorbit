@@ -1553,6 +1553,8 @@ class ConsoleStore:
             "ORBIT_ADAPTER_COMMAND",
             "ORBIT_AGENT_COMMAND",
             "ORBIT_PROBE_COMMAND",
+            "ORBIT_SELENIUM_COMMAND",
+            "ORBIT_SOURCE_CONTRACT_PATTERN",
         }
         normalized = {str(key).strip(): str(value) for key, value in variables.items()}
         if any(
@@ -4493,7 +4495,8 @@ class ConsoleStore:
                         # Never let a model-invented ID suppress a new Issue.
                         proposal.pop("known_issue_id", None)
                 if stage == "issue_assessment" and any(
-                    not isinstance(item.get("evaluation"), dict)
+                    not str(item.get("known_issue_id") or "").strip()
+                    and not isinstance(item.get("evaluation"), dict)
                     for item in [*result["reported_issues"], *result["improvements"]]
                 ):
                     raise ValueError("every supervisor-discovered issue must include score and decision")

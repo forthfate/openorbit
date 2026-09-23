@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable
@@ -208,7 +207,9 @@ def generate_source(blueprint: dict[str, Any]) -> str:
 
 
 def _node_source(node: dict[str, Any]) -> list[str]:
-    config = json.dumps(node["config"], ensure_ascii=False, sort_keys=True)
+    # Generated runners are Python source, not JSON. ``json.dumps`` emits
+    # JSON literals such as ``true`` and ``null``, which are invalid Python.
+    config = repr(node["config"])
     outputs = repr(node["outputs"])
     lines = [
         f"@graph.step({node['id']!r}, title={node['title']!r}, phase={node['phase']!r}, inputs={node['inputs']!r}, outputs={outputs}, description={node['description']!r})",

@@ -1842,7 +1842,7 @@ class RunnerContext:
         artifacts.mkdir(parents=True, exist_ok=True)
         module = self.environment.get("ORBIT_PLAYWRIGHT_MODULE", "")
         if not module:
-            module = str(Path(__file__).resolve().parents[1] / "frontend" / "node_modules" / "playwright")
+            module = str(Path(__file__).resolve().parents[3] / "frontend" / "node_modules" / "playwright")
         payload = {
             "baseUrl": base_url,
             "cases": selected_cases,
