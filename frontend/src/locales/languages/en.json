@@ -737,7 +737,7 @@
       "visualMode": "Visual mode",
       "editInVisualMode": "Edit in Visual mode",
       "visualModeCodeWarning": "This runner was created in Visual mode. Editing the code directly may prevent further edits in Visual mode.",
-      "visualModeDetached": "This runner was edited as code and is no longer compatible with Visual mode. Restore the generated version or save it as a code runner.",
+      "visualModeDetached": "This runner was edited as code and is no longer compatible with Visual mode. Restore the generated version or continue editing it in code.",
       "visualEditorTitle": "Visual runner editor",
       "visualNodes": "Nodes",
       "externalJsonAction": "External JSON action",

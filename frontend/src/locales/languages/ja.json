@@ -731,7 +731,7 @@
       "visualMode": "ビジュアルモード",
       "editInVisualMode": "ビジュアルモードで編集",
       "visualModeCodeWarning": "このランナーはビジュアルモードで作成されました。コードを直接編集すると、以後ビジュアルモードで編集できなくなる場合があります。",
-      "visualModeDetached": "このコードは直接編集されたため、ビジュアルモードでは開けません。生成済みのバージョンを復元するか、コードランナーとして保存してください。",
+      "visualModeDetached": "このコードは直接編集されたため、ビジュアルモードでは開けません。生成済みのバージョンを復元するか、以後はコードで編集してください。",
       "visualEditorTitle": "ビジュアルランナーエディター",
       "visualNodes": "ノード",
       "externalJsonAction": "外部 JSON アクション",

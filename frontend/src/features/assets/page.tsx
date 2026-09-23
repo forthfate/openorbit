@@ -680,11 +680,10 @@ function RunnerModal({
         </div>
         {editorTab === "code" ? <div className="runner-source">
           <div className="runner-source__toolbar">
-            {visualBlueprint && <p className="runner-visual-warning">{copy.visualModeCodeWarning}</p>}
+            {visualBlueprint ? <p className="runner-visual-warning">{copy.visualModeCodeWarning}</p> : visualDetached ? <p className="runner-visual-detached">{copy.visualModeDetached}</p> : null}
             <button className="ghost" type="button" disabled={visualDetached} title={visualDetached ? copy.visualModeDetached : undefined} onClick={() => setVisualEditorOpen(true)}>{copy.editInVisualMode}</button>
           </div>
           <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => { setDraft({ ...draft, source }); if (visualBlueprint) { setVisualBlueprint(undefined); setVisualDetached(true); } }} onBlur={() => refreshWorkflowGraph()} />
-          {visualDetached && <p className="runner-visual-detached">{copy.visualModeDetached}</p>}
         </div> : <section className="runner-workflow-graph">
           {graphLoading ? <p className="hint">{copy.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || copy.noWorkflowGraph}</p>}
         </section>}
