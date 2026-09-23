@@ -40,7 +40,7 @@ include = ["orbit/resources/**/*.yaml", "orbit/resources/**/*.json", "orbit/reso
 [tool.hatch.build.targets.wheel.force-include]
 "frontend/dist" = "frontend/dist"
 "site" = "site"
-"backend/orbit_sdk.py" = "orbit_sdk.py"
+"backend/orbit_sdk" = "orbit_sdk"
 
 [tool.hatch.build.hooks.custom]
 

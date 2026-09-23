@@ -83,18 +83,18 @@ def evidence() -> dict[str, object]:
 
 def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
-    if action == "preflight":
+    if action in {"preflight", "status"}:
         result = {"health": request("/health"), "metrics": request("/api/metrics")}
     elif action == "prepare":
         result = {"status": "ready", "configured_probe_matrix": 2}
-    elif action == "run-probes":
+    elif action in {"run-probes", "run-once"}:
         result = probes()
         RUNTIME.mkdir(exist_ok=True)
         REPORT.write_text(json.dumps(result, indent=2))
     elif action == "collect-evidence":
         result = evidence()
     else:
-        raise SystemExit("use preflight, prepare, run-probes, or collect-evidence")
+        raise SystemExit("use preflight/status, prepare, run-probes/run-once, or collect-evidence")
     print(json.dumps(result, ensure_ascii=False))
 
 

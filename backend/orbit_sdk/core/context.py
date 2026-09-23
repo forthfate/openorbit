@@ -6,13 +6,11 @@ per subprocess, so a runner cannot accidentally become a second scheduler.
 
 from __future__ import annotations
 
-import argparse
 import base64
 import hashlib
 import json
 import os
 import re
-import shlex
 import subprocess
 import tempfile
 import threading
@@ -20,166 +18,16 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Iterator, Literal
+from typing import Iterator, Literal
 
 from coding_agents import build_coding_agent_command
 
+from orbit_sdk.core.lifecycle import canonical_phase
+from orbit_sdk.helpers import command_from_environment
+
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
-
-# Accept pre-1.0 lifecycle names in existing runner files while emitting the
-# canonical names everywhere else.
-PHASE_ALIASES = {
-    "init": "before_all",
-    "setup": "before_each",
-    "run": "execute",
-    "eval": "verify",
-    "post_supervision": "after_supervision",
-    "teardown": "after_each",
-    "finalize": "after_all",
-}
-
-
-def canonical_phase(name: str) -> str:
-    """Return the canonical lifecycle key for a current or legacy phase."""
-    return PHASE_ALIASES.get(name, name)
-
-
-@dataclass(frozen=True)
-class GraphNode:
-    """A declarative visual-workflow node attached to a runner function."""
-
-    id: str
-    title: str
-    phase: str | None
-    inputs: tuple[str, ...] = ()
-    outputs: tuple[str, ...] = ()
-    description: str | None = None
-    after_supervision: bool = False
-
-
-@dataclass(frozen=True)
-class GraphEdge:
-    """A directed relationship between visual-workflow nodes."""
-
-    source: str
-    target: str
-    kind: Literal["execution", "data", "condition", "loop", "error"] = "execution"
-    label: str | None = None
-    source_port: str | None = None
-    target_port: str | None = None
-
-
-class Graph:
-    """Declare a runner's visual workflow without changing its execution.
-
-    ``graph`` is intentionally declarative: decorators only retain metadata.
-    Orbit may inspect :meth:`definition` before a run, then overlay runtime
-    status onto the same node IDs after a run.
-    """
-
-    def __init__(self) -> None:
-        self._nodes: dict[str, GraphNode] = {}
-        self._edges: list[GraphEdge] = []
-
-    def step(
-        self,
-        id: str | None = None,
-        *,
-        title: str | None = None,
-        phase: str | None = None,
-        inputs: tuple[str, ...] | list[str] = (),
-        outputs: tuple[str, ...] | list[str] = (),
-        description: str | None = None,
-        after_supervision: bool = False,
-    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-        """Annotate one function as a visual workflow node.
-
-        ``phase`` is an optional display group, not a hard-coded lifecycle
-        enum, so a runner can evolve its lifecycle without changing this API.
-        """
-
-        def register(handler: Callable[..., Any]) -> Callable[..., Any]:
-            node_id = id or handler.__name__
-            if not node_id or node_id in self._nodes:
-                raise ValueError(f"graph node ID must be unique: {node_id!r}")
-            node_phase = canonical_phase(phase or getattr(handler, "__orbit_phase__", "")) or None
-            node = GraphNode(
-                id=node_id,
-                title=title or handler.__name__.replace("_", " ").title(),
-                phase=node_phase,
-                inputs=tuple(inputs),
-                outputs=tuple(outputs),
-                description=description,
-                after_supervision=after_supervision,
-            )
-            self._nodes[node_id] = node
-            setattr(handler, "__orbit_graph_node__", node)
-
-            @wraps(handler)
-            def instrumented(*args: Any, **kwargs: Any) -> Any:
-                context = next(
-                    (value for value in (*args, *kwargs.values()) if isinstance(value, RunnerContext)),
-                    None,
-                )
-                if context is None:
-                    return handler(*args, **kwargs)
-                with context.function(node_id):
-                    return handler(*args, **kwargs)
-
-            setattr(instrumented, "__orbit_graph_node__", node)
-            setattr(handler, "__orbit_graph_wrapper__", instrumented)
-            return instrumented
-
-        return register
-
-    def connect(
-        self,
-        source: str,
-        target: str,
-        *,
-        kind: Literal["execution", "data", "condition", "loop", "error"] = "execution",
-        label: str | None = None,
-        source_port: str | None = None,
-        target_port: str | None = None,
-    ) -> GraphEdge:
-        """Declare a typed arrow; ``loop`` and ``condition`` model control flow."""
-        edge = GraphEdge(source, target, kind, label, source_port, target_port)
-        self._edges.append(edge)
-        return edge
-
-    def definition(self) -> dict[str, object]:
-        """Return JSON-safe graph data for a visual client or source inspector."""
-        return {
-            "nodes": [
-                {
-                    "id": node.id,
-                    "title": node.title,
-                    "phase": node.phase,
-                    "inputs": list(node.inputs),
-                    "outputs": list(node.outputs),
-                    "description": node.description,
-                    **({"after_supervision": True} if node.after_supervision else {}),
-                }
-                for node in self._nodes.values()
-            ],
-            "edges": [
-                {
-                    "source": edge.source,
-                    "target": edge.target,
-                    "kind": edge.kind,
-                    "label": edge.label,
-                    "source_port": edge.source_port,
-                    "target_port": edge.target_port,
-                }
-                for edge in self._edges
-            ],
-        }
-
-
-graph = Graph()
 
 
 def ORBIT_PROJECT_PATH(*parts: str) -> Path:
@@ -470,6 +318,85 @@ class RunnerContext:
             "updated_at": document["updated_at"],
             "size": len(payload),
         }
+
+    def visual_node_inputs(
+        self, node_id: str, bindings: dict[str, tuple[str, str]] | None = None
+    ) -> dict[str, object]:
+        """Return declared upstream values for one generated visual-runner node.
+
+        Args:
+            node_id: The generated graph-node identifier requesting inputs.
+            bindings: Input names mapped to ``(source_node_id, output_port)``.
+                Generated visual runners provide this mapping from their data
+                edges, so unrelated node output is never exposed implicitly.
+
+        Returns:
+            A dictionary keyed by the node's declared input ports. Missing
+            upstream values are omitted, allowing a custom script to apply a
+            default explicitly.
+        """
+        document = self.load_state("orbit-visual-node-outputs", {}, scope="runner")
+        if not isinstance(document, dict) or document.get("iteration") != self.loop_index:
+            return {}
+        values = document.get("outputs", {})
+        if not isinstance(values, dict):
+            return {}
+        if bindings is None:
+            return {}
+        inputs: dict[str, object] = {}
+        for input_name, binding in bindings.items():
+            if not isinstance(input_name, str) or not isinstance(binding, tuple) or len(binding) != 2:
+                raise ValueError("visual node input bindings must map names to source node ports")
+            source_node, source_port = binding
+            source_outputs = values.get(source_node)
+            if isinstance(source_outputs, dict) and source_port in source_outputs:
+                inputs[input_name] = source_outputs[source_port]
+        return inputs
+
+    def publish_visual_node_outputs(self, node_id: str, values: dict[str, object]) -> None:
+        """Persist JSON-safe outputs from one generated visual-runner node."""
+        if not node_id.strip():
+            raise ValueError("visual node ID must not be empty")
+        if not isinstance(values, dict):
+            raise ValueError("visual node outputs must be a JSON object")
+        current = self.load_state("orbit-visual-node-outputs", {}, scope="runner")
+        if not isinstance(current, dict) or current.get("iteration") != self.loop_index:
+            current = {"iteration": self.loop_index, "outputs": {}}
+        outputs = current.setdefault("outputs", {})
+        if not isinstance(outputs, dict):
+            outputs = current["outputs"] = {}
+        outputs[node_id] = values
+        self.save_state("orbit-visual-node-outputs", current, scope="runner")
+
+    def run_visual_node(
+        self,
+        kind: str,
+        *,
+        node_id: str,
+        config: dict[str, object],
+        inputs: dict[str, object],
+    ) -> dict[str, object]:
+        """Dispatch one SDK-owned visual operation through its registry.
+
+        Custom Script nodes intentionally remain generated Python. All curated
+        operations use this dispatcher so their catalog metadata, validation,
+        and runtime implementation have one SDK owner.
+        """
+        if not node_id.strip():
+            raise ValueError("visual node ID must not be empty")
+        from orbit_sdk.visual import visual_nodes
+        from orbit_sdk.visual.bindings import resolve
+
+        resolved = resolve(self, config, inputs)
+        if not isinstance(resolved, dict):  # Defensive boundary for SDK node handlers.
+            raise ValueError("visual node configuration must resolve to an object")
+        return visual_nodes.execute(kind, self, config=resolved, inputs=inputs)
+
+    def visual_should_run(self, condition: object, *, inputs: dict[str, object]) -> bool:
+        """Evaluate a blueprint's safe, declarative node condition."""
+        from orbit_sdk.visual.bindings import evaluate
+
+        return evaluate(self, condition, inputs)
 
     def materialize_assets(self, name: str, files: dict[str, str | bytes]) -> dict[str, object]:
         """Atomically materialize runner-owned files outside the target repository.
@@ -1915,7 +1842,7 @@ class RunnerContext:
         artifacts.mkdir(parents=True, exist_ok=True)
         module = self.environment.get("ORBIT_PLAYWRIGHT_MODULE", "")
         if not module:
-            module = str(Path(__file__).resolve().parents[1] / "frontend" / "node_modules" / "playwright")
+            module = str(Path(__file__).resolve().parents[3] / "frontend" / "node_modules" / "playwright")
         payload = {
             "baseUrl": base_url,
             "cases": selected_cases,
@@ -2062,21 +1989,7 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         strings. The executable must be present; empty arguments remain valid
         because some tools use them intentionally.
         """
-        configured = self.environment.get(command_env, "").strip()
-        if not configured:
-            raise ValueError(f"Set {command_env} to an external tool command")
-        try:
-            command = json.loads(configured) if configured.startswith("[") else shlex.split(configured)
-        except (json.JSONDecodeError, ValueError) as error:
-            raise ValueError(f"{command_env} must be a JSON string array or command") from error
-        if (
-            not isinstance(command, list)
-            or not command
-            or not all(isinstance(item, str) for item in command)
-            or not command[0].strip()
-        ):
-            raise ValueError(f"{command_env} must be a non-empty JSON string array or command")
-        return command
+        return command_from_environment(self.environment, command_env)
 
     def run_command_action(
         self,
@@ -2147,76 +2060,3 @@ await browser.close(); console.log(JSON.stringify({base_url:input.baseUrl,result
         """Require at least one declared fixed test case for a runner contract."""
         if not self.test_cases:
             raise ValueError(f"Select at least one {label}")
-
-
-class Runner:
-    """Register lifecycle handlers and dispatch the phase requested by Orbit."""
-
-    def __init__(self) -> None:
-        self._handlers: dict[str, Callable[[RunnerContext], None]] = {}
-
-    def phase(
-        self, name: str, *, step_id: str | None = None
-    ) -> Callable[[Callable[[RunnerContext], None]], Callable[[RunnerContext], None]]:
-        """Register a function as a handler for one runner lifecycle phase.
-
-        Args:
-            name: Lifecycle phase name, normally one of ``before_all``,
-                ``before_each``, ``execute``, ``verify``, ``after_each``, or
-                ``after_all``. Legacy names are accepted for compatibility.
-
-        Returns:
-            A decorator that leaves the registered handler unchanged.
-        """
-
-        def register(handler: Callable[[RunnerContext], None]) -> Callable[[RunnerContext], None]:
-            phase = canonical_phase(name)
-            key = f"{phase}:{step_id}" if step_id else phase
-            self._handlers[key] = handler
-            setattr(handler, "__orbit_phase__", phase)
-            return handler
-
-        return register
-
-    def main(self) -> None:
-        """Dispatch the phase passed by Orbit and retain any commit-range evidence.
-
-        Place ``runner.main()`` behind an ``if __name__ == "__main__"`` guard
-        in every runner asset. Orbit supplies the ``--phase`` argument and
-        process environment; callers should not invoke this method directly.
-
-        Returns:
-            ``None``. The process exits after dispatching the requested phase.
-        """
-        parser = argparse.ArgumentParser(description="Orbit runner phase")
-        command = parser.add_mutually_exclusive_group(required=True)
-        command.add_argument("--phase")
-        parser.add_argument("--step")
-        command.add_argument("--graph", action="store_true")
-        args = parser.parse_args()
-        if args.graph:
-            print(json.dumps(graph.definition(), ensure_ascii=False))
-            return
-        phase = canonical_phase(args.phase)
-        handler = self._handlers.get(f"{phase}:{args.step}") if args.step else None
-        handler = handler or self._handlers.get(phase)
-        if handler is None:
-            raise SystemExit(f"runner does not define phase: {args.phase}")
-        context = RunnerContext(
-            phase,
-            Path(os.environ["ORBIT_TARGET_REPOSITORY"]),
-            os.environ.get("ORBIT_EXECUTION_MODE", "run"),
-            int(os.environ.get("ORBIT_LOOP_INDEX", "1")),
-        )
-        handler = getattr(handler, "__orbit_graph_wrapper__", handler)
-        before = context.git_head()
-        try:
-            handler(context)
-        finally:
-            try:
-                context.record_commit_change(before)
-            except (OSError, subprocess.CalledProcessError) as error:
-                context.log(f"Could not retain commit-change evidence: {error}")
-
-
-runner = Runner()

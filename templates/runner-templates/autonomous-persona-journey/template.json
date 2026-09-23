@@ -1,0 +1,6 @@
+{
+  "id": "autonomous-persona-journey",
+  "name": "Autonomous persona journey",
+  "description": "Lets a persistent persona observe, plan, take one safe browser action, and retain feelings, learnings, deduplicated issues, and next intent.",
+  "entrypoint": "runner.py"
+}

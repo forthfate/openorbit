@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 import yaml
 from opentelemetry.trace import Status, StatusCode
+from orbit_sdk.visual import definition_for_runner_template
 
 from orbit import load_bundle
 
@@ -35,6 +36,7 @@ from .models import PHASE_ALIASES, Run, Step, Workflow
 from .observability import configure_telemetry
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 from .remote import RemoteInvocation
+from .visual_runners import generate_source, validate_blueprint
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -285,10 +287,10 @@ class ConsoleStore:
             SETTINGS.write_text(json.dumps(document, indent=2), encoding="utf-8")
 
     @classmethod
-    def runner_templates(cls) -> list[dict[str, str]]:
+    def runner_templates(cls) -> list[dict[str, Any]]:
         """Load the versioned runner catalog shipped as ordinary template packages."""
         root = ROOT / "templates" / "runner-templates"
-        templates: list[dict[str, str]] = []
+        templates: list[dict[str, Any]] = []
         if not root.is_dir():
             return templates
         for directory in sorted(path for path in root.iterdir() if path.is_dir()):
@@ -297,7 +299,22 @@ class ConsoleStore:
                 continue
             values = json.loads(metadata.read_text(encoding="utf-8"))
             source = cls._package_source(directory, str(values.get("entrypoint", "runner.py")))
-            templates.append({**values, "source": source})
+            definition = definition_for_runner_template(directory.name)
+            templates.append(
+                {
+                    **values,
+                    "source": source,
+                    **(
+                        {
+                            "visual_blueprint": deepcopy(definition.blueprint),
+                            "visual_template_id": definition.id,
+                            "visual_template_source_sha256": definition.source_sha256,
+                        }
+                        if definition
+                        else {}
+                    ),
+                }
+            )
         return templates
 
     @staticmethod
@@ -417,7 +434,11 @@ class ConsoleStore:
 
     def available_runner_templates(self) -> list[dict[str, str]]:
         builtins = [{**item, "origin": "built-in"} for item in self.runner_templates()]
-        return [*builtins, *self._custom_runner_templates()]
+        builtin_ids = {str(item["id"]) for item in builtins}
+        custom = [
+            item for item in self._custom_runner_templates() if str(item.get("id", "")) not in builtin_ids
+        ]
+        return [*builtins, *custom]
 
     def template_translation_input(self, kind: str, template_id: str) -> dict[str, Any]:
         """Return only display text that may safely be translated."""
@@ -866,7 +887,25 @@ class ConsoleStore:
         runner_paths = [RUNNERS / f"{generated['runner_id']}.py", RUNNERS / f"{generated['runner_id']}.json"]
         generated_workspace: Path | None = None
         try:
-            runner = self.create_runner({"id": generated["runner_id"], **assets["runner"]})
+            runner_values: dict[str, Any] = {"id": generated["runner_id"], **assets["runner"]}
+            # Quick Start input substitution must travel with the Visual
+            # definition because a generated runner dispatches the same
+            # canonical template steps instead of retaining copied source.
+            from orbit_sdk.visual import definition_for_quick_start, instantiate_definition
+
+            definition = definition_for_quick_start(quick_start_id)
+            if definition is not None:
+                parameter_values = {
+                    str(item["key"]): values[str(item["key"])] for item in manifest["parameters"]
+                }
+                runner_values.update(
+                    {
+                        "visual_blueprint": instantiate_definition(definition, parameter_values),
+                        "visual_template_id": definition.id,
+                        "visual_template_source_sha256": definition.source_sha256,
+                    }
+                )
+            runner = self.create_runner(runner_values)
             prompt = self.create_prompt_template(
                 {"id": generated["prompt_template_id"], **assets["prompt_template"]}
             )
@@ -1066,6 +1105,22 @@ class ConsoleStore:
     def create_runner(self, values: dict[str, str]) -> dict[str, str]:
         if any(item["id"] == values["id"] for item in self.runners()):
             raise ValueError("runner ID already exists")
+        if not isinstance(values.get("visual_blueprint"), dict):
+            # Built-in runner templates have an authoritative Visual definition.
+            # User-imported templates deliberately remain source-owned.
+            from orbit_sdk.visual import definition_for_runner_template
+
+            definition = definition_for_runner_template(str(values.get("template_id", "")))
+            if definition is not None:
+                values = {
+                    **values,
+                    "visual_blueprint": deepcopy(definition.blueprint),
+                    "visual_template_id": definition.id,
+                    "visual_template_source_sha256": definition.source_sha256,
+                }
+        if isinstance(values.get("visual_blueprint"), dict):
+            blueprint = validate_blueprint(values["visual_blueprint"])
+            values = {**values, "visual_blueprint": blueprint, "source": generate_source(blueprint)}
         return self._write_runner(values["id"], values)
 
     def migrate_runner_to_bundle(self, runner_id: str) -> dict[str, str]:
@@ -1085,15 +1140,32 @@ class ConsoleStore:
 
     def update_runner(self, runner_id: str, values: dict[str, str]) -> dict[str, str]:
         existing = self._runner(runner_id)
+        detached_visual = bool(existing.get("visual_blueprint")) and not isinstance(
+            values.get("visual_blueprint"), dict
+        )
+        if existing.get("visual_blueprint") and not isinstance(values.get("visual_blueprint"), dict):
+            values = {**values, "visual_blueprint": None}
+        merged = {**existing, **{key: value for key, value in values.items() if value is not None}}
+        if detached_visual:
+            merged.pop("visual_blueprint", None)
+            merged.pop("visual_template_id", None)
+            merged.pop("visual_template_source_sha256", None)
         return self._write_runner(
             runner_id,
-            {**existing, **{key: value for key, value in values.items() if value is not None}},
+            merged,
             bundle=bool(existing.get("bundle")),
         )
 
+    def update_visual_runner(self, runner_id: str, values: dict[str, Any]) -> dict[str, Any]:
+        """Compile and version one visual runner blueprint."""
+        blueprint = validate_blueprint(dict(values["blueprint"]))
+        return self.update_runner(
+            runner_id, {**values, "source": generate_source(blueprint), "visual_blueprint": blueprint}
+        )
+
     def _write_runner(
-        self, runner_id: str, values: dict[str, str], *, bundle: bool = False
-    ) -> dict[str, str]:
+        self, runner_id: str, values: dict[str, Any], *, bundle: bool = False
+    ) -> dict[str, Any]:
         source = self._canonicalize_runner_source(str(values["source"]))
         compile(source, f"{runner_id}.py", "exec")
         existing_versions = list(values.get("versions") or [])
@@ -1104,6 +1176,13 @@ class ConsoleStore:
             "sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
             "created_at": now().isoformat(),
         }
+        if isinstance(values.get("visual_blueprint"), dict):
+            version_record["visual_blueprint"] = values["visual_blueprint"]
+            if values.get("visual_template_id"):
+                version_record["visual_template_id"] = str(values["visual_template_id"])
+                version_record["visual_template_source_sha256"] = str(
+                    values.get("visual_template_source_sha256", "")
+                )
         asset = {
             "id": runner_id,
             "name": str(values["name"]).strip(),
@@ -1113,6 +1192,11 @@ class ConsoleStore:
             "version": version,
             "versions": [*existing_versions, version_record],
         }
+        if "visual_blueprint" in version_record:
+            asset["visual_blueprint"] = version_record["visual_blueprint"]
+            if "visual_template_id" in version_record:
+                asset["visual_template_id"] = version_record["visual_template_id"]
+                asset["visual_template_source_sha256"] = version_record["visual_template_source_sha256"]
         if not asset["name"] or not asset["description"]:
             raise ValueError("runner requires a name and description")
         source_path, metadata_path = (
@@ -1469,6 +1553,8 @@ class ConsoleStore:
             "ORBIT_ADAPTER_COMMAND",
             "ORBIT_AGENT_COMMAND",
             "ORBIT_PROBE_COMMAND",
+            "ORBIT_SELENIUM_COMMAND",
+            "ORBIT_SOURCE_CONTRACT_PATTERN",
         }
         normalized = {str(key).strip(): str(value) for key, value in variables.items()}
         if any(
@@ -4409,7 +4495,8 @@ class ConsoleStore:
                         # Never let a model-invented ID suppress a new Issue.
                         proposal.pop("known_issue_id", None)
                 if stage == "issue_assessment" and any(
-                    not isinstance(item.get("evaluation"), dict)
+                    not str(item.get("known_issue_id") or "").strip()
+                    and not isinstance(item.get("evaluation"), dict)
                     for item in [*result["reported_issues"], *result["improvements"]]
                 ):
                     raise ValueError("every supervisor-discovered issue must include score and decision")

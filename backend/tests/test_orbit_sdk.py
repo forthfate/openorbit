@@ -64,6 +64,16 @@ def test_graph_exports_after_supervision_only_when_enabled():
     assert graph.definition()["nodes"][0]["after_supervision"] is True
 
 
+def test_visual_node_inputs_only_returns_declared_port_bindings(tmp_path, monkeypatch):
+    monkeypatch.setattr(sdk, "ORBIT_APP_DATA", tmp_path / "orbit-data")
+    ctx = context(tmp_path, iteration=1)
+    ctx.publish_visual_node_outputs("collect", {"score": 100, "private": "no"})
+    ctx.publish_visual_node_outputs("other", {"score": 1})
+
+    assert ctx.visual_node_inputs("report", {"journey_score": ("collect", "score")}) == {"journey_score": 100}
+    assert ctx.visual_node_inputs("report", {"missing": ("collect", "missing")}) == {}
+
+
 def test_function_trace_emits_successful_function_evidence(tmp_path, capsys):
     ctx = context(tmp_path, iteration=1)
 

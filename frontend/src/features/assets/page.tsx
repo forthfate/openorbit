@@ -28,6 +28,7 @@ import type {
   Workflow,
   WorkflowGraphDefinition,
   WorkflowStep,
+  VisualRunnerBlueprint,
 } from "../../domain/models";
 import { buildAssetUsage, type AssetUsage } from "../../domain/asset-usage";
 import {
@@ -45,6 +46,7 @@ import { PythonEditor } from "../../components/ui/python-editor";
 import { JsonEditor } from "../../components/ui/json-editor";
 import { MarkdownEditor } from "../../components/ui/markdown-editor";
 import { WorkflowGraph } from "../../components/workflow-graph";
+import { VisualRunnerEditor } from "../../components/visual-runner-editor";
 import { YamlEditor } from "../../components/ui/yaml-editor";
 import { api, upload } from "../../services/api";
 import { useTemplateTranslations } from "../../services/use-template-translation";
@@ -412,7 +414,10 @@ function RunnerModal({
     [workflowGraph, setWorkflowGraph] = useState<WorkflowGraphDefinition | null>(null),
     [graphSource, setGraphSource] = useState(""),
     [graphLoading, setGraphLoading] = useState(false),
-    [graphError, setGraphError] = useState("");
+    [graphError, setGraphError] = useState(""),
+    [visualEditorOpen, setVisualEditorOpen] = useState(false),
+    [visualBlueprint, setVisualBlueprint] = useState<VisualRunnerBlueprint | undefined>(editing?.visual_blueprint),
+    [visualDetached, setVisualDetached] = useState(Boolean(editing && !editing.visual_blueprint));
   const importInput = useRef<HTMLInputElement>(null);
   const draftSource = useRef(draft?.source ?? ""), graphInFlight = useRef<string | null>(null);
   const emptyTemplate: RunnerTemplate = {
@@ -431,7 +436,9 @@ function RunnerModal({
         .then(setTemplates)
         .catch((error) => setNotice(error.message));
   }, [editing]);
-  const choose = (template: RunnerTemplate) =>
+  const choose = (template: RunnerTemplate) => {
+    setVisualBlueprint(template.visual_blueprint);
+    setVisualDetached(!template.visual_blueprint);
     setDraft({
       id: "",
       name: template.name,
@@ -440,8 +447,11 @@ function RunnerModal({
       source: template.source,
       version: 1,
     });
+  };
   const changeTemplate = () => {
     setDraft(undefined);
+    setVisualBlueprint(undefined);
+    setVisualDetached(false);
     setNotice("");
   };
   const refreshWorkflowGraph = (source = draft?.source ?? "") => {
@@ -497,10 +507,11 @@ function RunnerModal({
           template_id: draft.template_id,
           source: draft.source,
         };
+    const visualValues = visualBlueprint ? { ...values, visual_blueprint: visualBlueprint } : values;
     api(
       editing ? `/api/runners/${editing.id}` : "/api/runners",
       editing ? "PUT" : "POST",
-      values,
+      visualValues,
     )
       .then(async () => {
         onSaved();
@@ -597,6 +608,8 @@ function RunnerModal({
     if (!selected) return;
     setSelectedVersion(version);
     setDraft({ ...draft, source: selected.source });
+    setVisualBlueprint(selected.visual_blueprint);
+    setVisualDetached(!selected.visual_blueprint);
   };
   return (
     <Modal
@@ -666,7 +679,11 @@ function RunnerModal({
           <button className={editorTab === "graph" ? "selected" : ""} role="tab" aria-selected={editorTab === "graph"} type="button" onClick={() => { setEditorTab("graph"); refreshWorkflowGraph(); }}>{copy.workflowGraph}</button>
         </div>
         {editorTab === "code" ? <div className="runner-source">
-          <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => setDraft({ ...draft, source })} onBlur={() => refreshWorkflowGraph()} />
+          <div className="runner-source__toolbar">
+            {visualBlueprint ? <p className="runner-visual-warning">{copy.visualModeCodeWarning}</p> : visualDetached ? <p className="runner-visual-detached">{copy.visualModeDetached}</p> : null}
+            <button className="ghost" type="button" disabled={visualDetached} title={visualDetached ? copy.visualModeDetached : undefined} onClick={() => setVisualEditorOpen(true)}>{copy.editInVisualMode}</button>
+          </div>
+          <PythonEditor ariaLabel={copy.source} value={draft.source} onChange={(source) => { setDraft({ ...draft, source }); if (visualBlueprint) { setVisualBlueprint(undefined); setVisualDetached(true); } }} onBlur={() => refreshWorkflowGraph()} />
         </div> : <section className="runner-workflow-graph">
           {graphLoading ? <p className="hint">{copy.loadingGraph}</p> : workflowGraph?.nodes.length ? <WorkflowGraph nodes={workflowGraph.nodes} edges={workflowGraph.edges} /> : <p className="hint">{graphError || copy.noWorkflowGraph}</p>}
         </section>}
@@ -679,6 +696,7 @@ function RunnerModal({
             {copy.save}
           </button>
         </div>
+        {visualEditorOpen && <VisualRunnerEditor blueprint={visualBlueprint} locale={locale} onClose={() => setVisualEditorOpen(false)} onApply={(blueprint, source) => { setVisualBlueprint(blueprint); setVisualDetached(false); setDraft({ ...draft, source }); setVisualEditorOpen(false); }} />}
       </div>
     </Modal>
   );

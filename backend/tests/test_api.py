@@ -27,6 +27,16 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_visual_runner_catalog_is_served_from_sdk_registry():
+    response = TestClient(app).get("/api/visual-runners/catalog")
+
+    assert response.status_code == 200
+    catalog = response.json()
+    assert any(node["kind"] == "custom_script" for node in catalog["nodes"])
+    assert catalog["starters"] == []
+    assert all(node["group_key"] != "templates" for node in catalog["nodes"])
+
+
 def test_system_readiness_reports_missing_system_ai_and_git(monkeypatch):
     monkeypatch.setattr(
         main_module.store,
@@ -521,9 +531,13 @@ def test_native_improvement_template_uses_repository_snapshot_lifecycle():
         if item["id"] == "native-improvement-cycle"
     )
 
-    assert "ctx.save_before_each_snapshot()" in source
-    assert "ctx.save_first_after_each_snapshot()" in source
-    assert "ctx.restore_before_each_snapshot()" in source
+    from orbit_sdk.visual.builtin_templates import templates
+
+    canonical = templates()["runner-templates:native-improvement-cycle"].source.read_text(encoding="utf-8")
+    assert "template_runner_templates_native_improvement_cycle_" in source
+    assert "ctx.save_before_each_snapshot()" in canonical
+    assert "ctx.save_first_after_each_snapshot()" in canonical
+    assert "ctx.restore_before_each_snapshot()" in canonical
 
 
 def test_score_select_retains_candidates_and_selects_highest_supervisor_score(tmp_path, monkeypatch):
@@ -780,6 +794,37 @@ def test_runner_execution_plan_stops_when_its_run_phase_fails(tmp_path, monkeypa
     assert workflow.steps_for("test")[0].on_failure == "stop"
 
 
+def test_builtin_runner_template_creation_persists_its_visual_definition(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store = store_module.ConsoleStore()
+
+    runner = store.create_runner(
+        {
+            "id": "json-cycle",
+            "name": "JSON cycle",
+            "description": "Template-backed visual runner.",
+            "template_id": "json-agent-cycle",
+            "source": "# source is replaced by the authoritative template definition\n",
+        }
+    )
+
+    assert runner["visual_template_id"] == "runner-templates:json-agent-cycle"
+    assert runner["visual_blueprint"]["nodes"]
+    assert "ctx.run_visual_node('json_cycle_action'" in runner["source"]
+    assert "ctx.run_visual_node('template_" not in runner["source"]
+
+    detached = store.update_runner(
+        runner["id"],
+        {
+            "name": runner["name"],
+            "description": runner["description"],
+            "source": "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n",
+        },
+    )
+    assert "visual_blueprint" not in detached
+    assert "visual_template_id" not in detached
+
+
 def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
     store = store_module.ConsoleStore()
@@ -807,6 +852,50 @@ def test_runner_saves_immutable_versions_and_can_resolve_an_older_version(tmp_pa
     assert "v2" in store._runner_entry_path("versioned-runner", 2).read_text(encoding="utf-8")
     assert [step.phase for step in store._runner_execution_plan("versioned-runner", 1).steps] == ["execute"]
     assert [step.phase for step in store._runner_execution_plan("versioned-runner", 2).steps] == ["verify"]
+
+
+def test_direct_code_update_detaches_a_visual_runner_without_erasing_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNNERS", tmp_path / "runners")
+    store = store_module.ConsoleStore()
+    blueprint = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "collect",
+                "kind": "custom_script",
+                "title": "Collect",
+                "phase": "execute",
+                "inputs": [],
+                "outputs": ["result"],
+                "config": {},
+                "script": "outputs['result'] = True",
+                "position": {"x": 0, "y": 0},
+            }
+        ],
+        "edges": [],
+    }
+    visual = store.create_runner(
+        {
+            "id": "visual-runner",
+            "name": "Visual runner",
+            "description": "A generated visual runner.",
+            "source": "placeholder",
+            "visual_blueprint": blueprint,
+        }
+    )
+    updated = store.update_runner(
+        "visual-runner",
+        {
+            "name": visual["name"],
+            "description": visual["description"],
+            "source": "from orbit_sdk import runner\n@runner.phase('execute')\ndef run(ctx): pass\n",
+        },
+    )
+
+    assert visual["versions"][0]["visual_blueprint"]["schema_version"] == 1
+    assert "visual_blueprint" not in updated
+    assert "visual_blueprint" not in updated["versions"][-1]
+    assert updated["versions"][0]["visual_blueprint"]["nodes"][0]["id"] == "collect"
 
 
 def test_bundle_runner_updates_in_place_and_keeps_immutable_versions(tmp_path, monkeypatch):
@@ -1449,20 +1538,32 @@ def test_runner_templates_separate_direct_user_journeys_from_external_commands()
     assert "@runner.phase" in user_journey
     assert "orbit_runner_kit" not in user_journey
     assert "ORBIT_ADAPTER_COMMAND" not in user_journey
-    assert "ORBIT_ADAPTER_COMMAND" in adapter
-    assert "playwright_journey" not in improvement
-    assert "complete_model" in improvement
-    assert "target_ai_responses" in improvement
-    assert "ORBIT_CYCLE_COMMAND" not in improvement
-    assert "run_paired_improvement_cycle" not in improvement
-    assert "update_prompt_from_accepted_proposals" in improvement
-    assert "ctx.accept_proposal" not in improvement
-    assert "ctx.update_file" in improvement
-    assert "managed_prompt_evidence" in improvement
-    assert "record_proposal_application" in improvement
-    assert "no_accepted_proposals" in improvement
-    assert "ORBIT_AGENT_COMMAND" in json_agent
-    assert "ORBIT_PROBE_COMMAND" in probe_gate
+    from orbit_sdk.visual.builtin_templates import templates as canonical_templates
+
+    canonical = canonical_templates()
+    adapter_source = canonical["runner-templates:external-command-adapter"].source.read_text(encoding="utf-8")
+    improvement_source = canonical["runner-templates:native-improvement-cycle"].source.read_text(
+        encoding="utf-8"
+    )
+    assert "template_runner_templates_external_command_adapter_" in adapter
+    assert "ORBIT_ADAPTER_COMMAND" in adapter_source
+    assert "playwright_journey" not in improvement_source
+    assert "complete_model" in improvement_source
+    assert "target_ai_responses" in improvement_source
+    assert "ORBIT_CYCLE_COMMAND" not in improvement_source
+    assert "run_paired_improvement_cycle" not in improvement_source
+    assert "update_prompt_from_accepted_proposals" in improvement_source
+    assert "ctx.accept_proposal" not in improvement_source
+    assert "ctx.update_file" in improvement_source
+    assert "managed_prompt_evidence" in improvement_source
+    assert "record_proposal_application" in improvement_source
+    assert "no_accepted_proposals" in improvement_source
+    assert "ORBIT_AGENT_COMMAND" in canonical["runner-templates:json-agent-cycle"].source.read_text(
+        encoding="utf-8"
+    )
+    assert "ORBIT_PROBE_COMMAND" in canonical["runner-templates:evidence-gated-probe-cycle"].source.read_text(
+        encoding="utf-8"
+    )
     assert "Insighta" not in json_agent
     assert "Jgent" not in json_agent
     assert "Insighta" not in probe_gate
@@ -1479,7 +1580,12 @@ def test_site_exploration_quick_start_declares_its_lifecycle():
     assert runner["template_id"] == "site-exploration"
     assert "@runner.phase" in runner["source"]
     assert "orbit_runner_kit" not in runner["source"]
-    assert "logout|signout|delete" in runner["source"]
+    from orbit_sdk.visual.builtin_templates import templates
+
+    assert "template_quick_starts_openorbit_site_exploration_review_" in runner["source"]
+    assert "logout|signout|delete" in templates()[
+        "quick-starts:openorbit.site-exploration-review"
+    ].source.read_text(encoding="utf-8")
 
 
 def test_quick_start_workflow_graph_can_be_previewed_before_creation(monkeypatch):
@@ -1668,8 +1774,10 @@ def test_agent_self_improvement_quick_start_embeds_agent_parameters_in_its_runne
         item for item in store._built_in_quick_starts() if item["id"] == "openorbit.agent-self-improvement"
     )
 
+    from orbit_sdk.visual.builtin_templates import templates
+
     resolved = store._substitute(
-        quick_start["assets"]["runner"]["source"],
+        templates()["quick-starts:openorbit.agent-self-improvement"].source.read_text(encoding="utf-8"),
         {"agent_provider": "claude-code", "agent_options": "--model sonnet"},
     )
 
@@ -1700,9 +1808,12 @@ def test_ai_slo_drift_quick_start_persists_its_evaluator_command(tmp_path, monke
     )
 
     execution = store._execution_environment(created["generated"]["execution_environment_id"])
+    runner = store._runner(created["generated"]["runner_id"])
     assert execution["environment_variables"] == {"ORBIT_PROBE_COMMAND": "uv run ai-eval"}
     assert created["build"]["repeat_interval_minutes"] == 1440
     assert store.profiles()[-1]["endpoint"] == ""
+    assert runner["visual_template_id"] == "quick-starts:openorbit.ai-slo-drift-monitor"
+    assert runner["visual_blueprint"]["parameters"]["probe_command"] == "uv run ai-eval"
 
 
 def test_browser_quick_starts_create_an_internal_workspace_without_a_repository(tmp_path, monkeypatch):

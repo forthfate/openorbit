@@ -32,8 +32,13 @@ export type SystemReadinessCheck = { id:'system_ai'|'git'|string; status:'ready'
 export type SystemReadiness = { ready:boolean; checks:SystemReadinessCheck[] }
 export type WorkflowStep = { id:string; phase:'before_all'|'before_each'|'execute'|'verify'|'after_supervision'|'after_each'|'after_all'; name:string; command:string[]; working_directory:string; timeout_seconds:number; approval:'not_required'|'required'; on_failure:'stop'|'continue'; minimum_interval_seconds?:number }
 export type Workflow = { id:string; name:string; description:string; kind:string; enabled:boolean; risk:string; steps?:WorkflowStep[] }
-export type RunnerAsset = { id:string; name:string; description:string; template_id:string; source:string;version:number;versions?:{version:number;source:string;sha256?:string;created_at?:string}[];created_at?:string }
-export type RunnerTemplate = { id:string; name:string; description:string; source:string; origin?:'built-in'|'user' }
+export type VisualRunnerBlueprint = { schema_version:1; nodes:VisualRunnerNode[]; edges:VisualRunnerEdge[] }
+// SDK catalog determines supported kinds at runtime; keep persisted blueprints forward-compatible.
+export type VisualRunnerNodeKind = string
+export type VisualRunnerNode = { id:string; kind:VisualRunnerNodeKind; title:string; description?:string|null; phase:string; inputs:string[]; outputs:string[]; config:Record<string,unknown>; when?:unknown; script:string; position:{x:number;y:number} }
+export type VisualRunnerEdge = { source:string; target:string; kind?:'execution'|'data'|'condition'|'loop'; source_port?:string; target_port?:string; label?:string }
+export type RunnerAsset = { id:string; name:string; description:string; template_id:string; source:string;version:number;visual_blueprint?:VisualRunnerBlueprint;versions?:{version:number;source:string;sha256?:string;created_at?:string;visual_blueprint?:VisualRunnerBlueprint}[];created_at?:string }
+export type RunnerTemplate = { id:string; name:string; description:string; source:string; origin?:'built-in'|'user'; visual_blueprint?:VisualRunnerBlueprint; visual_template_id?:string; visual_template_source_sha256?:string }
 export type QuickStartParameter = {key:string;label:string;type:'string'|'workspace'|'url'|'model_profile'|'select';required?:boolean;default?:string;description?:string;tooltip?:string;placeholder?:string;options?:{value:string;label:string}[]}
 export type QuickStart = {schema_version:number;id:string;version:string;name:string;description:string;publisher?:{name:string;url?:string};parameters:QuickStartParameter[]}
 export type Dashboard = { active_builds:Build[]; active_runs:Run[]; recent_runs?:Run[]; metrics:{builds:number;completed_evaluations:number;commits:number} }
