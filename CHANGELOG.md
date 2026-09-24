@@ -5,6 +5,12 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.4] - 2026-09-25
+
+### Fixed
+
+- Historical runs with an empty saved workflow graph now recover the current runner graph when opened.
+
 ## [0.12.3] - 2026-09-25
 
 ### Fixed
