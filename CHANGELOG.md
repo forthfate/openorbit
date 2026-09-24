@@ -5,6 +5,12 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.1] - 2026-09-24
+
+### Fixed
+
+- Fixed Git and pip installations failing at startup because the internal coding-agent helpers were missing from the wheel.
+
 ## [0.12.0] - 2026-09-23
 
 ### Added
