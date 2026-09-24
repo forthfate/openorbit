@@ -86,8 +86,19 @@ app.add_middleware(
 # leftover local pipeline as interrupted when it starts.
 store = ConsoleStore(recover_interrupted_runs=True)
 assistant_ui_broker = AssistantUiBroker()
-WEB_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-SDK_DOCS_DIST = Path(__file__).resolve().parents[2] / "site"
+
+
+def bundled_directory(relative_path: Path, roots: tuple[Path, ...] | None = None) -> Path:
+    """Find bundled files in a wheel, with a source checkout as the fallback."""
+    if roots is None:
+        module_path = Path(__file__).resolve()
+        roots = (module_path.parents[1], module_path.parents[2])
+    candidates = tuple(root / relative_path for root in roots)
+    return next((candidate for candidate in candidates if candidate.exists()), candidates[-1])
+
+
+WEB_DIST = bundled_directory(Path("frontend") / "dist")
+SDK_DOCS_DIST = bundled_directory(Path("site"))
 
 
 def safely(action):

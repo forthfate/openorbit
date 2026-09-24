@@ -27,6 +27,20 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_bundled_directory_prefers_wheel_files_over_source_checkout(tmp_path):
+    installed = tmp_path / "site-packages"
+    source = tmp_path / "source"
+    source_dist = source / "frontend" / "dist"
+    source_dist.mkdir(parents=True)
+
+    assert main_module.bundled_directory(Path("frontend") / "dist", (installed, source)) == source_dist
+
+    installed_dist = installed / "frontend" / "dist"
+    installed_dist.mkdir(parents=True)
+
+    assert main_module.bundled_directory(Path("frontend") / "dist", (installed, source)) == installed_dist
+
+
 def test_visual_runner_catalog_is_served_from_sdk_registry():
     response = TestClient(app).get("/api/visual-runners/catalog")
 
