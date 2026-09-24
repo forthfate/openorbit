@@ -41,6 +41,7 @@ include = ["orbit/resources/**/*.yaml", "orbit/resources/**/*.json", "orbit/reso
 "frontend/dist" = "frontend/dist"
 "site" = "site"
 "backend/orbit_sdk" = "orbit_sdk"
+"backend/coding_agents.py" = "coding_agents.py"
 
 [tool.hatch.build.hooks.custom]
 
