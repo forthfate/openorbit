@@ -693,6 +693,36 @@ def test_deleting_a_completed_run_removes_its_history(tmp_path, monkeypatch):
     assert not (store_module.RUNS / "completed-run.json").exists()
 
 
+def test_opening_a_run_hydrates_an_empty_saved_workflow_graph(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    expected_graph = {"nodes": [{"id": "execute", "title": "Execute"}], "edges": []}
+    store._save(
+        Run(
+            id="legacy-empty-graph",
+            workflow_id="runner",
+            workflow_name="Runner",
+            build_id="legacy-build",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            workflow_graph={"nodes": [], "edges": []},
+        )
+    )
+    monkeypatch.setattr(
+        store,
+        "builds",
+        lambda: [{"id": "legacy-build", "runner_id": "runner", "repository": "/workspace"}],
+    )
+    monkeypatch.setattr(store, "_runner_graph_definition", lambda *_: expected_graph)
+
+    hydrated = store.run("legacy-empty-graph")
+
+    assert hydrated.workflow_graph == expected_graph
+    assert store._load("legacy-empty-graph").workflow_graph == expected_graph
+
+
 def test_completed_pipeline_run_can_be_retried(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
