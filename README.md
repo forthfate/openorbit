@@ -2,73 +2,72 @@
 
 # OpenOrbit
 
-> **A local workspace for autonomous AI-agent improvement and persona-driven user-journey simulation.**
+> **A local workspace where AI personas find product work, AI coding agents
+> prepare changes, and your team reviews the result.**
 
-For teams that need to keep checking the experience an AI agent gives real
-users as prompts, models, tools, and product behavior change.
+OpenOrbit is a local-first web service for running the work around an AI
+product—not only evaluating the agent itself. Personas explore a product,
+report problems and tasks, and preserve the evidence. Your selected AI coding
+agent can prepare a change in an isolated Git worktree; your team reviews the
+diff, evidence, and decision in one control room.
 
-OpenOrbit repeatedly simulates user journeys with AI personas and uses the
-resulting AI responses, logs, and browser evidence to produce improvement
-proposals. Each run's evaluation, supervisor feedback, proposals, and decisions
-becomes one retained history, so your team can see whether the AI system is
-actually improving.
-
-Everything runs locally, and the operational record stays in your AppData. AI
-agents can propose evidence-backed improvements, but you decide which changes
-to apply.
+It also supports repeatable AI-agent evaluation and self-improvement. Every
+run, proposal, decision, and approved change becomes retained operational
+history. Everything runs locally, and the record stays in your AppData.
 
 ## Why OpenOrbit?
 
-An AI feature can look healthy in a demo and still regress after a prompt, model, tool, or product change. OpenOrbit gives that feature a repeatable operating loop rather than a one-off test:
+An AI feature or web product can look healthy in a demo and still regress after
+a prompt, model, tool, or product change. OpenOrbit connects the people,
+personas, coding agents, and evidence needed to turn a reported problem into a
+reviewable improvement:
 
 ```mermaid
 flowchart LR
-  A[AI persona<br/>simulates a user journey]
-  B[Recurring evaluation]
-  C[Responses, logs,<br/>and browser evidence]
-  D[Supervisor review]
-  E[AI-created issues<br/>and change proposals]
-  F[Human review<br/>and approval]
-  G[Updated AI system]
+  A[AI persona explores<br/>the product]
+  B[Problem, task, and<br/>retained evidence]
+  C[AI coding agent prepares<br/>a worktree change]
+  D[Review the diff, evidence,<br/>and proposal]
+  E[Human decision]
+  F[Improved product or<br/>AI agent]
 
-  A --> B --> C --> D --> E --> F --> G --> A
+  A --> B --> C --> D --> E --> F --> A
 ```
 
-OpenOrbit turns each evaluation into a retained operational record, so your
-team can see what changed, review the evidence, and decide whether an
-improvement is safe to apply.
+OpenOrbit keeps this work visible and reversible: AI can propose and prepare
+work, while people decide what is applied.
 
 ## What you can do
 
-- Define reusable **builds** from a target, workflow, runner, fixed test cases,
-  manager prompt, and AI model profile.
-- Start with a guided Quick Start, shape the evaluation workflow visually, or
-  extend it with Python when you need custom automation.
-- Run a one-off **test** before saving a build, or run its configured lifecycle
-  repeatedly with clear approval boundaries.
-- Inspect every phase through process logs, structured evidence, browser
-  screenshots, supervisor responses, and OpenTelemetry traces.
-- Review reported issues and proposed improvements in a durable decision
-  history.
-- Observe the PDCA cycle across iterations instead of treating a single model
-  response as the whole story.
-- Stop active work from one local control room.
+- **Develop reported problems with worktrees.** When AI reports a concrete
+  problem, let a coding agent prepare an isolated change, then review its diff
+  and evidence before deciding what to apply.
+- **Use your preferred AI coding agent.** Connect the coding agent your team
+  already uses instead of being tied to one provider.
+- **Give AI personas work to do.** Personas explore from a defined point of
+  view, surface tasks and problems, and keep their work connected to evidence.
+- **Improve AI agents over time.** Repeated evaluations retain responses,
+  feedback, proposals, and decisions so an AI agent can improve safely.
+- **Manage personas and reusable assets.** Keep personas, model profiles,
+  prompts, test cases, environments, and workflows ready for the next task.
+- **Ask and operate with Orbit Assistant.** Ask about the screen you are
+  viewing and use the assistant to help operate the control room.
+- **Automate through MCP and OpenAPI.** Let your own agents and tools read the
+  same local operating data and automate supported work.
 
 ## Quick start
 
-In a few minutes, create a complete evaluation loop—not just a test—with its
-runner, target, evidence, supervisor policy, and approval boundary already
-connected.
+Start with a guided template, then adapt it to the product, persona, and AI
+workflow your team wants to operate.
 
 ![OpenOrbit dashboard opening the Agent self-improvement Quick Start](docs/images/openorbit-quick-start.gif)
 
 ### Start in 10 seconds with a Quick Start
 
-Open the **Quick starts** section on the Dashboard, choose a guided template,
-fill in the few target-specific fields, and create the build. Each
-template creates the runner, fixed test cases, environments, manager policy,
-and model profile configuration together—so you can start with a working
-operating loop instead of assembling every asset by hand.
+Open **Quick starts** on the Dashboard, choose a guided template, fill in the
+target-specific fields, and create a build. A template connects the needed
+runner, test cases, environments, policy, and model profile so you can start
+with a working workflow and refine it from there.
 
 | Quick Start | Use it when | Example first run |
 | --- | --- | --- |
@@ -87,66 +86,54 @@ For example, to evaluate a support-agent prompt:
 Quick Starts never store provider keys. They reference the environment-variable
 name already configured in the selected model profile.
 
-## Your first evaluation loop
-
-1. Create or choose an AI model profile in **Assets**.
-2. Add the runner, workflow, fixed test cases, and target environment that
-   describe the AI system you want to evaluate.
-3. Create a **Build** from those assets.
-4. Use **Test** to execute the build once and inspect its full run detail
-   without adding it to the evaluation-run history.
-5. Start a regular run when ready, then review evidence and supervisor results
-   in **Runs**.
-6. Use **Improvements** to compare scores, feedback, decisions, and cycle
-   health over time.
-
 ## Product tour
 
-From one local control room, move from “something changed” to “here is the
-evidence, the decision, and the next safe action.” OpenOrbit is designed around
-the information an operator needs at each stage:
+OpenOrbit's web control room keeps the work from discovery to decision in one
+place. Its current navigation is organized around the work your team performs:
 
-| Area | What it answers |
+| Area | What you do there |
 | --- | --- |
-| **Dashboard** | Is the AI system healthy right now? What changed recently? |
-| **Builds** | What exactly is being evaluated, with which assets and policy? |
-| **Run detail** | What happened in each phase, and what evidence supports the result? |
-| **Improvements** | Are feedback, decisions, and scores actually improving over time? |
-| **Issue management** | What work did AI propose, and what still needs human approval? |
+| **Dashboard** | See current activity and start a guided workflow. |
+| **Assets** | Manage reusable personas, model profiles, prompts, test cases, environments, runners, and workflows. |
+| **Builds** | Connect the assets and policy for a product or AI-agent workflow. |
+| **Runs** | Inspect an execution and the evidence it produced. |
+| **Improvements** | Follow feedback and persona journeys; review AI-reported issues and worktree proposals. |
+| **Settings** | Configure models, coding agents, and the local control room. |
 
-The screenshots below follow a customer-support AI through its retained
-evaluation evidence and improvement cycle.
+The screens below follow work from retained evidence to a reviewable AI-created
+change.
 
-### Inspect the workflow and evidence behind a run
+### Inspect the evidence behind a run
 
 Open a retained run to review its workflow, lifecycle progress, and the
 evidence collected at each stage. Then compare the observed behavior with the
 supervisor feedback and any proposed improvement.
 
-![OpenOrbit Run detail showing a completed evaluation workflow and its retained evidence](docs/images/evaluation-result-approved.png)
+![OpenOrbit Runs showing a completed workflow and its retained evidence](docs/images/evaluation-result-approved.png)
 
-### Review evidence across the improvement cycle
+### Follow improvement and persona activity
 
-Compare feedback volume, accepted changes, scores, and run health across
-multiple builds. The history makes it clear whether the operating
-cycle is improving the AI system over time.
+Compare feedback, decisions, scores, run health, and persona journeys across
+builds. The history shows whether a product or AI-agent workflow is getting
+better over time.
 
 ![OpenOrbit improvements with feedback trends and proposal-decision history](docs/images/improvement-cycle-healthy.png)
 
 ### Review AI-created work before it is applied
 
-When retained evidence supports a concrete change, OpenOrbit can register an
-AI-created proposal with its rationale, acceptance evidence, and isolated
-change artifact. Review the proposed diff, then approve, reject, or keep it
-under review—nothing is applied without a decision.
+When retained evidence supports a concrete change, an AI coding agent can
+prepare a proposal in an isolated worktree. Review its rationale, acceptance
+evidence, and diff, then approve, reject, or keep it under review—nothing is
+applied without a decision.
 
-![OpenOrbit Issue management reviewing an AI-created prompt change and its isolated diff](docs/images/ai-created-proposal-review.png)
+![OpenOrbit Improvements reviewing an AI-created change and its isolated worktree diff](docs/images/ai-created-proposal-review.png)
 
-### Ask an AI assistant what to do next
+### Ask Orbit Assistant about the current screen
 
-Configure a System AI model to use the built-in Chat Assistant for questions
-about evaluation work, runners, and the control room. Your own AI agent can
-work with the same local operating data through OpenOrbit's versioned API.
+Configure a System AI model to use Orbit Assistant for questions about the
+screen in front of you and help operating the control room. Your own AI agent
+can work with the same local operating data through OpenOrbit's MCP server or
+versioned API.
 
 ![OpenOrbit Chat Assistant asking what to improve next for a build](docs/images/chat-assistant-question.png)
 
@@ -174,7 +161,7 @@ run `pnpm run build` to generate both the SDK docs and the control-room UI.
 
 ### Run the packaged app
 
-Install the packaged release:
+For the standard packaged release, install OpenOrbit and start it:
 
 ```bash
 python -m pip install openorbit
@@ -182,7 +169,8 @@ orbit run
 ```
 
 The wheel already includes the bundled control-room UI, so Node.js and pnpm are
-not required at runtime.
+not required at runtime. Open `http://127.0.0.1:3000` after it starts. If that
+port is occupied, OpenOrbit selects the next available port and prints its URL.
 
 To keep one control room's operational data with a project or another chosen
 directory, pass that directory to `run`. OpenOrbit creates and uses its
@@ -193,7 +181,13 @@ orbit run .            # Store data in the current directory's .orbit/
 orbit run ./my-project # Store data in ./my-project/.orbit/
 ```
 
-> PyPI publication is made possible with the support of insighta cloud Inc.
+To use a specific listener, set `ORBIT_PORT` and `ORBIT_HOST`:
+
+```bash
+ORBIT_PORT=8787 ORBIT_HOST=0.0.0.0 orbit run
+```
+
+### Other ways to start
 
 To use the latest development version, install directly from the main OpenOrbit
 repository. This source installation requires Node.js 24+ and pnpm:
@@ -208,11 +202,7 @@ Or run it once with npm:
 npx openorbit run
 ```
 
-Open `http://127.0.0.1:3000`. If that port is occupied, OpenOrbit selects the next available port and prints its URL. Set `ORBIT_PORT` and `ORBIT_HOST` when you need a specific listener:
-
-```bash
-ORBIT_PORT=8787 ORBIT_HOST=0.0.0.0 orbit run
-```
+> PyPI publication is made possible with the support of insighta cloud Inc.
 
 ### Run from this repository
 
@@ -295,7 +285,10 @@ OpenOrbit exposes a local, versioned API:
 - API base: `http://localhost:3000/api/v1`
 - MCP (Streamable HTTP): `http://localhost:3000/mcp/`
 
-Read the [API reference](docs/API.md) for endpoint details. To add reusable automation, create a Python runner with explicit lifecycle phases:
+Use MCP or the versioned OpenAPI to connect your own agents and automate
+supported work with the same local operating data. Read the
+[API reference](docs/API.md) for endpoint details. To add reusable automation,
+create a Python runner with explicit lifecycle phases:
 
 ```python
 from orbit_sdk import runner
@@ -308,7 +301,8 @@ if __name__ == "__main__":
     runner.main()
 ```
 
-Runners are intentionally bounded. They provide evidence to the control plane; they do not start their own scheduler or silently modify a target system.
+Runners provide evidence to the control plane without starting their own
+scheduler or silently modifying a target system.
 
 ## Build with us
 
