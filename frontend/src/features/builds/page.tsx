@@ -467,24 +467,38 @@ function Direct({
             label={copy.persona.label}
             description={copy.persona.hint}
           >
-            <select
-              value={d.persona_ids[0] ?? ""}
-              onChange={(event) =>
-                setD({
-                  ...d,
-                  persona_ids: event.currentTarget.value
-                    ? [event.currentTarget.value]
-                    : [],
+            <div className="build-persona-selector">
+              {personas.length === 0 ? (
+                <span className="hint">{copy.persona.none}</span>
+              ) : (
+                personas.map((persona) => {
+                  const selected = d.persona_ids.includes(persona.id);
+                  return (
+                    <label
+                      className="build-persona-selector__option"
+                      key={persona.id}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() =>
+                          setD({
+                            ...d,
+                            persona_ids: selected
+                              ? d.persona_ids.filter((id) => id !== persona.id)
+                              : [...d.persona_ids, persona.id],
+                          })
+                        }
+                      />
+                      <span>
+                        <strong>{persona.name}</strong>
+                        <small>{persona.locale}</small>
+                      </span>
+                    </label>
+                  );
                 })
-              }
-            >
-              <option value="">{copy.persona.none}</option>
-              {personas.map((persona) => (
-                <option key={persona.id} value={persona.id}>
-                  {persona.name} · {persona.locale}
-                </option>
-              ))}
-            </select>
+              )}
+            </div>
           </Field>
           <Field label={copy.aiProfile.label} description={copy.aiProfile.hint}>
             <select
