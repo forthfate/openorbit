@@ -5,6 +5,12 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.2] - 2026-09-25
+
+### Fixed
+
+- Fixed packaged applications failing to find their bundled frontend and SDK documentation after a pip installation.
+
 ## [0.12.1] - 2026-09-24
 
 ### Fixed
