@@ -8,52 +8,50 @@
 
 # OpenOrbit
 
-> **AI 에이전트를 자율적으로 개선하고, AI 페르소나로 사용자 여정을 시뮬레이션하는 로컬 워크스페이스.**
+> **AI 페르소나가 제품의 일을 찾고, AI 코딩 에이전트가 변경안을 준비하며,
+> 팀이 결과를 검토하는 로컬 워크스페이스입니다.**
 
-프롬프트, 모델, 도구, 제품 동작이 바뀌어도 AI 에이전트가 실제 사용자에게 어떤 경험을 주는지 계속 확인해야 하는 팀을 위한 도구입니다.
+OpenOrbit은 AI 에이전트 자체를 평가하는 데 그치지 않고, AI 제품을 둘러싼 일을 운영하는 로컬 우선 웹서비스입니다. 페르소나는 제품을 탐색하며 문제와 과제를 보고하고 증거를 남깁니다. 여러분이 선택한 AI 코딩 에이전트는 격리된 Git worktree에서 변경안을 준비하고, 팀은 하나의 컨트롤룸에서 diff·증거·결정을 검토합니다.
 
-OpenOrbit은 AI 페르소나로 사용자 여정을 반복 시뮬레이션하고, 그 과정에서 수집한 AI 응답, 로그, 브라우저 증거를 바탕으로 개선안을 만듭니다. 매 실행의 평가 결과, 감독자 피드백, 개선 제안과 결정은 하나의 이력으로 남아, AI 시스템이 실제로 나아지고 있는지 추적할 수 있습니다.
-
-모든 과정은 로컬에서 실행되며, 운영 기록은 여러분의 AppData에 보관됩니다. AI 에이전트는 증거에 기반한 개선안을 제시하지만, 어떤 변경을 적용할지는 여러분이 결정합니다.
+반복적인 AI Agent 평가와 자가 개선도 지원합니다. 실행, 제안, 의사결정, 승인된 변경은 모두 보존되는 운영 이력이 됩니다. 모든 것은 로컬에서 실행되고 기록은 AppData에 남습니다.
 
 ## 왜 OpenOrbit인가?
 
-AI 기능은 데모에서는 정상으로 보이더라도 프롬프트, 모델, 도구, 제품 변경 이후 성능이 저하될 수 있습니다. OpenOrbit는 그 기능에 일회성 테스트가 아니라 반복 가능한 운영 루프를 제공합니다.
+AI 기능이나 웹 제품은 데모에서는 정상으로 보이더라도 프롬프트, 모델, 도구, 제품 변경 이후 성능이 저하될 수 있습니다. OpenOrbit은 보고된 문제를 검토 가능한 개선으로 바꾸는 데 필요한 사람, 페르소나, 코딩 에이전트, 증거를 연결합니다.
 
 ```mermaid
 flowchart LR
-  A[AI persona<br/>simulates a user journey]
-  B[Recurring evaluation]
-  C[Responses, logs,<br/>and browser evidence]
-  D[Supervisor review]
-  E[AI-created issues<br/>and change proposals]
-  F[Human review<br/>and approval]
-  G[Updated AI system]
+  A[AI 페르소나가<br/>제품을 탐색]
+  B[문제, 과제, 보존된 증거]
+  C[AI 코딩 에이전트가<br/>worktree 변경안을 준비]
+  D[diff, 증거, 제안 검토]
+  E[사람의 결정]
+  F[개선된 제품 또는<br/>AI Agent]
 
-  A --> B --> C --> D --> E --> F --> G --> A
+  A --> B --> C --> D --> E --> F --> A
 ```
 
-OpenOrbit은 매번의 평가를 보존된 운영 기록으로 남깁니다. 그래서 팀은 무엇이 바뀌었는지 확인하고, 증거를 검토하며, 개선안을 안전하게 적용할 수 있는지 결정할 수 있습니다.
+OpenOrbit은 이 일을 투명하고 되돌릴 수 있게 남깁니다. AI는 일을 제안하고 준비할 수 있지만, 적용 여부는 사람이 결정합니다.
 
 ## 할 수 있는 일
 
-- 타깃, 워크플로, 러너, 고정 테스트 케이스, 매니저 프롬프트, AI 모델 프로필로부터 재사용 가능한 **빌드(build)** 를 정의합니다.
-- 가이드형 Quick Start로 시작하고, 평가 워크플로를 시각적으로 구성하거나, 고유한 자동화가 필요할 때 Python으로 확장합니다.
-- 빌드를 저장하기 전에 일회성 **테스트(test)** 를 실행하거나, 명확한 승인 경계 아래에서 구성된 라이프사이클을 반복 실행합니다.
-- 프로세스 로그, 구조화된 증거, 브라우저 스크린샷, 감독자 응답, OpenTelemetry 트레이스를 통해 모든 단계를 점검합니다.
-- 보고된 이슈와 제안된 개선안을 지속적인 의사결정 이력 안에서 검토합니다.
-- 단일 모델 응답을 전부로 취급하는 대신, 반복(iteration) 전반에 걸친 PDCA 사이클을 관찰합니다.
-- 하나의 로컬 컨트롤룸에서 진행 중인 작업을 중지합니다.
+- **보고된 문제를 worktree로 개발합니다.** AI가 구체적인 문제를 보고하면 코딩 에이전트가 격리된 변경안을 준비하게 하고, 적용 전에 diff와 증거를 검토합니다.
+- **원하는 AI 코딩 에이전트를 사용합니다.** 특정 제공자에 묶이지 않고 팀이 이미 사용하는 코딩 에이전트를 연결합니다.
+- **AI 페르소나에게 일을 맡깁니다.** 페르소나는 정해진 관점에서 제품을 탐색하고, 과제와 문제를 발견하며, 그 일을 증거와 연결합니다.
+- **AI Agent를 지속적으로 개선합니다.** 반복 평가가 응답, 피드백, 제안, 결정을 보존하므로 AI Agent를 안전하게 개선할 수 있습니다.
+- **페르소나와 재사용 가능한 자산을 관리합니다.** 다음 작업에 사용할 페르소나, 모델 프로필, 프롬프트, 테스트 케이스, 환경, 워크플로를 관리합니다.
+- **Orbit Assistant로 질문하고 조작합니다.** 현재 보고 있는 화면에 관해 묻고, 컨트롤룸을 조작하는 데 도움을 받습니다.
+- **MCP와 OpenAPI로 자동화합니다.** 여러분의 에이전트와 도구가 같은 로컬 운영 데이터를 읽고 지원되는 작업을 자동화할 수 있습니다.
 
 ## Quick start
 
-몇 분 안에 단순한 테스트 하나가 아니라, 러너·타깃·증거·감독 정책·승인 경계가 연결된 완전한 평가 루프를 만들 수 있습니다.
+가이드 템플릿으로 시작한 뒤, 팀이 운영하려는 제품, 페르소나, AI 워크플로에 맞게 조정하세요.
 
 ![OpenOrbit dashboard opening the Agent self-improvement Quick Start](../../docs/images/openorbit-quick-start.gif)
 
 ### Quick Start로 10초 만에 시작하기
 
-Dashboard의 **Quick starts** 섹션을 열고, 가이드 템플릿을 선택한 뒤, 몇 개의 타깃별 필드를 채우고 빌드를 생성하세요. 각 템플릿은 러너, 고정 테스트 케이스, 환경, 매니저 정책, 모델 프로필 구성을 함께 생성하므로, 모든 자산을 손수 조립하는 대신 동작하는 운영 루프로 시작할 수 있습니다.
+Dashboard의 **Quick starts**를 열고 가이드 템플릿을 선택한 뒤, 타깃별 필드를 채우고 빌드를 생성하세요. 템플릿은 필요한 러너, 테스트 케이스, 환경, 정책, 모델 프로필을 연결하므로 동작하는 워크플로에서 시작해 필요한 만큼 다듬을 수 있습니다.
 
 | Quick Start | 사용 시점 | 첫 실행 예시 |
 | --- | --- | --- |
@@ -71,50 +69,42 @@ Dashboard의 **Quick starts** 섹션을 열고, 가이드 템플릿을 선택한
 
 Quick Start는 제공자 키를 절대 저장하지 않습니다. 선택한 모델 프로필에 이미 구성된 환경 변수 이름을 참조할 뿐입니다.
 
-## 첫 번째 평가 루프
-
-1. **Assets** 에서 AI 모델 프로필을 생성하거나 선택합니다.
-2. 평가하려는 AI 시스템을 기술하는 러너, 워크플로, 고정 테스트 케이스, 타깃 환경을 추가합니다.
-3. 이 자산들로부터 **Build** 를 생성합니다.
-4. **Test** 를 사용해 빌드를 한 번 실행하고, 평가 실행 이력에 추가하지 않은 채로 전체 실행 상세를 점검합니다.
-5. 준비가 되면 정기 실행을 시작한 뒤, **Runs** 에서 증거와 감독자 결과를 검토합니다.
-6. **Improvements** 를 사용해 시간에 따른 점수, 피드백, 의사결정, 사이클 건강도를 비교합니다.
-
 ## 제품 둘러보기
 
-하나의 로컬 컨트롤룸에서 “무언가가 바뀌었다”는 사실부터, 그 증거와 결정, 다음에 취할 안전한 조치까지 이어서 확인할 수 있습니다. OpenOrbit는 각 단계에서 운영자가 필요로 하는 정보를 중심으로 설계되었습니다.
+OpenOrbit의 웹 컨트롤룸은 문제 발견부터 결정까지의 일을 한곳에 모읍니다. 현재 내비게이션은 팀이 수행하는 작업을 중심으로 구성되어 있습니다.
 
-| 영역 | 답해 주는 질문 |
+| 영역 | 여기서 하는 일 |
 | --- | --- |
-| **Dashboard** | 지금 AI 시스템은 건강한가? 최근에 무엇이 바뀌었는가? |
-| **Builds** | 정확히 무엇이, 어떤 자산과 정책으로 평가되고 있는가? |
-| **Run detail** | 각 단계에서 무슨 일이 있었고, 어떤 증거가 그 결과를 뒷받침하는가? |
-| **Improvements** | 피드백, 의사결정, 점수가 시간이 지나며 실제로 개선되고 있는가? |
-| **Issue management** | AI가 어떤 작업을 제안했고, 무엇이 사람의 승인을 기다리는가? |
+| **Dashboard** | 현재 활동을 확인하고 가이드 워크플로를 시작합니다. |
+| **Assets** | 재사용할 페르소나, 모델 프로필, 프롬프트, 테스트 케이스, 환경, 러너, 워크플로를 관리합니다. |
+| **Builds** | 제품 또는 AI Agent 워크플로에 사용할 자산과 정책을 연결합니다. |
+| **Runs** | 실행과 그 실행이 남긴 증거를 확인합니다. |
+| **Improvements** | 피드백과 페르소나 여정을 살피고, AI가 보고한 이슈와 worktree 제안을 검토합니다. |
+| **Settings** | 모델, 코딩 에이전트, 로컬 컨트롤룸을 설정합니다. |
 
-아래 스크린샷은 고객 지원 AI가 보존된 평가 증거와 개선 사이클을 거치는 과정을 따라갑니다.
+아래 화면은 보존된 증거가 검토 가능한 AI 생성 변경안으로 이어지는 과정을 보여줍니다.
 
-### 실행의 워크플로와 증거 확인하기
+### 실행의 증거 확인하기
 
 보존된 실행(run)을 열어 워크플로, 라이프사이클 진행 상태, 각 단계에서 수집된 증거를 검토하세요. 그런 다음 관찰된 동작을 감독자 피드백 및 제안된 개선안과 비교하세요.
 
-![OpenOrbit Run detail showing a completed evaluation workflow and its retained evidence](../../docs/images/evaluation-result-approved.png)
+![OpenOrbit Runs showing a completed workflow and its retained evidence](../../docs/images/evaluation-result-approved.png)
 
-### 개선 사이클 전반의 증거 검토하기
+### 개선과 페르소나 활동 살펴보기
 
-여러 빌드에 걸쳐 피드백 양, 채택된 변경, 점수, 실행 건강도를 비교하세요. 이 이력은 운영 사이클이 시간이 지나며 AI 시스템을 개선하고 있는지 분명하게 보여줍니다.
+여러 빌드에 걸쳐 피드백, 의사결정, 점수, 실행 상태, 페르소나 여정을 비교하세요. 이 이력은 제품 또는 AI Agent 워크플로가 시간에 따라 나아지고 있는지 보여줍니다.
 
 ![OpenOrbit improvements with feedback trends and proposal-decision history](../../docs/images/improvement-cycle-healthy.png)
 
 ### 적용 전 AI가 만든 작업 검토하기
 
-보존된 증거가 구체적인 변경을 뒷받침하면 OpenOrbit는 근거, 수용 증거, 격리된 변경 산출물을 갖춘 AI 생성 제안을 등록할 수 있습니다. 제안된 diff를 검토한 뒤 승인하거나, 거절하거나, 계속 검토 상태로 둘 수 있으며, 결정 없이는 어떤 변경도 적용되지 않습니다.
+보존된 증거가 구체적인 변경을 뒷받침하면 AI 코딩 에이전트가 격리된 worktree에서 제안을 준비할 수 있습니다. 근거, 수용 증거, diff를 검토한 뒤 승인하거나, 거절하거나, 계속 검토 상태로 둘 수 있으며, 결정 없이는 어떤 변경도 적용되지 않습니다.
 
-![OpenOrbit Issue management reviewing an AI-created prompt change and its isolated diff](../../docs/images/ai-created-proposal-review.png)
+![OpenOrbit Improvements reviewing an AI-created change and its isolated worktree diff](../../docs/images/ai-created-proposal-review.png)
 
-### 다음에 무엇을 할지 AI 어시스턴트에게 묻기
+### 현재 화면에 관해 Orbit Assistant에게 묻기
 
-System AI 모델을 구성하면 내장 Chat Assistant를 사용해 평가 작업, 러너, 컨트롤룸에 관해 질문할 수 있습니다. 여러분 자신의 AI 에이전트도 OpenOrbit의 버전 관리 API를 통해 동일한 로컬 운영 데이터와 함께 작업할 수 있습니다.
+System AI 모델을 구성하면 Orbit Assistant에게 현재 보고 있는 화면을 질문하고 컨트롤룸 조작을 도움받을 수 있습니다. 여러분의 AI 에이전트도 OpenOrbit의 MCP 서버 또는 버전 관리 API를 통해 같은 로컬 운영 데이터와 함께 작업할 수 있습니다.
 
 ![OpenOrbit Chat Assistant asking what to improve next for a build](../../docs/images/chat-assistant-question.png)
 
@@ -140,14 +130,14 @@ pnpm run docs:serve
 
 ### 패키지 앱 실행
 
-패키지 릴리스를 설치합니다.
+일반 패키지 릴리스는 OpenOrbit을 설치한 뒤 바로 실행합니다.
 
 ```bash
 python -m pip install openorbit
 orbit run
 ```
 
-wheel에는 번들된 컨트롤룸 UI가 이미 포함되어 있으므로, 런타임에 Node.js와 pnpm이 필요하지 않습니다.
+wheel에는 번들된 컨트롤룸 UI가 이미 포함되어 있으므로, 런타임에 Node.js와 pnpm이 필요하지 않습니다. 시작한 뒤 `http://127.0.0.1:3000`을 여세요. 해당 포트가 사용 중이면 OpenOrbit는 다음으로 사용 가능한 포트를 선택하고 그 URL을 출력합니다.
 
 프로젝트나 원하는 디렉터리와 함께 하나의 컨트롤룸 운영 데이터를 보관하려면 `run`에 해당 디렉터리를 전달하세요. OpenOrbit는 그 안에 `.orbit` 하위 디렉터리를 만들어 사용합니다.
 
@@ -156,7 +146,13 @@ orbit run .            # 현재 디렉터리의 .orbit/에 저장
 orbit run ./my-project # ./my-project/.orbit/에 저장
 ```
 
-> PyPI 배포는 insighta cloud Inc.의 지원으로 이루어집니다.
+특정 리스너가 필요하면 `ORBIT_PORT`와 `ORBIT_HOST`를 설정하세요.
+
+```bash
+ORBIT_PORT=8787 ORBIT_HOST=0.0.0.0 orbit run
+```
+
+### 다른 실행 방법
 
 최신 개발 버전을 사용하려면 OpenOrbit 메인 저장소에서 직접 설치하세요. 이 소스 설치에는 Node.js 24+와 pnpm이 필요합니다.
 
@@ -170,11 +166,7 @@ python -m pip install "openorbit @ git+https://github.com/forthfate/openorbit.gi
 npx openorbit run
 ```
 
-`http://127.0.0.1:3000`을 엽니다. 해당 포트가 사용 중이면 OpenOrbit는 다음으로 사용 가능한 포트를 선택하고 그 URL을 출력합니다. 특정 리스너가 필요하면 `ORBIT_PORT`와 `ORBIT_HOST`를 설정하세요.
-
-```bash
-ORBIT_PORT=8787 ORBIT_HOST=0.0.0.0 orbit run
-```
+> PyPI 배포는 insighta cloud Inc.의 지원으로 이루어집니다.
 
 ### 이 저장소에서 실행
 
@@ -242,7 +234,7 @@ OpenOrbit는 로컬의, 버전이 관리되는 API를 노출합니다.
 
 MCP 클라이언트는 `http://localhost:3000/mcp/`에 연결하면 프로젝트와 파이프라인을 조회하고, 실행·승인 작업 및 개선안 수명주기를 다룰 수 있습니다. `openorbit://openapi` 리소스는 전체 v1 HTTP API의 OpenAPI 계약을 제공합니다. MCP도 로컬 전용이며 기본 인증을 제공하지 않으므로, 신뢰할 수 없는 네트워크에 직접 노출하지 마세요.
 
-엔드포인트 세부 정보는 [API 레퍼런스](../../docs/API.md)를 참고하세요. 재사용 가능한 자동화를 추가하려면 명시적인 라이프사이클 단계를 갖는 Python 러너를 생성하세요.
+MCP 또는 버전 관리 OpenAPI를 사용하면 여러분의 에이전트를 연결하고, 같은 로컬 운영 데이터로 지원되는 작업을 자동화할 수 있습니다. 엔드포인트 세부 정보는 [API 레퍼런스](../../docs/API.md)를 참고하세요. 재사용 가능한 자동화를 추가하려면 명시적인 라이프사이클 단계를 갖는 Python 러너를 생성하세요.
 
 ```python
 from orbit_sdk import runner
@@ -255,7 +247,7 @@ if __name__ == "__main__":
     runner.main()
 ```
 
-러너는 의도적으로 제한적입니다. 러너는 컨트롤 플레인에 증거를 제공할 뿐, 자체 스케줄러를 시작하거나 타깃 시스템을 조용히 수정하지 않습니다.
+러너는 컨트롤 플레인에 증거를 제공하며, 자체 스케줄러를 시작하거나 타깃 시스템을 조용히 수정하지 않습니다.
 
 ## 함께 만들어요
 
