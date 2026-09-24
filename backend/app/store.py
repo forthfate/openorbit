@@ -3557,7 +3557,7 @@ class ConsoleStore:
 
     def _hydrate_workflow_graph(self, run: Run) -> Run:
         """Attach a runner graph to historical runs when their detail is opened."""
-        if run.workflow_graph or not run.build_id:
+        if (run.workflow_graph or {}).get("nodes") or not run.build_id:
             return run
         build = next((item for item in self.builds() if item.get("id") == run.build_id), None)
         if not build:
