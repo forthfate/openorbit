@@ -3223,6 +3223,34 @@ class ConsoleStore:
                     ),
                     "",
                 )
+                if not message:
+                    process_exit = next(
+                        (
+                            event.get("attributes", {}).get("process.exit_code")
+                            for event in events
+                            if event.get("name") == "process.completed"
+                            and event.get("attributes", {}).get("process.exit_code") not in (None, 0)
+                        ),
+                        None,
+                    )
+                    if process_exit is not None:
+                        message = f"process exited with code {process_exit}"
+                if not message:
+                    failure = next(
+                        (
+                            event
+                            for event in events
+                            if event.get("name", "").endswith(
+                                (".failed", ".invalid", ".rejected", ".timeout")
+                            )
+                        ),
+                        None,
+                    )
+                    if failure:
+                        error_type = failure.get("attributes", {}).get("error.type")
+                        message = f"{failure.get('name')}" + (f" ({error_type})" if error_type else "")
+                if not message:
+                    message = ", ".join(str(event.get("name")) for event in events[-2:] if event.get("name"))
                 entries.append(
                     {
                         "time": str(record.get("exportedAt", "")),
