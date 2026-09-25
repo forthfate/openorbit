@@ -912,11 +912,7 @@ export function BuildsPage(props: {
       )}
       <Modal
         open={open}
-        title={
-          edit
-            ? t.evaluation.createBuild
-            : t.evaluation.createBuild
-        }
+        title={edit ? t.evaluation.editBuild : t.evaluation.addBuild}
         onClose={() => setOpen(false)}
       >
         {mode === "chooser" && (

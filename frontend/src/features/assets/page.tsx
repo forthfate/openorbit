@@ -302,7 +302,7 @@ function WorkflowModal({
       .catch((error) => setNotice(error.message));
   };
   return (
-    <Modal open title={editing ? l.flows : l.addFlow} onClose={onClose}>
+    <Modal open title={editing ? l.editFlow : l.addFlow} onClose={onClose}>
       <div className="build-wizard workflow-editor">
         <ol className="wizard-steps">
           <li className={page === 1 ? "current" : "done"}>
@@ -614,7 +614,7 @@ function RunnerModal({
   return (
     <Modal
       open
-      title={editing ? copy.editTitle : copy.configureTitle}
+      title={editing ? copy.editTitle : copy.createTitle}
       onClose={onClose}
     >
       <div className="modal-form runner-editor">
@@ -1024,7 +1024,7 @@ function PromptTemplateEditor({
       .catch((error) => setNotice(error.message));
   return (
     <>
-      <Modal open={!pendingAction} title={l.addTemplate} onClose={close}>
+      <Modal open={!pendingAction} title={template.version > 0 ? l.editTemplate : l.addTemplate} onClose={close}>
         <div className="modal-form">
           <label className="modal-setting-row">
             <FieldLabel label={l.id} description={help.id} />
@@ -1275,7 +1275,7 @@ function LegacyAssetsPage({
       )}
       <Modal
         open={testSet !== null}
-        title={l.addTests}
+        title={testSet?.id ? l.editTests : l.addTests}
         onClose={() => setTestSet(null)}
       >
         {testSet && (
@@ -1849,7 +1849,7 @@ function EnvironmentCatalog({
       </section>
       <Modal
         open={kind === "execution"}
-        title={t.execution}
+        title={executionEnvironments.some((item) => item.id === execution?.id) ? t.editExecution : t.addExecution}
         onClose={() => setKind(null)}
       >
         {execution && (
@@ -1884,7 +1884,7 @@ function EnvironmentCatalog({
       </Modal>
       <Modal
         open={kind === "target"}
-        title={t.target}
+        title={targetEnvironments.some((item) => item.id === target?.id) ? t.editTarget : t.addTarget}
         onClose={() => setKind(null)}
       >
         {target && (
@@ -1920,7 +1920,7 @@ function EnvironmentCatalog({
 }
 
 function PersonaCatalog({ builds, onRefresh, locale, loading }: { builds: Build[]; onRefresh: () => Promise<unknown>; locale: Locale; loading: boolean }) {
-  const t = text[locale];
+  const t = { ...text[locale] };
   const [items, setItems] = useState<Persona[]>([]), [draft, setDraft] = useState<Persona | null>(null), [error, setError] = useState(""), [itemsLoading, setItemsLoading] = useState(true);
   const load = () => {
     setItemsLoading(true);
@@ -1939,6 +1939,7 @@ function PersonaCatalog({ builds, onRefresh, locale, loading }: { builds: Build[
   const selectedLocale =
     personaLocaleOptions.find((option) => option.value === draft?.locale) ??
     (draft ? { value: draft.locale, label: draft.locale } : null);
+  t.persona = draft && items.some((item) => item.id === draft.id) ? t.editPersona : t.addPersona;
   return <section className="panel app-settings"><div className="panel-title-action"><div className="panel-title-action__copy"><PanelHeader title={<SectionInfo title={t.personas} description={t.personaDescription} />} /><p className="hint section-description">{t.personaDescription}</p></div><button className="approve" onClick={() => setDraft({ id: `persona-${Date.now()}`, name: "", locale: "en-US", timezone: "UTC", activity_windows: [], definition: "", context: {} })}><Plus size={14} />{locales[locale].ui.create}</button></div><AssetCatalog locale={locale} loading={loading || itemsLoading} emptyHint={t.emptyPersonas}>{items.map((item) => <AssetRow key={item.id} name={item.name} detail={`${item.locale} · ${item.timezone}`} usageCount={builds.filter((build) => build.persona_ids?.includes(item.id)).length} locale={locale} onClick={() => setDraft(item)} onDelete={() => api(`/api/personas/${item.id}`, "DELETE").then(() => Promise.all([load(), onRefresh()]).then(() => undefined)).catch((value) => setError(value.message))} />)}</AssetCatalog>{draft && <Modal open title={t.persona} onClose={() => setDraft(null)}><div className="modal-form"><label className="modal-setting-row"><span>{t.id}</span><input disabled={items.some((item) => item.id === draft.id)} value={draft.id} onChange={(event) => setDraft({ ...draft, id: event.target.value })} /></label><label className="modal-setting-row"><span>{t.name}</span><input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label><label className="modal-setting-row"><span>{t.locale}</span><Select classNamePrefix="orbit-select" options={personaLocaleOptions} value={selectedLocale} placeholder={t.localeSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => option && setDraft({ ...draft, locale: option.value })} /></label><label className="modal-setting-row"><span>{t.timezone}</span><TimezoneSelect classNamePrefix="orbit-select" value={draft.timezone} placeholder={t.timezoneSearch} noOptionsMessage={() => t.noMatchingOptions} onChange={(option) => setDraft({ ...draft, timezone: option.value })} /></label><label className="modal-setting-row"><span>{t.definition}</span><div className="persona-definition-editor"><MarkdownEditor value={draft.definition} onChange={(definition) => setDraft({ ...draft, definition })} label={t.definition} placeholder={t.definitionPlaceholder} /></div></label><label className="modal-setting-row"><span>{t.activityContext}</span><div className="persona-context-editor"><JsonEditor value={JSON.stringify({ activity_windows: draft.activity_windows, context: draft.context }, null, 2)} onChange={(source) => { try { const value = JSON.parse(source); setDraft({ ...draft, activity_windows: value.activity_windows ?? [], context: value.context ?? {} }); setError(""); } catch { setError(t.invalidPersonaJson); } }} label={t.activityContext} height="260px" /></div></label><div className="modal-actions"><small>{error}</small><button className="approve" onClick={save}>{t.save}</button></div></div></Modal>}</section>;
 }
 

@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +26,48 @@ def test_health_is_available():
     response = TestClient(app).get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_improvement_analytics_excludes_builds_without_recent_runs_or_feedback(monkeypatch):
+    current = datetime(2026, 9, 25, 12, tzinfo=UTC)
+    monkeypatch.setattr(store_module, "now", lambda: current)
+    store = store_module.ConsoleStore()
+
+    def run(build_id, created_at, supervisor_results=None):
+        return Run(
+            id=f"run-{build_id}",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            build_id=build_id,
+            build_name=build_id,
+            status="succeeded",
+            created_at=created_at,
+            updated_at=created_at,
+            finished_at=created_at,
+            supervisor_results=supervisor_results or [],
+        )
+
+    old_run = run("old-build", current - timedelta(days=2))
+    recent_run = run("recent-build", current - timedelta(hours=1))
+    old_run_with_recent_feedback = run(
+        "feedback-build",
+        current - timedelta(days=2),
+        [
+            {
+                "iteration": 1,
+                "recorded_at": (current - timedelta(minutes=30)).isoformat(),
+                "response": {"improvements": [{"status": "acceptable"}], "reported_issues": []},
+            }
+        ],
+    )
+    monkeypatch.setattr(store, "runs", lambda: [old_run, recent_run, old_run_with_recent_feedback])
+
+    analytics = store.improvement_analytics(hours=24)
+
+    expected = {"recent-build", "feedback-build"}
+    assert {item["build_id"] for item in analytics["feedback_by_build"]} == expected
+    assert {item["build_id"] for item in analytics["iteration_trends"]} == expected
+    assert {item["build_id"] for item in analytics["feedback_status"]} == expected
 
 
 def test_bundled_directory_prefers_wheel_files_over_source_checkout(tmp_path):
