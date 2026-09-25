@@ -5048,10 +5048,19 @@ class ConsoleStore:
             self._save(run)
             time.sleep(30)
 
-    def retry(self, run_id: str, restart_from_first: bool) -> Run:
+    def retry(self, run_id: str, restart_from_first: bool, output_locale: str | None = None) -> Run:
         run = self._load(run_id)
         if run.execution_type != "pipeline" or run.status not in {"succeeded", "failed", "cancelled"}:
             raise ValueError("Only completed, failed, or cancelled pipeline runs can be retried")
+        if output_locale:
+            resolved_output_locale = output_locale.strip()
+            if run.build_id and resolved_output_locale:
+                prompt_source, prompt_snapshot = self._assembled_prompt(
+                    self.build(run.build_id), resolved_output_locale
+                )
+                run.output_locale = resolved_output_locale
+                run.prompt_source = prompt_source
+                run.prompt_snapshot = prompt_snapshot
         latest_iteration = max(
             (
                 int(item.get("loop_index", 0))
