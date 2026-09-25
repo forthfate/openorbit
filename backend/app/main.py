@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ from typing import Literal
 from fastapi import FastAPI, File, HTTPException, Query, Request, Response, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from opentelemetry.trace import Status, StatusCode
 from orbit_sdk.visual import visual_nodes
 from pydantic import BaseModel, Field
 
@@ -82,10 +84,42 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def record_failed_api_requests(request: Request, call_next):
+    """Retain failed control-room API calls without recording request bodies."""
+    try:
+        response = await call_next(request)
+    except Exception as error:
+        if request.url.path.startswith("/api/"):
+            with store.tracer.start_as_current_span(
+                "api.request",
+                attributes={"http.request.method": request.method, "url.path": request.url.path},
+            ) as span:
+                span.record_exception(error)
+                span.set_status(Status(StatusCode.ERROR))
+                span.add_event("api.request.failed", {"error.type": type(error).__name__})
+        raise
+    if request.url.path.startswith("/api/") and response.status_code >= 400:
+        with store.tracer.start_as_current_span(
+            "api.request",
+            attributes={
+                "http.request.method": request.method,
+                "url.path": request.url.path,
+                "http.response.status_code": response.status_code,
+            },
+        ) as span:
+            span.set_status(Status(StatusCode.ERROR))
+            span.add_event("api.response.failed", {"http.response.status_code": response.status_code})
+    return response
+
+
 # The API service owns in-memory scheduler threads, so it alone may mark a
 # leftover local pipeline as interrupted when it starts.
 store = ConsoleStore(recover_interrupted_runs=True)
 assistant_ui_broker = AssistantUiBroker()
+logger = logging.getLogger(__name__)
 
 
 def bundled_directory(relative_path: Path, roots: tuple[Path, ...] | None = None) -> Path:
@@ -1334,21 +1368,42 @@ def chat(values: ChatMessage, request: Request):
     settings = ModelSettings(
         **{key: value for key, value in configured.items() if key in ModelSettings.__dataclass_fields__}
     )
-    try:
-        provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
-        application = store.application_settings()
-        tool_executor = AssistantToolExecutor(
-            application["assistant_tools"], application["coding_agent_provider"]
-        )
-        prompt = build_assistant_prompt(
-            values.content,
-            [(turn.role, turn.content) for turn in values.history],
-            request_locale(request),
-        )
-        response = OrbitAssistantGraph(provider, settings, tool_executor).invoke(prompt)
-        return {"response": response, "profile_name": profile_name}
-    except RuntimeError as error:
-        raise HTTPException(409, str(error))
+    provider = AzureOpenAIProvider() if settings.provider == "azure-openai" else BedrockProvider()
+    application = store.application_settings()
+    tool_executor = AssistantToolExecutor(
+        application["assistant_tools"], application["coding_agent_provider"]
+    )
+    prompt = build_assistant_prompt(
+        values.content,
+        [(turn.role, turn.content) for turn in values.history],
+        request_locale(request),
+    )
+    with store.tracer.start_as_current_span(
+        "assistant.chat",
+        attributes={
+            "orbit.assistant.stream": False,
+            "gen_ai.provider.name": settings.provider,
+            "gen_ai.request.model": settings.model,
+            "orbit.assistant.profile": profile_name,
+        },
+    ) as span:
+        try:
+            span.add_event("assistant.request.received")
+            response = OrbitAssistantGraph(provider, settings, tool_executor).invoke(prompt)
+            span.set_attribute("orbit.assistant.response.length", len(response))
+            span.add_event("assistant.response.completed")
+            return {"response": response, "profile_name": profile_name}
+        except RuntimeError as error:
+            span.record_exception(error)
+            span.set_status(Status(StatusCode.ERROR))
+            span.add_event("assistant.request.failed", {"error.type": type(error).__name__})
+            raise HTTPException(409, str(error))
+        except Exception as error:
+            span.record_exception(error)
+            span.set_status(Status(StatusCode.ERROR))
+            span.add_event("assistant.request.failed", {"error.type": type(error).__name__})
+            logger.exception("Orbit Assistant request failed")
+            raise HTTPException(500, "Chat request failed.")
 
 
 @app.post("/api/chat/stream")
@@ -1400,16 +1455,38 @@ async def chat_stream(values: ChatMessage, request: Request):
 
         async def run() -> None:
             try:
-                response = await asyncio.to_thread(
-                    OrbitAssistantGraph(
-                        provider, settings, tool_executor, ui_tools=ui_tools, on_activity=activity
-                    ).invoke,
-                    prompt,
-                )
+
+                def invoke() -> str:
+                    with store.tracer.start_as_current_span(
+                        "assistant.chat",
+                        attributes={
+                            "orbit.assistant.stream": True,
+                            "orbit.assistant.ui_enabled": bool(ui_tools),
+                            "gen_ai.provider.name": settings.provider,
+                            "gen_ai.request.model": settings.model,
+                            "orbit.assistant.profile": profile_name,
+                        },
+                    ) as span:
+                        try:
+                            span.add_event("assistant.request.received")
+                            response = OrbitAssistantGraph(
+                                provider, settings, tool_executor, ui_tools=ui_tools, on_activity=activity
+                            ).invoke(prompt)
+                            span.set_attribute("orbit.assistant.response.length", len(response))
+                            span.add_event("assistant.response.completed")
+                            return response
+                        except Exception as error:
+                            span.record_exception(error)
+                            span.set_status(Status(StatusCode.ERROR))
+                            span.add_event("assistant.request.failed", {"error.type": type(error).__name__})
+                            raise
+
+                response = await asyncio.to_thread(invoke)
                 await queue.put({"type": "response", "response": response})
             except RuntimeError as error:
                 await queue.put({"type": "error", "message": str(error)})
             except Exception:
+                logger.exception("Orbit Assistant streaming request failed")
                 await queue.put({"type": "error", "message": "Chat request failed."})
 
         task = asyncio.create_task(run())
