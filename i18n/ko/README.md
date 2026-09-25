@@ -6,7 +6,11 @@
 
 *Read this in other languages: [English](../../README.md)*
 
-# OpenOrbit
+<p align="center">
+  <img src="../../logo-lockup.png" width="520" alt="OpenOrbit" />
+</p>
+
+# OpenOrbit이란?
 
 > **AI 페르소나가 제품의 일을 찾고, AI 코딩 에이전트가 변경안을 준비하며,
 > 팀이 결과를 검토하는 로컬 워크스페이스입니다.**
