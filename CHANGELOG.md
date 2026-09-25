@@ -5,6 +5,17 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.6] - 2026-09-25
+
+### Added
+
+- Added `orbit --version` for inspecting the installed OpenOrbit version.
+
+### Fixed
+
+- Aligned issue discussion typography with the surrounding detail view.
+- Kept Run-detail log content within its tab and made the OpenTelemetry trace panel scroll only when needed.
+
 ## [0.12.5] - 2026-09-25
 
 ### Fixed
