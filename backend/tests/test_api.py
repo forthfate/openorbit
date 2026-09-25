@@ -918,6 +918,65 @@ def test_completed_pipeline_run_can_be_retried(tmp_path, monkeypatch):
     assert retried.runner_output == ""
 
 
+def test_latest_runner_selection_stays_null_when_a_run_is_retried(tmp_path, monkeypatch):
+    """A latest-version build must not become pinned to its first resolved version."""
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    versions = {
+        "version": 2,
+        "versions": [
+            {"version": 1, "source": "first"},
+            {"version": 2, "source": "second"},
+        ],
+    }
+    monkeypatch.setattr(
+        store, "_runner", lambda _runner_id: {"id": "workflow", "name": "Workflow", **versions}
+    )
+    monkeypatch.setattr(
+        store,
+        "_runner_execution_plan",
+        lambda runner_id, runner_version=None: SimpleNamespace(id=runner_id, name="Workflow"),
+    )
+    monkeypatch.setattr(store, "_runner_graph_definition", lambda *_: None)
+    monkeypatch.setattr(store, "_start", lambda _: None)
+
+    run = store.create_run("workflow", runner_version=None)
+    assert run.runner_version is None
+    run.status = "succeeded"
+    store._save(run)
+
+    versions["version"] = 3
+    versions["versions"].append({"version": 3, "source": "third"})
+    retried = store.retry(run.id, restart_from_first=True)
+
+    assert retried.runner_version is None
+
+
+def test_retry_restores_latest_selection_for_a_legacy_resolved_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    store._save(
+        Run(
+            id="legacy-latest-run",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            runner_version=2,
+            build_id="latest-build",
+            execution_type="pipeline",
+            status="failed",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+    )
+    monkeypatch.setattr(store, "build", lambda _build_id: {"id": "latest-build", "runner_version": None})
+    monkeypatch.setattr(store, "_start", lambda _: None)
+
+    retried = store.retry("legacy-latest-run", restart_from_first=True)
+
+    assert retried.runner_version is None
+
+
 def test_retry_uses_the_requested_output_locale_and_refreshes_its_prompt(tmp_path, monkeypatch):
     monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
     store = store_module.ConsoleStore()
