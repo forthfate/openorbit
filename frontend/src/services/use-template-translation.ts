@@ -35,7 +35,6 @@ export function useTemplateTranslations<T>(
         result: await api<CachedTemplateTranslation<T>>("/api/template-translations/cached", "POST", {
           kind,
           template_id: templateId,
-          locale,
         }),
       })),
     ).then((responses) => {
@@ -77,7 +76,6 @@ export function useTemplateTranslations<T>(
         result: await api<TemplateTranslation<T>>("/api/template-translations", "POST", {
           kind,
           template_id: templateId,
-          locale,
         }),
       })),
     );
