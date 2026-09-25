@@ -22,7 +22,12 @@ import type {
   RunnerState,
 } from "../../domain/models";
 import { Modal } from "../../components/ui/modal";
-import { preferredBuildId, savePreferredBuildId } from "../../services/build-selection";
+import {
+  preferredBuildId,
+  preferredRangeHours,
+  savePreferredBuildId,
+  savePreferredRangeHours,
+} from "../../services/build-selection";
 import { PanelHeader } from "../../components/ui/page-header";
 import { SectionInfo } from "../../components/ui/section-info";
 import { StatusBadge } from "../../components/ui/status-badge";
@@ -814,7 +819,7 @@ export function ImprovementsPage({
     t = copy[locale],
     [builds, setBuilds] = useState<Build[]>([]),
     [buildId, setBuildId] = useState(""),
-    [hours, setHours] = useState(24),
+    [hours, setHours] = useState(() => preferredRangeHours("improvements", 0)),
     [initialLoading, setInitialLoading] = useState(true);
   const sortedBuilds = useMemo(
     () =>
@@ -839,6 +844,7 @@ export function ImprovementsPage({
       .finally(() => setInitialLoading(false));
   }, []);
   useEffect(() => savePreferredBuildId("improvements", buildId), [buildId]);
+  useEffect(() => savePreferredRangeHours("improvements", hours), [hours]);
   if (initialLoading) return <>
     <SectionSkeleton rows={1} />
     <SectionSkeleton rows={3} />
