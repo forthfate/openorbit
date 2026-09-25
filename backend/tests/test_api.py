@@ -28,6 +28,74 @@ def test_health_is_available():
     assert response.json() == {"status": "ok"}
 
 
+def test_orbit_logs_include_process_exit_and_operational_events(monkeypatch):
+    store = store_module.ConsoleStore()
+    monkeypatch.setattr(
+        store,
+        "telemetry",
+        lambda: [
+            {
+                "exportedAt": "2026-09-25T00:00:00+00:00",
+                "resourceSpans": [
+                    {
+                        "scopeSpans": [
+                            {
+                                "spans": [
+                                    {
+                                        "name": "workflow.step",
+                                        "status": "ERROR",
+                                        "events": [
+                                            {
+                                                "name": "process.completed",
+                                                "attributes": {"process.exit_code": 1},
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            },
+            {
+                "exportedAt": "2026-09-25T00:01:00+00:00",
+                "resourceSpans": [
+                    {
+                        "scopeSpans": [
+                            {
+                                "spans": [
+                                    {
+                                        "name": "assistant.chat",
+                                        "status": "UNSET",
+                                        "events": [
+                                            {"name": "assistant.response.completed", "attributes": {}}
+                                        ],
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ],
+            },
+        ],
+    )
+
+    assert store.orbit_logs() == [
+        {
+            "time": "2026-09-25T00:00:00+00:00",
+            "name": "workflow.step",
+            "status": "ERROR",
+            "message": "process exited with code 1",
+        },
+        {
+            "time": "2026-09-25T00:01:00+00:00",
+            "name": "assistant.chat",
+            "status": "UNSET",
+            "message": "assistant.response.completed",
+        },
+    ]
+
+
 def test_improvement_analytics_excludes_builds_without_recent_runs_or_feedback(monkeypatch):
     current = datetime(2026, 9, 25, 12, tzinfo=UTC)
     monkeypatch.setattr(store_module, "now", lambda: current)
