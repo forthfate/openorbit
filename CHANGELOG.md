@@ -5,6 +5,15 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.5] - 2026-09-25
+
+### Fixed
+
+- Kept the configured output language consistent across new runs and retries.
+- Localized evaluation result metrics and standardized add/edit modal titles.
+- Limited dashboard analytics labels to data within the selected time range.
+- Improvements now defaults to an unlimited range, remembers the selected range, and clears residual content when navigating between pages.
+
 ## [0.12.4] - 2026-09-25
 
 ### Fixed
