@@ -426,7 +426,7 @@ export default function App() {
       }
     >
      <Suspense fallback={<SectionSkeleton rows={6} />}>
-  <div className="page-stack">{content}</div>
+  <div className="page-stack" key={page}>{content}</div>
 </Suspense>
       <QuickStartModal
         key={`${quickStartOpen}:${quickStartSelection ?? ""}`}
