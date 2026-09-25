@@ -9,7 +9,6 @@ import {
   Play,
   TriangleAlert,
   Settings,
-  Sparkles,
 } from "lucide-react";
 import { SiGithub } from "react-icons/si";
 import { useEffect, useState, type ReactNode } from "react";
@@ -155,11 +154,11 @@ export function AppShell({
             title={navigationLabels.expandNavigation}
             onClick={() => setCollapsed(false)}
           >
-            <Sparkles size={20} />
+            <img className="brand-icon" src="/icon.svg" alt="" />
           </button>
         ) : (
           <div className="brand">
-            <Sparkles size={20} />
+            <img className="brand-icon" src="/icon.svg" alt="" />
             <div>
               <span>{appMeta.title}</span>
               <small>{__OPENORBIT_VERSION__}</small>

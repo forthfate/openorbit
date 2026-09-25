@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">OpenOrbit</title>
+  <desc id="desc">A broken circular orbit with an orbiting task node.</desc>
+  <path d="M45.5 15.5A22 22 0 1 0 49 42" fill="none" stroke="#1687E8" stroke-linecap="butt" stroke-width="6" />
+  <rect x="44" y="10" width="12" height="12" rx="2" fill="#123B67" transform="rotate(45 50 16)" />
+  <rect x="7" y="28" width="8" height="8" rx="1.5" fill="#6BD4FF" transform="rotate(-20 11 32)" />
+</svg>
