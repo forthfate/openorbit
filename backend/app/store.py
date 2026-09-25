@@ -3318,13 +3318,18 @@ class ConsoleStore:
         for run in pipeline_runs:
             build_id = str(run.build_id)
             name = run.build_name or build_id
-            feedback = feedback_by_build.setdefault(
-                build_id, {"build_id": build_id, "name": name, "feedback_count": 0}
-            )
-            trend = trends_by_build.setdefault(build_id, {"build_id": build_id, "name": name, "points": []})
-            status_counts = feedback_status_by_build.setdefault(
-                build_id, {"build_id": build_id, "name": name, "proposed": 0, "acceptable": 0, "rejected": 0}
-            )
+            feedback = trend = status_counts = None
+            if start <= run.created_at <= end:
+                feedback = feedback_by_build.setdefault(
+                    build_id, {"build_id": build_id, "name": name, "feedback_count": 0}
+                )
+                trend = trends_by_build.setdefault(
+                    build_id, {"build_id": build_id, "name": name, "points": []}
+                )
+                status_counts = feedback_status_by_build.setdefault(
+                    build_id,
+                    {"build_id": build_id, "name": name, "proposed": 0, "acceptable": 0, "rejected": 0},
+                )
             for record in run.supervisor_results:
                 recorded_at = parse_timestamp(record.get("recorded_at"))
                 if recorded_at is None or recorded_at > end:
@@ -3358,6 +3363,17 @@ class ConsoleStore:
                     summary["previous_scores"].append(score)
                 if recorded_at < start:
                     continue
+                if feedback is None or trend is None or status_counts is None:
+                    feedback = feedback_by_build.setdefault(
+                        build_id, {"build_id": build_id, "name": name, "feedback_count": 0}
+                    )
+                    trend = trends_by_build.setdefault(
+                        build_id, {"build_id": build_id, "name": name, "points": []}
+                    )
+                    status_counts = feedback_status_by_build.setdefault(
+                        build_id,
+                        {"build_id": build_id, "name": name, "proposed": 0, "acceptable": 0, "rejected": 0},
+                    )
                 feedback["feedback_count"] += len(improvements) + len(issues)
                 for improvement in improvements:
                     if isinstance(improvement, dict) and improvement.get("status") in {
