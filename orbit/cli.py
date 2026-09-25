@@ -10,8 +10,17 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
+
+
+def package_version() -> str:
+    """Return the installed OpenOrbit distribution version."""
+    try:
+        return version("openorbit")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def request(base_url: str, path: str, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
@@ -58,6 +67,7 @@ def task_wait_options(command: argparse.ArgumentParser) -> None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="orbit", description=__doc__)
+    root.add_argument("--version", action="version", version=f"%(prog)s {package_version()}")
     root.add_argument("--url", default=os.environ.get("ORBIT_URL", "http://127.0.0.1:8787"))
     commands = root.add_subparsers(dest="command", required=True)
     run = commands.add_parser("run", help="Start the local OpenOrbit web server.")
