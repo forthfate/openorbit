@@ -3900,22 +3900,6 @@ class ConsoleStore:
             if run.runner_version is not None
             else self._runner_execution_plan(run.workflow_id)
         )
-        # A Run with no selected version follows the latest runner on every
-        # execution, including retries.  Keep the selected version nullable;
-        # ``runner_source_sha256`` records the source actually resolved now.
-        runner_asset = self._runner(run.workflow_id)
-        resolved_runner_version = run.runner_version or int(runner_asset["version"])
-        runner_source = next(
-            item["source"]
-            for item in runner_asset["versions"]
-            if int(item["version"]) == resolved_runner_version
-        )
-        run.runner_source_sha256 = hashlib.sha256(str(runner_source).encode("utf-8")).hexdigest()
-        run.workflow_graph = self._runner_graph_definition(
-            run.workflow_id, run.repository, resolved_runner_version
-        )
-        run.updated_at = now()
-        self._save(run)
         resources: dict[str, Any] = {
             "workflow": workflow.model_dump(mode="json"),
             "build": {},
@@ -3950,6 +3934,22 @@ class ConsoleStore:
         # Insighta user simulator).  Keep each step's runner directory intact;
         # the build repository is still captured on the Run and in its prompt.
         if workflow.runner_id:
+            # A Run with no selected version follows the latest runner on every
+            # execution, including retries. Keep that selected version nullable;
+            # the checksum records the source actually resolved now.
+            runner_asset = self._runner(workflow.runner_id)
+            resolved_runner_version = run.runner_version or int(runner_asset["version"])
+            runner_source = next(
+                item["source"]
+                for item in runner_asset["versions"]
+                if int(item["version"]) == resolved_runner_version
+            )
+            run.runner_source_sha256 = hashlib.sha256(str(runner_source).encode("utf-8")).hexdigest()
+            run.workflow_graph = self._runner_graph_definition(
+                workflow.runner_id, run.repository, resolved_runner_version
+            )
+            run.updated_at = now()
+            self._save(run)
             runner_path = self._runner_entry_path(workflow.runner_id, run.runner_version)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
                 step.command = [
