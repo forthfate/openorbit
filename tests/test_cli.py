@@ -2,13 +2,23 @@ import os
 import sys
 from types import SimpleNamespace
 
-from orbit.cli import main, parser
+import pytest
+
+from orbit.cli import main, package_version, parser
 
 
 def test_cli_exposes_control_room_commands():
     args = parser().parse_args(["runs", "start", "insighta-user-simulation"])
     assert args.command == "runs"
     assert args.workflow_id == "insighta-user-simulation"
+
+
+def test_cli_prints_the_installed_package_version(capsys):
+    with pytest.raises(SystemExit) as exit_info:
+        parser().parse_args(["--version"])
+
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out == f"orbit {package_version()}\n"
 
 
 def test_cli_exposes_local_web_server_command():
