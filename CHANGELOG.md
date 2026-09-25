@@ -5,6 +5,21 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.7] - 2026-09-25
+
+### Changed
+
+- Applied official OpenOrbit branding across the app, browser metadata, and README,
+  including installable web-app icons and favicons.
+
+### Fixed
+
+- Retried Runs that follow the latest Runner version now resolve the current
+  Runner revision instead of reusing a previously resolved version.
+- Resolved Runner source only for Runner workflows, preventing unrelated
+  workflows from using Runner source resolution.
+- Recorded Orbit Assistant failures in operational logs.
+
 ## [0.12.6] - 2026-09-25
 
 ### Added
