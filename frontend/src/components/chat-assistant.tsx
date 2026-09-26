@@ -102,7 +102,7 @@ const normalizedToolSettings = (
 });
 
 const initialPosition = (): Position => {
-  const saved = localStorage.getItem(positionKey);
+  const saved = sessionStorage.getItem(positionKey);
   if (saved) {
     try {
       const position = JSON.parse(saved) as Position;
@@ -128,7 +128,7 @@ const initialPosition = (): Position => {
 };
 
 const initialWindowPosition = (): Position | null => {
-  const saved = localStorage.getItem(windowPositionKey);
+  const saved = sessionStorage.getItem(windowPositionKey);
   if (saved) {
     try {
       const position = JSON.parse(saved) as Position;
@@ -141,11 +141,11 @@ const initialWindowPosition = (): Position | null => {
   return null;
 };
 
-const initialOpen = () => localStorage.getItem(openKey) === "true";
+const initialOpen = () => sessionStorage.getItem(openKey) === "true";
 
 const initialMessages = (): Message[] => {
   try {
-    const saved = JSON.parse(localStorage.getItem(messagesKey) ?? "[]");
+    const saved = JSON.parse(sessionStorage.getItem(messagesKey) ?? "[]");
     if (!Array.isArray(saved)) return [];
     return saved
       .filter(
@@ -201,7 +201,7 @@ export function ChatAssistant() {
   const hasUsedTool = useRef(false);
   const clearHistory = () => {
     setMessages([]);
-    localStorage.removeItem(messagesKey);
+    sessionStorage.removeItem(messagesKey);
     setClearConfirmationOpen(false);
   };
   const appendMessage = (message: Message) =>
@@ -218,19 +218,19 @@ export function ChatAssistant() {
     return () => window.clearInterval(interval);
   }, [sending]);
   useEffect(() => {
-    localStorage.setItem(positionKey, JSON.stringify(position));
+    sessionStorage.setItem(positionKey, JSON.stringify(position));
   }, [position]);
   useEffect(() => {
     if (windowPosition)
-      localStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
+      sessionStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
   }, [windowPosition]);
   useEffect(() => {
-    localStorage.setItem(openKey, String(open));
+    sessionStorage.setItem(openKey, String(open));
   }, [open]);
   useEffect(() => {
     try {
-      if (messages.length) localStorage.setItem(messagesKey, JSON.stringify(messages));
-      else localStorage.removeItem(messagesKey);
+      if (messages.length) sessionStorage.setItem(messagesKey, JSON.stringify(messages));
+      else sessionStorage.removeItem(messagesKey);
     } catch {
       // A full or unavailable browser store must not prevent chatting.
     }
