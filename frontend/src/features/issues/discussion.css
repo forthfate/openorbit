@@ -6,5 +6,6 @@
 .issue-message time,.issue-message small { color:var(--muted); font:10px 'DM Mono',monospace; }
 .proposal-detail .issue-message p { margin:0; font-size:11px; line-height:1.55; white-space:pre-wrap; }
 .issue-discussion__composer { display:grid; gap:8px; padding:12px; border:1px solid var(--line); border-radius:9px; background:var(--bg); }
+.issue-discussion__composer input,.issue-discussion__composer textarea,.issue-discussion__composer select { font:11px/1.5 Manrope,sans-serif; }
 .issue-discussion__composer textarea { min-height:96px; resize:vertical; }
 .issue-discussion__composer .modal-actions { justify-content:flex-end; }

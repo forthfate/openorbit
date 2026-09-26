@@ -2612,6 +2612,64 @@ def test_issue_management_excludes_agent_assessment_feedback_from_issue_rational
     assert managed_issue["comments"][0]["assigner"] == "AI supervisor"
 
 
+def test_issue_management_separates_multiple_supervisor_records_in_one_iteration(tmp_path, monkeypatch):
+    monkeypatch.setattr(store_module, "RUNS", tmp_path / "runs")
+    monkeypatch.setattr(store_module, "ISSUE_MANAGEMENT", tmp_path / "issue-management.yaml")
+    store = store_module.ConsoleStore()
+    timestamp = store_module.now()
+    store._save(
+        Run(
+            id="run-duplicate-assessments",
+            workflow_id="workflow",
+            workflow_name="Workflow",
+            status="succeeded",
+            created_at=timestamp,
+            updated_at=timestamp,
+            supervisor_results=[
+                {
+                    "iteration": 1,
+                    "stage": "issue_assessment",
+                    "response": {"improvements": [{"title": "First issue"}], "reported_issues": []},
+                },
+                {
+                    "iteration": 1,
+                    "stage": "issue_assessment",
+                    "response": {"improvements": [{"title": "Second issue"}], "reported_issues": []},
+                },
+                {
+                    "iteration": 2,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [],
+                        "reported_issues": [{"title": "First reported issue"}],
+                    },
+                },
+                {
+                    "iteration": 2,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [],
+                        "reported_issues": [{"title": "Second reported issue"}],
+                    },
+                },
+            ],
+        )
+    )
+
+    items = store.issue_management_items()
+    assert {item["proposal_id"] for item in items} == {
+        "run-duplicate-assessments:1:0:0",
+        "run-duplicate-assessments:1:1:0",
+        "run-duplicate-assessments:2:2:issue:0",
+        "run-duplicate-assessments:2:3:issue:0",
+    }
+    first = next(item for item in items if item["title"] == "First issue")
+    store.update_issue_management_item(first["proposal_id"], comment="Only the first issue")
+    by_title = {item["title"]: item for item in store.issue_management_items()}
+    assert by_title["First issue"]["comments"][0]["body"] == "Only the first issue"
+    assert by_title["Second issue"]["comments"] == []
+
+
 def test_hello_accepts_unsaved_profile_settings():
     response = TestClient(app).post(
         "/api/settings/hello",

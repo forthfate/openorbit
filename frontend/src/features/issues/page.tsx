@@ -29,7 +29,7 @@ type Copy = {
   resolved: string;
   deferred: string;
   comment: string;
-  assigner: string;
+  commentAuthor: string;
   assignerPlaceholder: string;
   commentPlaceholder: string;
   verificationRun: string;
@@ -335,12 +335,6 @@ export function IssueManagementSection({
       sortValue: (x) => (x.personas ?? []).join(", "),
     },
     {
-      id: "assigner",
-      header: t.assigner,
-      render: (x) => x.assigner || "—",
-      sortValue: (x) => x.assigner,
-    },
-    {
       id: "decision",
       header: t.aiDecision,
       render: (x) => (
@@ -470,7 +464,7 @@ export function IssueManagementSection({
               setRun("");
             }}
             className="issue-management-table"
-            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px 110px"
+            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px"
           />
         </div>
         <Pagination
@@ -600,7 +594,7 @@ export function IssueManagementSection({
                         </strong>
                         <small>
                           {e.type === "status" ? label(e.status ?? "") : e.body}
-                          {e.assigner ? ` · ${t.assigner} ${e.assigner}` : ""}
+                          {e.assigner ? ` · ${t.commentAuthor} ${e.assigner}` : ""}
                           {e.verification_run_id
                             ? ` · ${t.run} ${e.verification_run_id}`
                             : ""}
