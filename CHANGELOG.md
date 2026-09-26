@@ -5,6 +5,17 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.9] - 2026-09-26
+
+### Fixed
+
+- Kept known-issue evidence out of improvement proposal cards, filters, run
+  counts, and improvement analytics.
+- Displayed per-proposal supervisor scores in execution results and retained
+  them for new results.
+- Used record-indexed issue IDs consistently when supervisors reference known
+  unresolved issues.
+
 ## [0.12.8] - 2026-09-26
 
 ### Added
