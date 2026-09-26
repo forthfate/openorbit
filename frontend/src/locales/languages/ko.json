@@ -491,7 +491,7 @@
     "aiUsage": {
       "title": "AI 사용량 및 속도 제한",
       "description": "로컬 Azure OpenAI 요청 메타데이터와 속도 제한 헤더를 확인합니다. 프롬프트와 응답 원문은 보관하지 않습니다.",
-      "range": "기간", "refresh": "새로고침", "rpm": "RPM (최근 1분)", "tpm": "TPM (최근 1분)", "successRate": "성공률", "averageLatency": "평균 지연 시간",
+      "range": "기간", "refresh": "새로고침", "rpm": "평균 RPM", "tpm": "평균 TPM", "successRate": "성공률", "averageLatency": "평균 지연 시간",
       "requests": "요청", "tokens": "토큰", "limits": "최근 Azure 제한 헤더", "remainingRequests": "남은 요청", "remainingTokens": "남은 토큰", "retryAfter": "재시도 후",
       "requestTrend": "요청 추이", "tokenTrend": "토큰 추이", "recentCalls": "최근 모델 호출", "time": "시간", "model": "모델", "status": "상태", "usage": "입력 / 출력", "latency": "지연 시간", "details": "선택한 호출", "input": "입력", "output": "출력", "tools": "도구",
       "empty": "이 기간에 보관된 모델 호출이 없습니다.", "unavailable": "사용량 데이터를 불러올 수 없습니다. 로컬 Orbit 서버를 시작하거나 새로고침하세요.", "noLimitData": "아직 Azure 속도 제한 헤더를 받지 못했습니다."

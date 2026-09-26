@@ -21,6 +21,7 @@ from opentelemetry.trace import Status, StatusCode
 
 @dataclass(frozen=True)
 class ModelSettings:
+    profile_name: str = ""
     provider: str = "azure-openai"
     model: str = ""
     endpoint: str = ""
@@ -44,6 +45,7 @@ class AzureOpenAIProvider:
             span.set_attributes(
                 {
                     "gen_ai.system": "azure_openai",
+                    "gen_ai.request.profile": settings.profile_name or settings.model,
                     "gen_ai.request.model": settings.model,
                     "gen_ai.request.input_chars": input_chars,
                     "gen_ai.request.tool_count": len(tools) if isinstance(tools, list) else 0,

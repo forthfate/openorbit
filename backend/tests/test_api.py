@@ -1551,8 +1551,9 @@ def test_ai_usage_summarizes_provider_spans_without_prompt_content(monkeypatch, 
         "errors": 1,
         "success_rate": 0.0,
         "average_duration_ms": 120,
-        "rpm": 1,
-        "tpm": 17,
+        "rpm": 0.07,
+        "tpm": 1.13,
+        "rate_interval_seconds": 60,
     }
     assert result["limits"]["remaining_requests"] == "0"
     assert result["events"][0]["model"] == "gpt-test"

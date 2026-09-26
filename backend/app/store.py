@@ -3007,6 +3007,8 @@ class ConsoleStore:
                                     "id": span.get("spanId", ""),
                                     "time": datetime.fromtimestamp(timestamp, UTC).isoformat(),
                                     "model": a.get("gen_ai.request.model", ""),
+                                    "profile": a.get("gen_ai.request.profile")
+                                    or a.get("gen_ai.request.model", ""),
                                     "status": int(a.get("http.response.status_code", 0) or 0),
                                     "failed": span.get("status") == "ERROR",
                                     "input_tokens": int(a.get("gen_ai.usage.input_tokens", 0) or 0),
@@ -3047,11 +3049,18 @@ class ConsoleStore:
         requests = len(events)
         errors = sum(event["failed"] or event["status"] >= 400 for event in events)
         last = events[0] if events else {}
-        recent = [
-            event
-            for event in events
-            if datetime.fromisoformat(event["time"]).timestamp() >= now.timestamp() - 60
-        ]
+        profiles = sorted({str(event["profile"]) for event in events if event["profile"]})
+        for point in buckets.values():
+            for profile_name in profiles:
+                point[profile_name] = 0
+                point[f"tokens:{profile_name}"] = 0
+        for event in chronological:
+            stamp = datetime.fromisoformat(event["time"]).timestamp()
+            bucket = int(stamp // bucket_seconds) * bucket_seconds
+            point = buckets[bucket]
+            point[event["profile"]] = int(point[event["profile"]]) + 1
+            token_key = f"tokens:{event['profile']}"
+            point[token_key] = int(point[token_key]) + event["total_tokens"]
         return {
             "minutes": minutes,
             "summary": {
@@ -3062,8 +3071,9 @@ class ConsoleStore:
                 "average_duration_ms": round(sum(event["duration_ms"] for event in events) / requests)
                 if requests
                 else 0,
-                "rpm": len(recent),
-                "tpm": sum(event["total_tokens"] for event in recent),
+                "rpm": round(requests / minutes, 2),
+                "tpm": round(sum(event["total_tokens"] for event in events) / minutes, 2),
+                "rate_interval_seconds": bucket_seconds,
             },
             "limits": {
                 key: last.get(key)
@@ -3076,6 +3086,7 @@ class ConsoleStore:
                 )
             },
             "timeline": list(buckets.values()),
+            "profiles": profiles,
             "events": events[:100],
         }
 

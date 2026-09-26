@@ -492,7 +492,7 @@
     "aiUsage": {
       "title": "AI usage & rate limits",
       "description": "Monitor local Azure OpenAI request metadata and rate-limit headers. Prompt and response text are not retained.",
-      "range": "Range", "refresh": "Refresh", "rpm": "RPM (last minute)", "tpm": "TPM (last minute)", "successRate": "Success rate", "averageLatency": "Average latency",
+      "range": "Range", "refresh": "Refresh", "rpm": "Average RPM", "tpm": "Average TPM", "successRate": "Success rate", "averageLatency": "Average latency",
       "requests": "Requests", "tokens": "Tokens", "limits": "Latest Azure limit headers", "remainingRequests": "Requests remaining", "remainingTokens": "Tokens remaining", "retryAfter": "Retry after",
       "requestTrend": "Request trend", "tokenTrend": "Token trend", "recentCalls": "Recent model calls", "time": "Time", "model": "Model", "status": "Status", "usage": "Input / output", "latency": "Latency", "details": "Selected call", "input": "Input", "output": "Output", "tools": "Tools",
       "empty": "No model calls were retained in this period.", "unavailable": "Usage data could not be loaded. Start or refresh the local Orbit server.", "noLimitData": "No Azure rate-limit headers have been received yet."
