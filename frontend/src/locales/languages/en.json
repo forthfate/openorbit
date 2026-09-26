@@ -429,7 +429,7 @@
       "resolved": "Resolved",
       "deferred": "Deferred",
       "comment": "Comment",
-      "assigner": "Comment author",
+      "commentAuthor": "Comment author",
       "assignerPlaceholder": "Comment author name",
       "commentPlaceholder": "Record what you checked or changed.",
       "verificationRun": "Verification run",

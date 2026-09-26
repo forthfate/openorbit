@@ -423,7 +423,7 @@
       "resolved": "解決済み",
       "deferred": "保留",
       "comment": "コメント",
-      "assigner": "コメント作成者",
+      "commentAuthor": "コメント作成者",
       "assignerPlaceholder": "コメント作成者の名前",
       "commentPlaceholder": "確認内容または修正内容を記録してください。",
       "verificationRun": "検証実行",

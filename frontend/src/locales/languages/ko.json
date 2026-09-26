@@ -428,7 +428,7 @@
       "resolved": "해결됨",
       "deferred": "보류됨",
       "comment": "코멘트",
-      "assigner": "작성자",
+      "commentAuthor": "작성자",
       "assignerPlaceholder": "코멘트 작성자 이름",
       "commentPlaceholder": "확인 내용 또는 수정 사항을 남기세요.",
       "verificationRun": "검증 실행",
