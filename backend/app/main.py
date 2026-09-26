@@ -280,7 +280,7 @@ def runs():
             improvement
             for response in responses
             for improvement in response.get("improvements", [])
-            if isinstance(improvement, dict)
+            if isinstance(improvement, dict) and not str(improvement.get("known_issue_id") or "").strip()
         ]
         issues = [
             issue

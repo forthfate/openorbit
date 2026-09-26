@@ -658,6 +658,7 @@ export function EvaluationsPage({
       issueStatuses = new Set<string>();
     for (const record of selected?.supervisor_results ?? []) {
       for (const improvement of record.response?.improvements ?? []) {
+        if (String(improvement.known_issue_id ?? "").trim()) continue;
         if (improvement.status) improvementStatuses.add(String(improvement.status));
       }
       for (const issue of record.response?.reported_issues ?? []) {
@@ -681,7 +682,9 @@ export function EvaluationsPage({
         recordEvaluation = response?.evaluation,
         decision = recordEvaluation?.approval ?? "no_response",
         score = recordEvaluation?.score,
-        improvements = response?.improvements ?? [],
+        improvements = (response?.improvements ?? []).filter(
+          (improvement) => !String(improvement.known_issue_id ?? "").trim(),
+        ),
         issues = response?.reported_issues ?? [];
       const inRange =
         (!resultIterationFrom || record.iteration >= Number(resultIterationFrom)) &&
@@ -760,7 +763,9 @@ export function EvaluationsPage({
     resultTranslationIds.every((templateId) => Boolean(resultTranslations.content(templateId)));
   const resultTranslationsLoading = resultTranslations.isLoading(resultTranslationIds);
   const resultImprovements = resultRecords.flatMap((record) =>
-      (translateResultResponse(record)?.improvements ?? []).map((item) => ({
+      (translateResultResponse(record)?.improvements ?? [])
+        .filter((item) => !String(item.known_issue_id ?? "").trim())
+        .map((item) => ({
         ...item,
         __iteration: record.iteration,
       })),
