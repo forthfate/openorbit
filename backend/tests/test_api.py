@@ -1499,11 +1499,64 @@ def test_v1_read_only_control_room_resources_are_available():
         "/api/v1/application-settings",
         "/api/v1/dashboard",
         "/api/v1/telemetry",
+        "/api/v1/ai-usage",
         "/api/v1/logs",
         "/api/v1/improvements",
         "/api/v1/reported-issues",
     ):
         assert client.get(path).status_code == 200
+
+
+def test_ai_usage_summarizes_provider_spans_without_prompt_content(monkeypatch, tmp_path):
+    telemetry = tmp_path / "telemetry.jsonl"
+    timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+    telemetry.write_text(
+        json.dumps(
+            {
+                "resourceSpans": [
+                    {
+                        "scopeSpans": [
+                            {
+                                "spans": [
+                                    {
+                                        "name": "gen_ai.azure.responses",
+                                        "spanId": "call-1",
+                                        "startTime": timestamp,
+                                        "status": "ERROR",
+                                        "attributes": {
+                                            "gen_ai.request.model": "gpt-test",
+                                            "http.response.status_code": 429,
+                                            "gen_ai.usage.total_tokens": 17,
+                                            "gen_ai.request.duration_ms": 120,
+                                            "azure.x_ratelimit_remaining_requests": "0",
+                                        },
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(store_module, "TELEMETRY", telemetry)
+
+    result = store_module.ConsoleStore().ai_usage(15)
+
+    assert result["summary"] == {
+        "requests": 1,
+        "tokens": 17,
+        "errors": 1,
+        "success_rate": 0.0,
+        "average_duration_ms": 120,
+        "rpm": 0.07,
+        "tpm": 1.13,
+        "rate_interval_seconds": 60,
+    }
+    assert result["limits"]["remaining_requests"] == "0"
+    assert result["events"][0]["model"] == "gpt-test"
 
 
 def test_supervisor_result_requires_the_two_template_return_keys():
