@@ -5,6 +5,22 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.12.8] - 2026-09-26
+
+### Added
+
+- Persona journey timeline cards now open an evidence modal with HTML and
+  screenshot artifacts.
+
+### Fixed
+
+- Kept timeline card selection separate from drag-to-scroll interactions.
+- Assigned unique IDs to issue-management proposals and reported issues so
+  management state cannot be applied to a different item.
+- Removed the redundant issue-management author column and prevented long
+  persona names from overlapping status controls.
+- Aligned issue-discussion comment input typography with the surrounding view.
+
 ## [0.12.7] - 2026-09-25
 
 ### Changed
