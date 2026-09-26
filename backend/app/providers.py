@@ -8,12 +8,15 @@ import hmac
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
 import requests
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 
 @dataclass(frozen=True)
@@ -27,20 +30,74 @@ class ModelSettings:
 
 
 class AzureOpenAIProvider:
+    @staticmethod
+    def _post(settings: ModelSettings, key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
+        with trace.get_tracer("orbit.providers").start_as_current_span("gen_ai.azure.responses") as span:
+            input_value = payload.get("input", "")
+            input_chars = (
+                len(input_value)
+                if isinstance(input_value, str)
+                else len(json.dumps(input_value, ensure_ascii=False))
+            )
+            tools = payload.get("tools")
+            span.set_attributes(
+                {
+                    "gen_ai.system": "azure_openai",
+                    "gen_ai.request.model": settings.model,
+                    "gen_ai.request.input_chars": input_chars,
+                    "gen_ai.request.tool_count": len(tools) if isinstance(tools, list) else 0,
+                }
+            )
+            try:
+                response = requests.post(
+                    f"{settings.endpoint.rstrip('/')}/responses",
+                    headers={"api-key": key, "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=180,
+                )
+                span.set_attribute("http.response.status_code", response.status_code)
+                for name in (
+                    "x-ratelimit-limit-requests",
+                    "x-ratelimit-remaining-requests",
+                    "x-ratelimit-limit-tokens",
+                    "x-ratelimit-remaining-tokens",
+                    "retry-after",
+                ):
+                    if response.headers.get(name):
+                        span.set_attribute(f"azure.{name.replace('-', '_')}", response.headers[name])
+                response.raise_for_status()
+                body = response.json()
+                usage = body.get("usage", {}) if isinstance(body, dict) else {}
+                for source, target in (
+                    ("input_tokens", "gen_ai.usage.input_tokens"),
+                    ("output_tokens", "gen_ai.usage.output_tokens"),
+                    ("total_tokens", "gen_ai.usage.total_tokens"),
+                ):
+                    if isinstance(usage.get(source), int):
+                        span.set_attribute(target, usage[source])
+                output = body.get("output_text", "") if isinstance(body, dict) else ""
+                if isinstance(output, str):
+                    span.set_attribute("gen_ai.response.output_chars", len(output))
+                return body
+            except requests.RequestException as error:
+                span.set_attribute("error.type", type(error).__name__)
+                span.set_attribute("error.message", str(error)[:500])
+                span.record_exception(error)
+                span.set_status(Status(StatusCode.ERROR))
+                raise
+            finally:
+                span.set_attribute(
+                    "gen_ai.request.duration_ms", round((time.perf_counter() - started) * 1000)
+                )
+
     def complete(self, settings: ModelSettings, prompt: str) -> str:
         key = os.environ.get(settings.secret_env, "")
         if not key or not settings.endpoint or not settings.model:
             raise RuntimeError(
                 "Azure OpenAI provider requires endpoint, model, and configured secret environment variable."
             )
-        response = requests.post(
-            f"{settings.endpoint.rstrip('/')}/responses",
-            headers={"api-key": key, "Content-Type": "application/json"},
-            json={"model": settings.model, "input": prompt},
-            timeout=180,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        payload = self._post(settings, key, {"model": settings.model, "input": prompt})
         output_text = payload.get("output_text")
         if isinstance(output_text, str) and output_text:
             return output_text
@@ -78,14 +135,7 @@ class AzureOpenAIProvider:
             payload: dict[str, Any] = {"model": settings.model, "input": input_value, "tools": definitions}
             if response_id:
                 payload["previous_response_id"] = response_id
-            response = requests.post(
-                f"{settings.endpoint.rstrip('/')}/responses",
-                headers={"api-key": key, "Content-Type": "application/json"},
-                json=payload,
-                timeout=180,
-            )
-            response.raise_for_status()
-            body = response.json()
+            body = self._post(settings, key, payload)
             response_id = body.get("id")
             calls = [
                 item

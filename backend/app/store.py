@@ -2981,6 +2981,104 @@ class ConsoleStore:
         lines = TELEMETRY.read_text(encoding="utf-8").splitlines()[-100:]
         return [json.loads(line) for line in reversed(lines)]
 
+    def ai_usage(self, minutes: int = 60) -> dict[str, Any]:
+        """Summarize locally retained provider spans without retaining prompt text."""
+        minutes = max(15, min(minutes, 24 * 60))
+        now = datetime.now(UTC)
+        cutoff = now.timestamp() - minutes * 60
+        events: list[dict[str, Any]] = []
+        if TELEMETRY.exists():
+            for line in TELEMETRY.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for resource in record.get("resourceSpans", []):
+                    for scope in resource.get("scopeSpans", []):
+                        for span in scope.get("spans", []):
+                            if span.get("name") != "gen_ai.azure.responses":
+                                continue
+                            timestamp = float(span.get("startTime", 0)) / 1_000_000_000
+                            if timestamp < cutoff:
+                                continue
+                            a = span.get("attributes", {})
+                            events.append(
+                                {
+                                    "id": span.get("spanId", ""),
+                                    "time": datetime.fromtimestamp(timestamp, UTC).isoformat(),
+                                    "model": a.get("gen_ai.request.model", ""),
+                                    "status": int(a.get("http.response.status_code", 0) or 0),
+                                    "failed": span.get("status") == "ERROR",
+                                    "input_tokens": int(a.get("gen_ai.usage.input_tokens", 0) or 0),
+                                    "output_tokens": int(a.get("gen_ai.usage.output_tokens", 0) or 0),
+                                    "total_tokens": int(a.get("gen_ai.usage.total_tokens", 0) or 0),
+                                    "input_chars": int(a.get("gen_ai.request.input_chars", 0) or 0),
+                                    "output_chars": int(a.get("gen_ai.response.output_chars", 0) or 0),
+                                    "tool_count": int(a.get("gen_ai.request.tool_count", 0) or 0),
+                                    "duration_ms": int(a.get("gen_ai.request.duration_ms", 0) or 0),
+                                    "error": a.get("error.message", ""),
+                                    "limit_requests": a.get("azure.x_ratelimit_limit_requests"),
+                                    "remaining_requests": a.get("azure.x_ratelimit_remaining_requests"),
+                                    "limit_tokens": a.get("azure.x_ratelimit_limit_tokens"),
+                                    "remaining_tokens": a.get("azure.x_ratelimit_remaining_tokens"),
+                                    "retry_after": a.get("azure.retry_after"),
+                                }
+                            )
+        events.sort(key=lambda item: item["time"], reverse=True)
+        chronological = list(reversed(events))
+        bucket_seconds = 60 if minutes <= 60 else 5 * 60 if minutes <= 6 * 60 else 60 * 60
+        bucket_start = int(cutoff // bucket_seconds) * bucket_seconds
+        buckets: dict[int, dict[str, int | str]] = {}
+        while bucket_start <= int(now.timestamp()):
+            buckets[bucket_start] = {
+                "time": datetime.fromtimestamp(bucket_start, UTC).isoformat(),
+                "requests": 0,
+                "tokens": 0,
+            }
+            bucket_start += bucket_seconds
+        for event in chronological:
+            stamp = datetime.fromisoformat(event["time"]).timestamp()
+            bucket = int(stamp // bucket_seconds) * bucket_seconds
+            point = buckets.setdefault(
+                bucket, {"time": datetime.fromtimestamp(bucket, UTC).isoformat(), "requests": 0, "tokens": 0}
+            )
+            point["requests"] = int(point["requests"]) + 1
+            point["tokens"] = int(point["tokens"]) + event["total_tokens"]
+        requests = len(events)
+        errors = sum(event["failed"] or event["status"] >= 400 for event in events)
+        last = events[0] if events else {}
+        recent = [
+            event
+            for event in events
+            if datetime.fromisoformat(event["time"]).timestamp() >= now.timestamp() - 60
+        ]
+        return {
+            "minutes": minutes,
+            "summary": {
+                "requests": requests,
+                "tokens": sum(event["total_tokens"] for event in events),
+                "errors": errors,
+                "success_rate": round((requests - errors) / requests * 100, 1) if requests else 100,
+                "average_duration_ms": round(sum(event["duration_ms"] for event in events) / requests)
+                if requests
+                else 0,
+                "rpm": len(recent),
+                "tpm": sum(event["total_tokens"] for event in recent),
+            },
+            "limits": {
+                key: last.get(key)
+                for key in (
+                    "limit_requests",
+                    "remaining_requests",
+                    "limit_tokens",
+                    "remaining_tokens",
+                    "retry_after",
+                )
+            },
+            "timeline": list(buckets.values()),
+            "events": events[:100],
+        }
+
     @staticmethod
     def _prompt_snapshot_content(directory: Path, state: object) -> str | None:
         if not isinstance(state, dict) or not state.get("exists"):

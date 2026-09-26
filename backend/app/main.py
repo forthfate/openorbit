@@ -1116,6 +1116,11 @@ def telemetry():
     return store.telemetry()
 
 
+@app.get("/api/ai-usage")
+def ai_usage(minutes: int = 60):
+    return store.ai_usage(minutes)
+
+
 @app.get("/api/orbit-logs")
 def orbit_logs():
     return store.orbit_logs()
@@ -1635,6 +1640,11 @@ def get_pipeline_telemetry_v1(pipeline_id: str):
 @app.get("/api/v1/telemetry", tags=["Observability"], operation_id="listTelemetry")
 def list_telemetry_v1():
     return store.telemetry()
+
+
+@app.get("/api/v1/ai-usage", tags=["Observability"], operation_id="getAiUsage")
+def ai_usage_v1(minutes: int = 60):
+    return store.ai_usage(minutes)
 
 
 @app.get("/api/v1/logs", tags=["Observability"], operation_id="listLogs")
