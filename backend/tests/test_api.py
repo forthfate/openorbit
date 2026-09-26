@@ -1025,7 +1025,13 @@ def test_active_evaluations_count_feedback_across_all_iterations(monkeypatch):
             {
                 "iteration": 1,
                 "response": {
-                    "improvements": [{"title": "Add refund intake", "status": "accepted"}],
+                    "improvements": [
+                        {"title": "Add refund intake", "status": "accepted"},
+                        {
+                            "known_issue_id": "feedback-history-run:0:0:0",
+                            "evidence": "The previously reported issue remains visible.",
+                        },
+                    ],
                     "reported_issues": [{"title": "Missing refund details"}],
                 },
             },
@@ -1738,7 +1744,7 @@ def test_supervision_reuses_known_unresolved_issue_without_creating_another_row(
                 {
                     "improvements": [
                         {
-                            "known_issue_id": "known-issue-run:1:0",
+                            "known_issue_id": "known-issue-run:1:0:0",
                             "evidence": "The basis is still absent in this iteration.",
                             "evaluation": {"score": 7, "approval": "pending", "summary": "Known issue."},
                         }
@@ -1769,10 +1775,12 @@ def test_supervision_reuses_known_unresolved_issue_without_creating_another_row(
     store._complete_supervision(run.id)
 
     assert "# Known unresolved issues" in captured_prompts[0]
-    assert "known-issue-run:1:0" in captured_prompts[0]
+    assert "known-issue-run:1:0:0" in captured_prompts[0]
     assert [item["title"] for item in store.proposal_lifecycles()] == [
         "Portfolio calculation basis is unclear"
     ]
+    retained_evidence = store._load(run.id).supervisor_results[-1]["response"]["improvements"][0]
+    assert retained_evidence["effect_score"] == 7
 
 
 def test_runner_context_uses_the_supplied_model_profile_without_exposing_its_secret(tmp_path, monkeypatch):
@@ -2668,6 +2676,12 @@ def test_issue_management_separates_multiple_supervisor_records_in_one_iteration
     by_title = {item["title"]: item for item in store.issue_management_items()}
     assert by_title["First issue"]["comments"][0]["body"] == "Only the first issue"
     assert by_title["Second issue"]["comments"] == []
+    assert {issue["id"] for issue in store._known_unresolved_issues(store.runs()[0])} == {
+        "run-duplicate-assessments:1:0:0",
+        "run-duplicate-assessments:1:1:0",
+        "run-duplicate-assessments:2:2:issue:0",
+        "run-duplicate-assessments:2:3:issue:0",
+    }
 
 
 def test_hello_accepts_unsaved_profile_settings():

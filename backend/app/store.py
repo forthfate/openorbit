@@ -2429,7 +2429,7 @@ class ConsoleStore:
             candidates.append(run)
         values: list[dict[str, str]] = []
         for source_run in candidates:
-            for result in source_run.supervisor_results:
+            for record_index, result in enumerate(source_run.supervisor_results):
                 if (
                     not isinstance(result, dict)
                     or result.get("stage", "issue_assessment") != "issue_assessment"
@@ -2446,9 +2446,11 @@ class ConsoleStore:
                 for index, proposal in enumerate(proposals):
                     if not isinstance(proposal, dict):
                         continue
-                    proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:{index}"
+                    proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:{record_index}:{index}"
                     if proposals is reported:
-                        proposal_id = f"{source_run.id}:{result.get('iteration', 0)}:issue:{index}"
+                        proposal_id = (
+                            f"{source_run.id}:{result.get('iteration', 0)}:{record_index}:issue:{index}"
+                        )
                     management = records.get(proposal_id, {})
                     if management.get("status") in {"resolved", "deleted"}:
                         continue
@@ -3395,6 +3397,11 @@ class ConsoleStore:
                 improvements = (
                     response.get("improvements", []) if isinstance(response.get("improvements"), list) else []
                 )
+                improvements = [
+                    item
+                    for item in improvements
+                    if isinstance(item, dict) and not str(item.get("known_issue_id") or "").strip()
+                ]
                 issues = (
                     response.get("reported_issues", [])
                     if isinstance(response.get("reported_issues"), list)
@@ -3575,7 +3582,7 @@ class ConsoleStore:
                 improvement
                 for response in responses
                 for improvement in response.get("improvements", [])
-                if isinstance(improvement, dict)
+                if isinstance(improvement, dict) and not str(improvement.get("known_issue_id") or "").strip()
             ]
             issues = [
                 issue
@@ -4608,7 +4615,14 @@ class ConsoleStore:
                 reported_at = now().isoformat()
                 for improvement in result["improvements"]:
                     improvement.setdefault("reported_at", reported_at)
-                    improvement.setdefault("effect_score", (result.get("evaluation") or {}).get("score"))
+                    item_evaluation = improvement.get("evaluation")
+                    item_score = item_evaluation.get("score") if isinstance(item_evaluation, dict) else None
+                    if improvement.get("effect_score") is None:
+                        improvement["effect_score"] = (
+                            item_score
+                            if item_score is not None
+                            else (result.get("evaluation") or {}).get("score")
+                        )
                     improvement.setdefault(
                         "attempted", improvement.get("status") in {"adopted", "accepted", "rejected"}
                     )
