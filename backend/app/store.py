@@ -3009,6 +3009,7 @@ class ConsoleStore:
                                     "model": a.get("gen_ai.request.model", ""),
                                     "profile": a.get("gen_ai.request.profile")
                                     or a.get("gen_ai.request.model", ""),
+                                    "request_mode": a.get("gen_ai.request.mode", "prompt"),
                                     "status": int(a.get("http.response.status_code", 0) or 0),
                                     "failed": span.get("status") == "ERROR",
                                     "input_tokens": int(a.get("gen_ai.usage.input_tokens", 0) or 0),

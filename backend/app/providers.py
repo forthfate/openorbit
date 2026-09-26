@@ -47,6 +47,7 @@ class AzureOpenAIProvider:
                     "gen_ai.system": "azure_openai",
                     "gen_ai.request.profile": settings.profile_name or settings.model,
                     "gen_ai.request.model": settings.model,
+                    "gen_ai.request.mode": "tool_result" if payload.get("previous_response_id") else "prompt",
                     "gen_ai.request.input_chars": input_chars,
                     "gen_ai.request.tool_count": len(tools) if isinstance(tools, list) else 0,
                 }
