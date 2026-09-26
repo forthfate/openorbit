@@ -46,6 +46,7 @@ import { DataTable, type Column } from "../../components/ui/data-table";
 import { CircleStop, RotateCcw } from "lucide-react";
 import { EvaluationsPage } from "../evaluations/page";
 import { IssueManagementSection } from "../issues/page";
+import { VisualEvidenceModal, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 
 type ImprovementCopy = {
   improvement: string;
@@ -223,17 +224,18 @@ type PersonaJourneyEvent = {
 };
 
 function PersonaJourneyTimeline({
-  buildId, runs, locale, t, hours, onSelect,
+  buildId, runs, locale, t, hours,
 }: {
   buildId: string;
   runs: Run[];
   locale: Locale;
   t: (typeof copy)["en"];
   hours: number;
-  onSelect: (run: Run) => void;
 }) {
   const [rangeStart] = useState(() => hours ? Date.now() - hours * 60 * 60 * 1000 : 0);
   const drag = useRef<{ pointerId: number; startX: number; startScroll: number; moved: boolean } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<PersonaJourneyEvent | null>(null);
   const lanes = useMemo(() => {
     const groups = new Map<string, PersonaJourneyEvent[]>();
     for (const run of runs) {
@@ -297,32 +299,41 @@ function PersonaJourneyTimeline({
   }, [buildId, rangeStart, runs]);
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { pointerId: event.pointerId, startX: event.clientX, startScroll: event.currentTarget.scrollLeft, moved: false };
   };
   const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     const active = drag.current;
     if (!active || active.pointerId !== event.pointerId) return;
     const distance = event.clientX - active.startX;
-    if (Math.abs(distance) > 4) active.moved = true;
+    if (!active.moved && Math.abs(distance) <= 6) return;
+    if (!active.moved) {
+      active.moved = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setIsDragging(true);
+    }
     event.currentTarget.scrollLeft = active.startScroll - distance;
   };
   const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (drag.current?.pointerId === event.pointerId) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (drag.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!drag.current.moved) drag.current = null;
+    setIsDragging(false);
   };
+  const selectedArtifacts = selectedEvent ? visualEvidenceArtifacts((selectedEvent.run.step_results ?? []).filter((step) => step.loop_index === selectedEvent.iteration).flatMap((step) => step.data_files ?? [])) : [];
   return <section className="panel persona-journeys">
     <h3><SectionInfo title={t.personaJourneys} description={t.personaJourneysHint} /></h3>
     <p className="hint">{t.personaJourneysHint}</p>
     {lanes.length ? <div className="persona-journeys__lanes">
       {lanes.map((lane) => <section className="persona-journeys__lane" key={lane.persona}>
         <header><strong>{lane.persona}</strong><small>{lane.events.length}</small></header>
-        <div className="persona-journeys__events" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={(event) => {
+        <div className={`persona-journeys__events${isDragging ? " is-dragging" : ""}`} onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onClickCapture={(event) => {
           if (!drag.current?.moved) return;
           event.preventDefault();
           event.stopPropagation();
           drag.current = null;
+          setIsDragging(false);
         }}>
-          {lane.events.map((event) => <button className="persona-journeys__event" key={event.id} onClick={() => onSelect(event.run)}>
+          {lane.events.map((event) => <button className="persona-journeys__event" key={event.id} onClick={() => setSelectedEvent(event)}>
             <time>{compactTimestamp(locale, event.recordedAt)}</time>
             <small>{t.run} {event.run.id} · {t.iteration} #{event.iteration}</small>
             <dl>
@@ -335,6 +346,7 @@ function PersonaJourneyTimeline({
         </div>
       </section>)}
     </div> : <p className="catalog-empty">{t.noPersonaJourneys}</p>}
+    {selectedEvent && <VisualEvidenceModal open onClose={() => setSelectedEvent(null)} title={`${selectedEvent.persona} · ${t.iteration} #${selectedEvent.iteration}`} runId={selectedEvent.run.id} iteration={selectedEvent.iteration} artifacts={selectedArtifacts} />}
   </section>;
 }
 function Card({
@@ -771,7 +783,7 @@ function ImprovementBuildContent({
         onRetryRequest={setRetryingRun}
         onSelect={setSelectedRun}
       />
-      <PersonaJourneyTimeline key={`${buildId}:${hours}`} buildId={buildId} runs={runs} locale={locale} t={t} hours={hours} onSelect={setSelectedRun} />
+      <PersonaJourneyTimeline key={`${buildId}:${hours}`} buildId={buildId} runs={runs} locale={locale} t={t} hours={hours} />
       <IssueManagementSection key={buildId} buildId={buildId} locale={locale} onNotice={onNotice} />
       <StoredState buildId={buildId} locale={locale} t={t} />
       {selectedRun && <EvaluationsPage
