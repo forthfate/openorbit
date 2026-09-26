@@ -2509,6 +2509,22 @@ def test_issue_management_separates_multiple_supervisor_records_in_one_iteration
                     "stage": "issue_assessment",
                     "response": {"improvements": [{"title": "Second issue"}], "reported_issues": []},
                 },
+                {
+                    "iteration": 2,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [],
+                        "reported_issues": [{"title": "First reported issue"}],
+                    },
+                },
+                {
+                    "iteration": 2,
+                    "stage": "issue_assessment",
+                    "response": {
+                        "improvements": [],
+                        "reported_issues": [{"title": "Second reported issue"}],
+                    },
+                },
             ],
         )
     )
@@ -2517,6 +2533,8 @@ def test_issue_management_separates_multiple_supervisor_records_in_one_iteration
     assert {item["proposal_id"] for item in items} == {
         "run-duplicate-assessments:1:0:0",
         "run-duplicate-assessments:1:1:0",
+        "run-duplicate-assessments:2:2:issue:0",
+        "run-duplicate-assessments:2:3:issue:0",
     }
     first = next(item for item in items if item["title"] == "First issue")
     store.update_issue_management_item(first["proposal_id"], comment="Only the first issue")

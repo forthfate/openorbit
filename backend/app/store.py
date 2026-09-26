@@ -2562,7 +2562,10 @@ class ConsoleStore:
                         ]
                         if improvements
                         else [
-                            (f"{run.id}:{record.get('iteration', 0)}:issue:{index}", proposal)
+                            (
+                                f"{run.id}:{record.get('iteration', 0)}:{record_index}:issue:{index}",
+                                proposal,
+                            )
                             for index, proposal in enumerate(reported_issues)
                         ]
                     )
@@ -2746,9 +2749,12 @@ class ConsoleStore:
             proposal_id = str(proposal["proposal_id"])
             prefix = f"{proposal.get('run_id')}:{proposal.get('iteration')}:"
             suffix = proposal_id.removeprefix(prefix).split(":")
-            if len(suffix) != 2 or not all(part.isdigit() for part in suffix):
+            if len(suffix) == 2 and all(part.isdigit() for part in suffix):
+                legacy_id = f"{prefix}{suffix[1]}"
+            elif len(suffix) == 3 and suffix[0].isdigit() and suffix[1] == "issue" and suffix[2].isdigit():
+                legacy_id = f"{prefix}issue:{suffix[2]}"
+            else:
                 continue
-            legacy_id = f"{prefix}{suffix[1]}"
             legacy_ids[proposal_id] = legacy_id
             legacy_counts[legacy_id] = legacy_counts.get(legacy_id, 0) + 1
         values = []
