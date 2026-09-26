@@ -1,6 +1,10 @@
 *Read this in other languages: [한국어](i18n/ko/README.md)*
 
-# OpenOrbit
+<p align="center">
+  <img src="logo-lockup.png" width="520" alt="OpenOrbit" />
+</p>
+
+# What is OpenOrbit?
 
 > **A local workspace where AI personas find product work, AI coding agents
 > prepare changes, and your team reviews the result.**

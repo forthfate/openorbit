@@ -3252,6 +3252,34 @@ class ConsoleStore:
                     ),
                     "",
                 )
+                if not message:
+                    process_exit = next(
+                        (
+                            event.get("attributes", {}).get("process.exit_code")
+                            for event in events
+                            if event.get("name") == "process.completed"
+                            and event.get("attributes", {}).get("process.exit_code") not in (None, 0)
+                        ),
+                        None,
+                    )
+                    if process_exit is not None:
+                        message = f"process exited with code {process_exit}"
+                if not message:
+                    failure = next(
+                        (
+                            event
+                            for event in events
+                            if event.get("name", "").endswith(
+                                (".failed", ".invalid", ".rejected", ".timeout")
+                            )
+                        ),
+                        None,
+                    )
+                    if failure:
+                        error_type = failure.get("attributes", {}).get("error.type")
+                        message = f"{failure.get('name')}" + (f" ({error_type})" if error_type else "")
+                if not message:
+                    message = ", ".join(str(event.get("name")) for event in events[-2:] if event.get("name"))
                 entries.append(
                     {
                         "time": str(record.get("exportedAt", "")),
@@ -3674,6 +3702,9 @@ class ConsoleStore:
         if execution_mode not in {"run", "test"}:
             raise ValueError("execution_mode must be run or test")
         runner_asset = self._runner(runner_id)
+        # ``None`` is a persistent "follow latest" selection.  Resolve it for
+        # this queued execution, but do not replace the selection on the Run:
+        # a later retry must resolve the then-current latest version again.
         resolved_runner_version = runner_version or int(runner_asset["version"])
         runner = self._runner_execution_plan(runner_id, resolved_runner_version)
         runner_source = next(
@@ -3686,7 +3717,7 @@ class ConsoleStore:
             id=uuid.uuid4().hex[:12],
             workflow_id=runner.id,
             workflow_name=runner.name,
-            runner_version=resolved_runner_version,
+            runner_version=runner_version,
             runner_source_sha256=hashlib.sha256(str(runner_source).encode("utf-8")).hexdigest(),
             build_id=build_id,
             build_name=build_name,
@@ -3960,6 +3991,22 @@ class ConsoleStore:
         # Insighta user simulator).  Keep each step's runner directory intact;
         # the build repository is still captured on the Run and in its prompt.
         if workflow.runner_id:
+            # A Run with no selected version follows the latest runner on every
+            # execution, including retries. Keep that selected version nullable;
+            # the checksum records the source actually resolved now.
+            runner_asset = self._runner(workflow.runner_id)
+            resolved_runner_version = run.runner_version or int(runner_asset["version"])
+            runner_source = next(
+                item["source"]
+                for item in runner_asset["versions"]
+                if int(item["version"]) == resolved_runner_version
+            )
+            run.runner_source_sha256 = hashlib.sha256(str(runner_source).encode("utf-8")).hexdigest()
+            run.workflow_graph = self._runner_graph_definition(
+                workflow.runner_id, run.repository, resolved_runner_version
+            )
+            run.updated_at = now()
+            self._save(run)
             runner_path = self._runner_entry_path(workflow.runner_id, run.runner_version)
             for step in [*workflow.steps, *(workflow.test_steps or [])]:
                 step.command = [
@@ -5097,12 +5144,16 @@ class ConsoleStore:
         run = self._load(run_id)
         if run.execution_type != "pipeline" or run.status not in {"succeeded", "failed", "cancelled"}:
             raise ValueError("Only completed, failed, or cancelled pipeline runs can be retried")
+        if run.build_id:
+            build = self.build(run.build_id)
+            # Older Runs resolved a latest build to a number at creation time.
+            # Restore the build's latest-selection semantics before retrying.
+            if build.get("runner_version") is None:
+                run.runner_version = None
         if output_locale:
             resolved_output_locale = output_locale.strip()
             if run.build_id and resolved_output_locale:
-                prompt_source, prompt_snapshot = self._assembled_prompt(
-                    self.build(run.build_id), resolved_output_locale
-                )
+                prompt_source, prompt_snapshot = self._assembled_prompt(build, resolved_output_locale)
                 run.output_locale = resolved_output_locale
                 run.prompt_source = prompt_source
                 run.prompt_snapshot = prompt_snapshot
