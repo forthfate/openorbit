@@ -78,6 +78,7 @@ type ChatAssistantCopy = {
 const positionKey = "orbit.chat.position";
 const windowPositionKey = "orbit.chat.window.position";
 const messagesKey = "orbit.chat.messages.v1";
+const openKey = "orbit.chat.open";
 const maxStoredMessages = 100;
 const defaultToolSettings: ToolSettings = {
   workspace_root: "",
@@ -140,6 +141,8 @@ const initialWindowPosition = (): Position | null => {
   return null;
 };
 
+const initialOpen = () => localStorage.getItem(openKey) === "true";
+
 const initialMessages = (): Message[] => {
   try {
     const saved = JSON.parse(localStorage.getItem(messagesKey) ?? "[]");
@@ -163,7 +166,7 @@ export function ChatAssistant() {
     resolveLocale(localStorage.getItem("orbit.locale")),
     "chatAssistant",
   );
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initialOpen),
     [messages, setMessages] = useState<Message[]>(initialMessages),
     [draft, setDraft] = useState(""),
     [sending, setSending] = useState(false),
@@ -221,6 +224,9 @@ export function ChatAssistant() {
     if (windowPosition)
       localStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
   }, [windowPosition]);
+  useEffect(() => {
+    localStorage.setItem(openKey, String(open));
+  }, [open]);
   useEffect(() => {
     try {
       if (messages.length) localStorage.setItem(messagesKey, JSON.stringify(messages));
