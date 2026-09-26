@@ -101,7 +101,10 @@
       "message": "Message",
       "placeholder": "Message Orbit…",
       "send": "Send message",
-      "clearHistory": "Clear chat history"
+      "clearHistory": "Clear chat history",
+      "clearHistoryPrompt": "Delete every message stored in this browser? This cannot be undone.",
+      "cancel": "Cancel",
+      "confirmClearHistory": "Clear history"
     },
     "appMeta": {
       "title": "OpenOrbit",

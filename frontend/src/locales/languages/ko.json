@@ -100,7 +100,10 @@
       "message": "메시지",
       "placeholder": "Orbit에 메시지 보내기…",
       "send": "메시지 전송",
-      "clearHistory": "대화 기록 삭제"
+      "clearHistory": "대화 기록 삭제",
+      "clearHistoryPrompt": "이 브라우저에 저장된 모든 대화를 삭제할까요? 이 작업은 되돌릴 수 없습니다.",
+      "cancel": "취소",
+      "confirmClearHistory": "기록 삭제"
     },
     "appMeta": {
       "title": "OpenOrbit",

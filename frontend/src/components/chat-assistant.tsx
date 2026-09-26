@@ -71,6 +71,9 @@ type ChatAssistantCopy = {
   placeholder: string;
   send: string;
   clearHistory: string;
+  clearHistoryPrompt: string;
+  cancel: string;
+  confirmClearHistory: string;
 };
 const positionKey = "orbit.chat.position";
 const windowPositionKey = "orbit.chat.window.position";
@@ -178,6 +181,7 @@ export function ChatAssistant() {
     }),
     [terminalMode, setTerminalMode] = useState(false),
     [terminalStarted, setTerminalStarted] = useState(false),
+    [clearConfirmationOpen, setClearConfirmationOpen] = useState(false),
     [toolSettings, setToolSettings] =
       useState<ToolSettings>(defaultToolSettings);
   const drag = useRef<{
@@ -195,6 +199,7 @@ export function ChatAssistant() {
   const clearHistory = () => {
     setMessages([]);
     localStorage.removeItem(messagesKey);
+    setClearConfirmationOpen(false);
   };
   const appendMessage = (message: Message) =>
     setMessages((current) => [...current, message].slice(-maxStoredMessages));
@@ -285,7 +290,7 @@ export function ChatAssistant() {
     if (!content || sending) return;
     if (content.toLowerCase() === "/clear") {
       setDraft("");
-      clearHistory();
+      setClearConfirmationOpen(true);
       return;
     }
     const history = messages.slice(-12);
@@ -486,7 +491,7 @@ export function ChatAssistant() {
               aria-label={copy.clearHistory}
               disabled={!messages.length || sending}
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={clearHistory}
+              onClick={() => setClearConfirmationOpen(true)}
             >
               <Trash2 size={17} />
             </button>
@@ -506,6 +511,26 @@ export function ChatAssistant() {
             >
               {toolSummary}
             </div>
+            {clearConfirmationOpen && (
+              <section
+                className="chat-clear-confirmation"
+                role="alertdialog"
+                aria-label={copy.clearHistory}
+              >
+                <div>
+                  <strong>{copy.clearHistory}</strong>
+                  <p>{copy.clearHistoryPrompt}</p>
+                  <footer>
+                    <button className="ghost" onClick={() => setClearConfirmationOpen(false)}>
+                      {copy.cancel}
+                    </button>
+                    <button className="reject" onClick={clearHistory}>
+                      {copy.confirmClearHistory}
+                    </button>
+                  </footer>
+                </div>
+              </section>
+            )}
             <div className="chat-messages" ref={messageList}>
               {messages.length === 0 && (
                 <p className="chat-empty">{copy.empty}</p>
