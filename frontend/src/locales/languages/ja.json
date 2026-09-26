@@ -94,7 +94,8 @@
       "usingUiInteract": "UI を操作中",
       "message": "メッセージ",
       "placeholder": "Orbit にメッセージ…",
-      "send": "メッセージを送信"
+      "send": "メッセージを送信",
+      "clearHistory": "チャット履歴を削除"
     },
     "appMeta": {
       "title": "OpenOrbit",

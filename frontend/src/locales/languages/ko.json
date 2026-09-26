@@ -99,7 +99,8 @@
       "usingUiInteract": "UI 조작 중",
       "message": "메시지",
       "placeholder": "Orbit에 메시지 보내기…",
-      "send": "메시지 전송"
+      "send": "메시지 전송",
+      "clearHistory": "대화 기록 삭제"
     },
     "appMeta": {
       "title": "OpenOrbit",

@@ -4,6 +4,7 @@ import {
   Send,
   Settings,
   SquareTerminal,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -69,9 +70,12 @@ type ChatAssistantCopy = {
   message: string;
   placeholder: string;
   send: string;
+  clearHistory: string;
 };
 const positionKey = "orbit.chat.position";
 const windowPositionKey = "orbit.chat.window.position";
+const messagesKey = "orbit.chat.messages.v1";
+const maxStoredMessages = 100;
 const defaultToolSettings: ToolSettings = {
   workspace_root: "",
   file_read_enabled: true,
@@ -133,6 +137,23 @@ const initialWindowPosition = (): Position | null => {
   return null;
 };
 
+const initialMessages = (): Message[] => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(messagesKey) ?? "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved
+      .filter(
+        (message): message is Message =>
+          message &&
+          (message.role === "user" || message.role === "assistant") &&
+          typeof message.content === "string",
+      )
+      .slice(-maxStoredMessages);
+  } catch {
+    return [];
+  }
+};
+
 export function ChatAssistant() {
   const { sessionId, handleCommand } = useAssistantUiBridge();
   const copy = localeMessages<ChatAssistantCopy>(
@@ -140,7 +161,7 @@ export function ChatAssistant() {
     "chatAssistant",
   );
   const [open, setOpen] = useState(false),
-    [messages, setMessages] = useState<Message[]>([]),
+    [messages, setMessages] = useState<Message[]>(initialMessages),
     [draft, setDraft] = useState(""),
     [sending, setSending] = useState(false),
     [activityPhase, setActivityPhase] = useState<"thinking" | "working">("thinking"),
@@ -171,6 +192,12 @@ export function ChatAssistant() {
   const messageList = useRef<HTMLDivElement>(null);
   const chatWindow = useRef<HTMLElement>(null);
   const hasUsedTool = useRef(false);
+  const clearHistory = () => {
+    setMessages([]);
+    localStorage.removeItem(messagesKey);
+  };
+  const appendMessage = (message: Message) =>
+    setMessages((current) => [...current, message].slice(-maxStoredMessages));
   useEffect(() => {
     messageList.current?.scrollTo({ top: messageList.current.scrollHeight });
   }, [messages, sending, activityLines]);
@@ -189,6 +216,14 @@ export function ChatAssistant() {
     if (windowPosition)
       localStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
   }, [windowPosition]);
+  useEffect(() => {
+    try {
+      if (messages.length) localStorage.setItem(messagesKey, JSON.stringify(messages));
+      else localStorage.removeItem(messagesKey);
+    } catch {
+      // A full or unavailable browser store must not prevent chatting.
+    }
+  }, [messages]);
   useEffect(() => {
     if (open)
       api<ApplicationSettings>("/api/application-settings")
@@ -248,9 +283,14 @@ export function ChatAssistant() {
   const send = async () => {
     const content = draft.trim();
     if (!content || sending) return;
+    if (content.toLowerCase() === "/clear") {
+      setDraft("");
+      clearHistory();
+      return;
+    }
     const history = messages.slice(-12);
     setDraft("");
-    setMessages((current) => [...current, { role: "user", content }]);
+    appendMessage({ role: "user", content });
     setSending(true);
     setActivityPhase("thinking");
     setActivityLines([]);
@@ -312,18 +352,12 @@ export function ChatAssistant() {
         if (done) break;
       }
       if (!answer) throw new Error(copy.requestFailed);
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: answer },
-      ]);
+      appendMessage({ role: "assistant", content: answer });
     } catch (error) {
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: error instanceof Error ? error.message : copy.requestFailed,
-        },
-      ]);
+      appendMessage({
+        role: "assistant",
+        content: error instanceof Error ? error.message : copy.requestFailed,
+      });
     } finally {
       setSending(false);
     }
@@ -446,6 +480,15 @@ export function ChatAssistant() {
               }}
             >
               <Settings size={17} />
+            </button>
+            <button
+              className="ghost"
+              aria-label={copy.clearHistory}
+              disabled={!messages.length || sending}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={clearHistory}
+            >
+              <Trash2 size={17} />
             </button>
             <button
               className="ghost"
