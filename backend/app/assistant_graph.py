@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Callable, TypedDict
+import logging
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Literal, TypedDict
 
 from coding_agents import execution_environment_context
+from httpx import TransportError
 from langgraph.graph import END, START, StateGraph
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -15,19 +18,59 @@ from .assistant_tools import DEFAULT_MCP_URL, AssistantToolExecutor
 from .assistant_ui import AssistantUiToolExecutor
 from .providers import AzureOpenAIProvider, BedrockProvider, ModelSettings
 
+logger = logging.getLogger(__name__)
+
 
 class AssistantState(TypedDict, total=False):
     prompt: str
     response: str
 
 
+@dataclass
+class McpConnectionStatus:
+    """One Assistant turn's bounded MCP connection state."""
+
+    state: Literal["idle", "connecting", "ready", "retrying", "failed"] = "idle"
+    attempts: int = 0
+    last_error: str = ""
+
+
 class LocalMcpTools:
     """Expose the mounted OpenOrbit MCP server as native model function tools."""
 
-    def __init__(self, url: str = DEFAULT_MCP_URL):
+    def __init__(self, url: str = DEFAULT_MCP_URL, *, retry_delays: tuple[float, ...] = (0.25, 0.5, 1.0)):
         self.url = url
+        self.retry_delays = retry_delays
+        self.connection = McpConnectionStatus()
+        self._definitions: list[dict[str, Any]] | None = None
 
-    async def _list_tools(self) -> list[dict[str, Any]]:
+    @staticmethod
+    def _retryable(error: Exception) -> bool:
+        """Retry startup and transport failures, never protocol/configuration failures."""
+        return isinstance(error, (OSError, TimeoutError, TransportError))
+
+    async def _retry_read(
+        self, operation: Callable[[], Awaitable[list[dict[str, Any]]]]
+    ) -> list[dict[str, Any]]:
+        attempts = len(self.retry_delays) + 1
+        for attempt in range(1, attempts + 1):
+            self.connection.state = "connecting" if attempt == 1 else "retrying"
+            self.connection.attempts = attempt
+            try:
+                value = await operation()
+                self.connection.state, self.connection.last_error = "ready", ""
+                return value
+            except Exception as error:
+                self.connection.last_error = str(error)
+                if not self._retryable(error) or attempt == attempts:
+                    self.connection.state = "failed"
+                    raise
+                delay = self.retry_delays[attempt - 1]
+                logger.info("MCP initialization failed; retrying in %.2fs: %s", delay, error)
+                await asyncio.sleep(delay)
+        raise RuntimeError("unreachable MCP retry state")
+
+    async def _list_tools_once(self) -> list[dict[str, Any]]:
         async with streamablehttp_client(self.url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -41,10 +84,18 @@ class LocalMcpTools:
                     for tool in result.tools
                 ]
 
+    async def _list_tools(self) -> list[dict[str, Any]]:
+        return await self._retry_read(self._list_tools_once)
+
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> str:
+        # Do not retry calls: an action might already have reached the target
+        # before a connection drops.  Retrying it could duplicate a mutation.
+        self.connection.state = "connecting"
+        self.connection.attempts += 1
         async with streamablehttp_client(self.url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
+                self.connection.state, self.connection.last_error = "ready", ""
                 result = await session.call_tool(name, arguments)
                 if result.isError:
                     return json.dumps({"error": "MCP tool failed", "content": result.content}, default=str)
@@ -55,9 +106,14 @@ class LocalMcpTools:
         return asyncio.run(coro)
 
     def definitions(self) -> list[dict[str, Any]]:
+        if self._definitions is not None:
+            return self._definitions
         try:
-            return self._run(self._list_tools())
-        except Exception:
+            self._definitions = self._run(self._list_tools())
+            return self._definitions
+        except Exception as error:
+            self.connection.state, self.connection.last_error = "failed", str(error)
+            logger.info("MCP tools unavailable: %s", error)
             # The assistant remains usable while the local server is starting.
             return []
 
@@ -65,6 +121,7 @@ class LocalMcpTools:
         try:
             return self._run(self._call_tool(name, arguments))
         except Exception as error:
+            self.connection.state, self.connection.last_error = "failed", str(error)
             return json.dumps({"error": f"MCP unavailable: {error}"})
 
 

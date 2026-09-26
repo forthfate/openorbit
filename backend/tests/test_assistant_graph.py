@@ -1,4 +1,4 @@
-from app.assistant_graph import DEFAULT_MCP_URL, OrbitAssistantGraph, build_assistant_prompt
+from app.assistant_graph import DEFAULT_MCP_URL, LocalMcpTools, OrbitAssistantGraph, build_assistant_prompt
 from app.providers import ModelSettings
 
 
@@ -61,3 +61,38 @@ def test_assistant_prompt_prioritizes_ui_tools_for_browser_ui_requests():
 
     assert "first call ui_get_context" in prompt
     assert "Do not use file tools to infer browser UI state" in prompt
+
+
+def test_local_mcp_tools_retries_transient_initialization_failures(monkeypatch):
+    tools = LocalMcpTools(retry_delays=(0, 0))
+    attempts = 0
+
+    async def flaky_list_tools():
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise OSError("connection refused")
+        return [{"name": "get_status", "description": "status", "parameters": {}}]
+
+    monkeypatch.setattr(tools, "_list_tools_once", flaky_list_tools)
+
+    assert tools.definitions() == [{"name": "get_status", "description": "status", "parameters": {}}]
+    assert attempts == 3
+    assert tools.connection.state == "ready"
+    assert tools.connection.attempts == 3
+
+
+def test_local_mcp_tools_does_not_retry_protocol_failures(monkeypatch):
+    tools = LocalMcpTools(retry_delays=(0, 0))
+    attempts = 0
+
+    async def bad_protocol():
+        nonlocal attempts
+        attempts += 1
+        raise ValueError("unsupported transport")
+
+    monkeypatch.setattr(tools, "_list_tools_once", bad_protocol)
+
+    assert tools.definitions() == []
+    assert attempts == 1
+    assert tools.connection.state == "failed"
