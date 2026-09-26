@@ -2499,7 +2499,7 @@ class ConsoleStore:
                     }
                 ]
             seen_agent_improvements: set[str] = set()
-            for record in records:
+            for record_index, record in enumerate(records):
                 if not isinstance(record, dict):
                     continue
                 iteration = record.get("iteration")
@@ -2557,7 +2557,7 @@ class ConsoleStore:
                 if record.get("stage") != "agent_proposal_assessment":
                     issue_proposals = (
                         [
-                            (f"{run.id}:{record.get('iteration', 0)}:{index}", proposal)
+                            (f"{run.id}:{record.get('iteration', 0)}:{record_index}:{index}", proposal)
                             for index, proposal in enumerate(improvements)
                         ]
                         if improvements
@@ -2733,9 +2733,32 @@ class ConsoleStore:
 
     def issue_management_items(self) -> list[dict[str, Any]]:
         records = self._issue_management_records()
+        proposals = self.proposal_lifecycles()
+
+        # Before supervisor-record position became part of the ID, records from
+        # separate assessments in one iteration could collide. Preserve a
+        # legacy management record only where it maps to exactly one proposal.
+        # A collided legacy record has no safe owner, so each new row starts
+        # independently instead of sharing comments, status, or deletion state.
+        legacy_ids: dict[str, str] = {}
+        legacy_counts: dict[str, int] = {}
+        for proposal in proposals:
+            proposal_id = str(proposal["proposal_id"])
+            prefix = f"{proposal.get('run_id')}:{proposal.get('iteration')}:"
+            suffix = proposal_id.removeprefix(prefix).split(":")
+            if len(suffix) != 2 or not all(part.isdigit() for part in suffix):
+                continue
+            legacy_id = f"{prefix}{suffix[1]}"
+            legacy_ids[proposal_id] = legacy_id
+            legacy_counts[legacy_id] = legacy_counts.get(legacy_id, 0) + 1
         values = []
-        for proposal in self.proposal_lifecycles():
-            record = records.get(proposal["proposal_id"], {})
+        for proposal in proposals:
+            proposal_id = str(proposal["proposal_id"])
+            record = records.get(proposal_id)
+            legacy_id = legacy_ids.get(proposal_id)
+            if record is None and legacy_id and legacy_counts[legacy_id] == 1:
+                record = records.get(legacy_id)
+            record = record or {}
             # Issues are derived from immutable run evidence. A deletion is a
             # management-level tombstone, not deletion of the underlying run.
             if record.get("status") == "deleted":
