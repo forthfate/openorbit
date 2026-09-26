@@ -40,7 +40,7 @@ export function AppShell({
 }) {
   const t = locales[locale];
   const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(sidebarStorageKey) === "true",
+    () => sessionStorage.getItem(sidebarStorageKey) === "true",
   );
   const pageDescriptions = localeMessages<Record<Page, string>>(
     locale,
@@ -106,7 +106,7 @@ export function AppShell({
   );
   const activeRunLabel = activeRunCount > 99 ? "99+" : String(activeRunCount);
   useEffect(
-    () => localStorage.setItem(sidebarStorageKey, String(collapsed)),
+    () => sessionStorage.setItem(sidebarStorageKey, String(collapsed)),
     [collapsed],
   );
   useEffect(() => {

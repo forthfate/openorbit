@@ -10,7 +10,7 @@ export function preferredBuildId(
   fallback: string,
 ): string {
   try {
-    const saved = localStorage.getItem(storageKey(scope));
+    const saved = sessionStorage.getItem(storageKey(scope));
     return saved && builds.some((build) => build.id === saved) ? saved : fallback;
   } catch {
     return fallback;
@@ -19,7 +19,7 @@ export function preferredBuildId(
 
 export function savePreferredBuildId(scope: "improvements", buildId: string) {
   try {
-    if (buildId) localStorage.setItem(storageKey(scope), buildId);
+    if (buildId) sessionStorage.setItem(storageKey(scope), buildId);
   } catch {
     // Storage can be unavailable in private or restricted browser contexts.
   }
@@ -27,7 +27,7 @@ export function savePreferredBuildId(scope: "improvements", buildId: string) {
 
 export function preferredRangeHours(scope: "improvements", fallback: number): number {
   try {
-    const saved = Number(localStorage.getItem(rangeStorageKey(scope)));
+    const saved = Number(sessionStorage.getItem(rangeStorageKey(scope)));
     return validRangeHours.has(saved) ? saved : fallback;
   } catch {
     return fallback;
@@ -36,7 +36,7 @@ export function preferredRangeHours(scope: "improvements", fallback: number): nu
 
 export function savePreferredRangeHours(scope: "improvements", hours: number) {
   try {
-    if (validRangeHours.has(hours)) localStorage.setItem(rangeStorageKey(scope), String(hours));
+    if (validRangeHours.has(hours)) sessionStorage.setItem(rangeStorageKey(scope), String(hours));
   } catch {
     // Storage can be unavailable in private or restricted browser contexts.
   }
