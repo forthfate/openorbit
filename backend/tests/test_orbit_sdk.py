@@ -207,6 +207,45 @@ def context(project, *, iteration: int, run_id: str = "run-123"):
     )
 
 
+def test_selenium_network_settlement_tracks_readiness_without_selenium_dependency():
+    class Driver:
+        def __init__(self):
+            self.cdp_calls = []
+            self.scripts = []
+            self.states = [
+                {"tracker_available": True, "pending": 1, "quiet_for_ms": 0, "loading_visible": True},
+                {"tracker_available": True, "pending": 0, "quiet_for_ms": 2_000, "loading_visible": False},
+                {"tracker_available": True, "pending": 0, "quiet_for_ms": 2_000, "loading_visible": False},
+            ]
+
+        def execute_cdp_cmd(self, command, payload):
+            self.cdp_calls.append((command, payload))
+
+        def execute_script(self, script):
+            self.scripts.append(script)
+            if "tracker_available" not in script:
+                return None
+            return self.states.pop(0)
+
+    driver = Driver()
+    sdk.install_selenium_network_tracker(driver)
+    evidence = sdk.wait_for_selenium_page_settlement(
+        driver,
+        label="capture",
+        options=sdk.NetworkSettleOptions(
+            quiet_window_seconds=0.001,
+            stability_seconds=0.001,
+            timeout_seconds=0.1,
+            poll_interval_seconds=0.001,
+        ),
+    )
+
+    assert driver.cdp_calls[0][0] == "Page.addScriptToEvaluateOnNewDocument"
+    assert "window.fetch" in driver.cdp_calls[0][1]["source"]
+    assert evidence["status"] == "ready"
+    assert evidence["label"] == "capture"
+
+
 def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
