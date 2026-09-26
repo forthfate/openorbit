@@ -969,7 +969,7 @@ function PromptTemplateEditor({
       ? template.versions
       : [{ version: template.version, content: template.content }];
   const [draft, setDraft] = useState(() => {
-      const saved = localStorage.getItem(draftKey);
+      const saved = sessionStorage.getItem(draftKey);
       return saved ? (JSON.parse(saved) as PromptTemplate) : { ...template };
     }),
     [selectedVersion, setSelectedVersion] = useState(draft.version),
@@ -982,8 +982,8 @@ function PromptTemplateEditor({
     draft.content !== selectedContent ||
     draft.id !== template.id;
   useEffect(() => {
-    if (dirty) localStorage.setItem(draftKey, JSON.stringify(draft));
-    else localStorage.removeItem(draftKey);
+    if (dirty) sessionStorage.setItem(draftKey, JSON.stringify(draft));
+    else sessionStorage.removeItem(draftKey);
   }, [draft, dirty, draftKey]);
   const close = () => {
     if (dirty) setPendingAction({ type: "close" });
@@ -994,7 +994,7 @@ function PromptTemplateEditor({
     if (selected) {
       setSelectedVersion(version);
       setDraft({ ...template, content: selected.content, version });
-      localStorage.removeItem(draftKey);
+      sessionStorage.removeItem(draftKey);
     }
   };
   const selectVersion = (version: number) => {
@@ -1003,7 +1003,7 @@ function PromptTemplateEditor({
   };
   const discard = () => {
     if (!pendingAction) return;
-    localStorage.removeItem(draftKey);
+    sessionStorage.removeItem(draftKey);
     if (pendingAction.type === "close") onClose();
     else applyVersion(pendingAction.version);
     setPendingAction(null);
@@ -1017,7 +1017,7 @@ function PromptTemplateEditor({
       { id: draft.id, name: draft.name, content: draft.content },
     )
       .then(async () => {
-        localStorage.removeItem(draftKey);
+        sessionStorage.removeItem(draftKey);
         await onSaved();
         onClose();
       })

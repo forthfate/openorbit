@@ -94,7 +94,11 @@
       "usingUiInteract": "UI を操作中",
       "message": "メッセージ",
       "placeholder": "Orbit にメッセージ…",
-      "send": "メッセージを送信"
+      "send": "メッセージを送信",
+      "clearHistory": "チャット履歴を削除",
+      "clearHistoryPrompt": "このブラウザーに保存されたすべての会話を削除しますか？この操作は元に戻せません。",
+      "cancel": "キャンセル",
+      "confirmClearHistory": "履歴を削除"
     },
     "appMeta": {
       "title": "OpenOrbit",

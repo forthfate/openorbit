@@ -4,6 +4,7 @@ import {
   Send,
   Settings,
   SquareTerminal,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -69,9 +70,16 @@ type ChatAssistantCopy = {
   message: string;
   placeholder: string;
   send: string;
+  clearHistory: string;
+  clearHistoryPrompt: string;
+  cancel: string;
+  confirmClearHistory: string;
 };
 const positionKey = "orbit.chat.position";
 const windowPositionKey = "orbit.chat.window.position";
+const messagesKey = "orbit.chat.messages.v1";
+const openKey = "orbit.chat.open";
+const maxStoredMessages = 100;
 const defaultToolSettings: ToolSettings = {
   workspace_root: "",
   file_read_enabled: true,
@@ -94,7 +102,7 @@ const normalizedToolSettings = (
 });
 
 const initialPosition = (): Position => {
-  const saved = localStorage.getItem(positionKey);
+  const saved = sessionStorage.getItem(positionKey);
   if (saved) {
     try {
       const position = JSON.parse(saved) as Position;
@@ -120,7 +128,7 @@ const initialPosition = (): Position => {
 };
 
 const initialWindowPosition = (): Position | null => {
-  const saved = localStorage.getItem(windowPositionKey);
+  const saved = sessionStorage.getItem(windowPositionKey);
   if (saved) {
     try {
       const position = JSON.parse(saved) as Position;
@@ -133,14 +141,33 @@ const initialWindowPosition = (): Position | null => {
   return null;
 };
 
+const initialOpen = () => sessionStorage.getItem(openKey) === "true";
+
+const initialMessages = (): Message[] => {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(messagesKey) ?? "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved
+      .filter(
+        (message): message is Message =>
+          message &&
+          (message.role === "user" || message.role === "assistant") &&
+          typeof message.content === "string",
+      )
+      .slice(-maxStoredMessages);
+  } catch {
+    return [];
+  }
+};
+
 export function ChatAssistant() {
   const { sessionId, handleCommand } = useAssistantUiBridge();
   const copy = localeMessages<ChatAssistantCopy>(
     resolveLocale(localStorage.getItem("orbit.locale")),
     "chatAssistant",
   );
-  const [open, setOpen] = useState(false),
-    [messages, setMessages] = useState<Message[]>([]),
+  const [open, setOpen] = useState(initialOpen),
+    [messages, setMessages] = useState<Message[]>(initialMessages),
     [draft, setDraft] = useState(""),
     [sending, setSending] = useState(false),
     [activityPhase, setActivityPhase] = useState<"thinking" | "working">("thinking"),
@@ -157,6 +184,7 @@ export function ChatAssistant() {
     }),
     [terminalMode, setTerminalMode] = useState(false),
     [terminalStarted, setTerminalStarted] = useState(false),
+    [clearConfirmationOpen, setClearConfirmationOpen] = useState(false),
     [toolSettings, setToolSettings] =
       useState<ToolSettings>(defaultToolSettings);
   const drag = useRef<{
@@ -171,6 +199,13 @@ export function ChatAssistant() {
   const messageList = useRef<HTMLDivElement>(null);
   const chatWindow = useRef<HTMLElement>(null);
   const hasUsedTool = useRef(false);
+  const clearHistory = () => {
+    setMessages([]);
+    sessionStorage.removeItem(messagesKey);
+    setClearConfirmationOpen(false);
+  };
+  const appendMessage = (message: Message) =>
+    setMessages((current) => [...current, message].slice(-maxStoredMessages));
   useEffect(() => {
     messageList.current?.scrollTo({ top: messageList.current.scrollHeight });
   }, [messages, sending, activityLines]);
@@ -183,12 +218,23 @@ export function ChatAssistant() {
     return () => window.clearInterval(interval);
   }, [sending]);
   useEffect(() => {
-    localStorage.setItem(positionKey, JSON.stringify(position));
+    sessionStorage.setItem(positionKey, JSON.stringify(position));
   }, [position]);
   useEffect(() => {
     if (windowPosition)
-      localStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
+      sessionStorage.setItem(windowPositionKey, JSON.stringify(windowPosition));
   }, [windowPosition]);
+  useEffect(() => {
+    sessionStorage.setItem(openKey, String(open));
+  }, [open]);
+  useEffect(() => {
+    try {
+      if (messages.length) sessionStorage.setItem(messagesKey, JSON.stringify(messages));
+      else sessionStorage.removeItem(messagesKey);
+    } catch {
+      // A full or unavailable browser store must not prevent chatting.
+    }
+  }, [messages]);
   useEffect(() => {
     if (open)
       api<ApplicationSettings>("/api/application-settings")
@@ -248,9 +294,14 @@ export function ChatAssistant() {
   const send = async () => {
     const content = draft.trim();
     if (!content || sending) return;
+    if (content.toLowerCase() === "/clear") {
+      setDraft("");
+      setClearConfirmationOpen(true);
+      return;
+    }
     const history = messages.slice(-12);
     setDraft("");
-    setMessages((current) => [...current, { role: "user", content }]);
+    appendMessage({ role: "user", content });
     setSending(true);
     setActivityPhase("thinking");
     setActivityLines([]);
@@ -312,18 +363,12 @@ export function ChatAssistant() {
         if (done) break;
       }
       if (!answer) throw new Error(copy.requestFailed);
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", content: answer },
-      ]);
+      appendMessage({ role: "assistant", content: answer });
     } catch (error) {
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: error instanceof Error ? error.message : copy.requestFailed,
-        },
-      ]);
+      appendMessage({
+        role: "assistant",
+        content: error instanceof Error ? error.message : copy.requestFailed,
+      });
     } finally {
       setSending(false);
     }
@@ -449,6 +494,15 @@ export function ChatAssistant() {
             </button>
             <button
               className="ghost"
+              aria-label={copy.clearHistory}
+              disabled={!messages.length || sending}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => setClearConfirmationOpen(true)}
+            >
+              <Trash2 size={17} />
+            </button>
+            <button
+              className="ghost"
               aria-label={copy.collapse}
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => setOpen(false)}
@@ -463,6 +517,26 @@ export function ChatAssistant() {
             >
               {toolSummary}
             </div>
+            {clearConfirmationOpen && (
+              <section
+                className="chat-clear-confirmation"
+                role="alertdialog"
+                aria-label={copy.clearHistory}
+              >
+                <div>
+                  <strong>{copy.clearHistory}</strong>
+                  <p>{copy.clearHistoryPrompt}</p>
+                  <footer>
+                    <button className="ghost" onClick={() => setClearConfirmationOpen(false)}>
+                      {copy.cancel}
+                    </button>
+                    <button className="reject" onClick={clearHistory}>
+                      {copy.confirmClearHistory}
+                    </button>
+                  </footer>
+                </div>
+              </section>
+            )}
             <div className="chat-messages" ref={messageList}>
               {messages.length === 0 && (
                 <p className="chat-empty">{copy.empty}</p>
