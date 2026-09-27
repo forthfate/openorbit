@@ -16,7 +16,26 @@ MAX_RESULT_BYTES = 16 * 1024
 MAX_FILE_LINES = 120
 MAX_SEARCH_RESULTS = 12
 BLOCKED_NAMES = {".env", ".git", ".ssh", "id_rsa", "id_ed25519"}
-DEFAULT_MCP_URL = "http://127.0.0.1:3000/mcp/"
+
+
+def _local_mcp_url() -> str:
+    """Return this process's local MCP endpoint.
+
+    ``orbit run`` may select a port above the requested one when it is already
+    occupied. It passes that selected port through ``ORBIT_PORT`` to keep
+    generated MCP configuration from pointing at the process that occupied it.
+    """
+    configured_port = os.environ.get("ORBIT_PORT", "3000").strip()
+    try:
+        port = int(configured_port)
+    except ValueError:
+        port = 3000
+    if not 1 <= port <= 65535:
+        port = 3000
+    return f"http://127.0.0.1:{port}/mcp/"
+
+
+DEFAULT_MCP_URL = _local_mcp_url()
 
 
 def _terminal_visible() -> bool:

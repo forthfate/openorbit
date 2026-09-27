@@ -67,6 +67,7 @@ if (!Number.isInteger(requestedPort) || requestedPort < 1 || requestedPort > 655
 const port = await nextAvailablePort(requestedPort, host)
 const localUrl = `http://127.0.0.1:${port}`
 console.log(`OpenOrbit is starting. Open ${localUrl}`)
+console.log(`MCP endpoint: ${localUrl}/mcp/`)
 if (port !== requestedPort) {
   console.log(`Port ${requestedPort} is in use; using ${port} instead.`)
 }
@@ -76,7 +77,9 @@ if (process.env.ORBIT_PUBLIC_URL) {
 const server = spawn(venvPython, ['-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend', '--host', host, '--port', port], {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env, ...(appData ? { ORBIT_APP_DATA: appData } : {}) },
+  // Keep the server's generated local MCP configuration aligned with the
+  // port selected above when the requested port was already occupied.
+  env: { ...process.env, ORBIT_PORT: String(port), ...(appData ? { ORBIT_APP_DATA: appData } : {}) },
 })
 process.on('SIGINT', () => server.kill('SIGINT'))
 process.on('SIGTERM', () => server.kill('SIGTERM'))
