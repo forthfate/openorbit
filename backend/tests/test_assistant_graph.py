@@ -1,3 +1,4 @@
+from app import assistant_tools
 from app.assistant_graph import DEFAULT_MCP_URL, LocalMcpTools, OrbitAssistantGraph, build_assistant_prompt
 from app.providers import ModelSettings
 
@@ -54,6 +55,15 @@ def test_assistant_prompt_uses_local_mcp_as_the_control_room_source_of_truth():
     assert "- Current local time: " in prompt
     assert "Respond in BCP 47 locale 'ko-KR'." in prompt
     assert "Assistant: Earlier answer" in prompt
+
+
+def test_local_mcp_url_uses_the_effective_server_port(monkeypatch):
+    monkeypatch.setenv("ORBIT_PORT", "3001")
+
+    assert assistant_tools._local_mcp_url() == "http://127.0.0.1:3001/mcp/"
+
+    monkeypatch.setenv("ORBIT_PORT", "not-a-port")
+    assert assistant_tools._local_mcp_url() == "http://127.0.0.1:3000/mcp/"
 
 
 def test_assistant_prompt_prioritizes_ui_tools_for_browser_ui_requests():
