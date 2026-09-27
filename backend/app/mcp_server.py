@@ -22,6 +22,112 @@ def _json(value: Any) -> Any:
     return value.model_dump(mode="json") if hasattr(value, "model_dump") else value
 
 
+def _text(value: object, limit: int = 500) -> str:
+    """Keep MCP summaries bounded without losing a useful error description."""
+    return str(value or "")[:limit]
+
+
+def _pipeline_summary(value: Any) -> dict[str, Any]:
+    run = _json(value)
+    steps = run.get("step_results", []) if isinstance(run, dict) else []
+    supervisor = run.get("supervisor_results", []) if isinstance(run, dict) else []
+    files = [
+        file
+        for step in steps
+        if isinstance(step, dict)
+        for file in step.get("data_files", [])
+        if isinstance(file, dict)
+    ]
+    return {
+        key: run.get(key)
+        for key in (
+            "id",
+            "build_id",
+            "build_name",
+            "workflow_id",
+            "workflow_name",
+            "status",
+            "current_phase",
+            "current_step",
+            "execution_mode",
+            "execution_type",
+            "created_at",
+            "updated_at",
+            "finished_at",
+            "loop_limit",
+            "approval_score",
+            "supervisor_status",
+            "supervisor_error",
+        )
+    } | {
+        "step_count": len(steps),
+        "supervisor_result_count": len(supervisor),
+        "evidence_file_count": len(files),
+    }
+
+
+def _pipeline_detail(value: Any, detail: str, max_items: int) -> dict[str, Any]:
+    run = _json(value)
+    result = _pipeline_summary(run)
+    if detail == "summary":
+        return result
+    limit = max(1, min(max_items, 50))
+    if detail == "steps":
+        result["steps"] = [
+            {
+                key: _text(step.get(key))
+                if key in {"id", "phase", "name", "status", "error"}
+                else step.get(key)
+                for key in (
+                    "id",
+                    "phase",
+                    "name",
+                    "loop_index",
+                    "status",
+                    "started_at",
+                    "ended_at",
+                    "exit_code",
+                    "error",
+                )
+            }
+            for step in run.get("step_results", [])[:limit]
+            if isinstance(step, dict)
+        ]
+    elif detail == "supervision":
+        records = run.get("supervisor_results", []) or []
+        result["supervision"] = [
+            {
+                "iteration": record.get("iteration"),
+                "stage": record.get("stage"),
+                "status": record.get("status"),
+                "recorded_at": record.get("recorded_at"),
+                "error": _text(record.get("error")),
+                "score": (record.get("response") or {}).get("evaluation", {}).get("score")
+                if isinstance(record.get("response"), dict)
+                else None,
+                "approval": (record.get("response") or {}).get("evaluation", {}).get("approval")
+                if isinstance(record.get("response"), dict)
+                else None,
+            }
+            for record in records[:limit]
+            if isinstance(record, dict)
+        ]
+    elif detail == "evidence":
+        files = [
+            file
+            for step in run.get("step_results", [])
+            if isinstance(step, dict)
+            for file in step.get("data_files", [])
+            if isinstance(file, dict)
+        ]
+        result["evidence"] = [
+            {key: file.get(key) for key in ("label", "filename", "relative_path", "size", "content_type")}
+            for file in files[:limit]
+        ]
+        result["evidence_truncated"] = len(files) > limit
+    return result
+
+
 def create_mcp_server(
     get_store: Callable[[], ConsoleStore], openapi: Callable[[], dict[str, Any]]
 ) -> FastMCP:
@@ -53,10 +159,14 @@ def create_mcp_server(
     )
     def get_status() -> dict[str, Any]:
         store = get_store()
+        dashboard = store.dashboard()
         return {
             "health": {"status": "ok"},
-            "dashboard": _json(store.dashboard()),
-            "active_pipelines": _json(store.active_evaluations()),
+            "dashboard": {
+                "metrics": dashboard["metrics"],
+                "active_build_count": len(dashboard["active_builds"]),
+            },
+            "active_pipelines": [_pipeline_summary(run) for run in store.active_evaluations()[:20]],
             "docker": preflight_docker(),
         }
 
@@ -71,19 +181,25 @@ def create_mcp_server(
         return _json(get_store().build(project_id))
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False))
-    def list_pipelines(project_id: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
-        """List retained pipeline runs, optionally filtered by project or status."""
+    def list_pipelines(
+        project_id: str | None = None, status: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """List compact pipeline summaries; use get_pipeline for a bounded detail section."""
         pipelines = get_store().runs()
         if project_id:
             pipelines = [pipeline for pipeline in pipelines if pipeline.build_id == project_id]
         if status:
             pipelines = [pipeline for pipeline in pipelines if pipeline.status == status]
-        return [_json(pipeline) for pipeline in pipelines]
+        return [_pipeline_summary(pipeline) for pipeline in pipelines[: max(1, min(limit, 50))]]
 
     @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False))
-    def get_pipeline(pipeline_id: str) -> dict[str, Any]:
-        """Get a pipeline's current state, phases, evidence, and supervisor results."""
-        return _json(get_store().run(pipeline_id))
+    def get_pipeline(
+        pipeline_id: str,
+        detail: Literal["summary", "steps", "supervision", "evidence"] = "summary",
+        max_items: int = 20,
+    ) -> dict[str, Any]:
+        """Get one bounded pipeline section; summary is the default and never returns raw logs or HTML."""
+        return _pipeline_detail(get_store().run(pipeline_id), detail, max_items)
 
     @mcp.tool(
         description="Start a project pipeline. Use test mode for a one-off safe validation run.",
