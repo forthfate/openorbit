@@ -483,6 +483,14 @@
       "description": "運用メッセージとエラーを含む Orbit イベントの記録を確認します。",
       "empty": "記録された Orbit イベントはまだありません。"
     },
+    "aiUsage": {
+      "title": "AI 使用量とレート制限",
+      "description": "ローカルの Azure OpenAI リクエストメタデータとレート制限ヘッダーを確認します。プロンプトと応答本文は保存しません。",
+      "range": "期間", "refresh": "更新", "rpm": "平均 RPM", "tpm": "平均 TPM", "successRate": "成功率", "averageLatency": "平均レイテンシー",
+      "requests": "リクエスト", "tokens": "トークン", "limits": "最新の Azure 制限ヘッダー", "remainingRequests": "残りリクエスト", "remainingTokens": "残りトークン", "retryAfter": "再試行まで",
+      "requestTrend": "リクエスト推移", "tokenTrend": "トークン推移", "recentCalls": "最近のモデル呼び出し", "time": "時刻", "model": "モデル", "status": "状態", "usage": "入力 / 出力", "characters": "入力 / 出力文字数", "latency": "レイテンシー", "details": "選択した呼び出し", "requestType": "リクエスト種別", "promptRequest": "プロンプトリクエスト", "toolResultRequest": "ツール結果の後続リクエスト", "input": "入力", "output": "出力", "tools": "ツール",
+      "empty": "この期間に保存されたモデル呼び出しはありません。", "unavailable": "使用量データを読み込めません。ローカル Orbit サーバーを開始または更新してください。", "noLimitData": "Azure のレート制限ヘッダーはまだ受信していません。"
+    },
     "improvements": "改善",
     "dashboard": "ダッシュボード",
     "assets": "アセット",

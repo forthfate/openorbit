@@ -11,6 +11,7 @@ import { api } from "../../services/api";
 import { useToast } from "../../components/ui/toast-context";
 import { ProfileCatalog } from "../assets/page";
 import { OrbitLogs } from "./orbit-logs";
+import { AiUsageMonitor } from "./ai-usage-monitor";
 import { useAssistantUiBridge } from "../../components/assistant-ui-bridge";
 import { JsonEditor } from "../../components/ui/json-editor";
 
@@ -424,6 +425,7 @@ export function SettingsPage({
           <p className="setting-prompt-preview">{prompt || l.empty}</p>
         </div>
       </section>
+      <AiUsageMonitor locale={locale} />
       <OrbitLogs logs={logs} locale={locale} />
       <Modal open={mcpOpen} title={settingsCopy.mcp.title} onClose={() => setMcpOpen(false)}>
         <div className="modal-form">
