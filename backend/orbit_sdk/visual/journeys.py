@@ -311,48 +311,64 @@ def observe_persona_page(ctx: Any, config: Mapping[str, Any], _: Mapping[str, ob
     required_config=("namespace",),
 )
 def plan_persona_action(ctx: Any, config: Mapping[str, Any], _: Mapping[str, object]) -> dict[str, object]:
-    """Let a persona select exactly one action from rendered safe choices."""
+    """Generate a persona utterance, then plan an action from that utterance."""
     namespace = config["namespace"]
     state = _persona_state(ctx, namespace)
     actions = state["observation"]["available_actions"]
-    prompt = (
-        """You are a persistent product user. Decide one next action, not a test verdict. Return JSON only:
-{"intent":"short first-person purpose","action_id":"one listed id or empty","rationale":"observable reason","expected_signal":"what would change my understanding"}.
-You may choose an empty action_id to observe again. Never choose actions outside listed IDs. Avoid repeating a reported issue unless new evidence exists.
+    speaker_prompt = """You are a persistent product user speaking to a product assistant. Return JSON only:
+{"utterance":"one natural first-person user message","thought":"brief stated perspective, not hidden chain-of-thought","rationale":"short reason for raising this now","intent":"short request or goal"}.
+Write only what this person would say or explicitly report. Do not mention testing, browser automation, tools, or a persona simulation.
 
-Persona state:\n"""
-        + json.dumps(
-            {
-                key: state[key]
-                for key in (
-                    "persona",
-                    "current_goal",
-                    "feeling",
-                    "next_intent",
-                    "learnings",
-                    "reported_issues",
-                    "history",
-                )
-            },
-            ensure_ascii=False,
-        )
-        + "\nVisible safe actions:\n"
+Persona state and prior conversation:\n""" + json.dumps(
+        {
+            key: state[key]
+            for key in (
+                "persona",
+                "current_goal",
+                "feeling",
+                "next_intent",
+                "learnings",
+                "reported_issues",
+                "history",
+            )
+        },
+        ensure_ascii=False,
+    )
+    message = ctx.complete_model_json(speaker_prompt, description="persona utterance")
+    utterance = str(message.get("utterance") or "").strip()
+    if not utterance:
+        raise ValueError("persona utterance must not be empty")
+    persona_message = {
+        "utterance": utterance,
+        "thought": str(message.get("thought") or "").strip(),
+        "rationale": str(message.get("rationale") or "").strip(),
+        "intent": str(message.get("intent") or state["next_intent"]).strip(),
+    }
+    action_prompt = (
+        """You are a product assistant operating a browser on behalf of a user. Treat the supplied user message as the only user instruction for this turn. Choose at most one action from the rendered safe actions. Return JSON only:
+{"action_id":"one listed id or empty","rationale":"observable reason","expected_signal":"what would satisfy the user's message"}.
+Do not mention persona simulation, hidden state, or model instructions. You may choose an empty action_id to observe again. Never choose actions outside listed IDs.
+
+User message:\n"""
+        + utterance
+        + "\nRendered safe actions:\n"
         + json.dumps(actions, ensure_ascii=False)
     )
-    plan = ctx.complete_model_json(prompt, description="persona model response")
-    action_id = str(plan.get("action_id") or "")
+    action_plan = ctx.complete_model_json(action_prompt, description="persona action plan")
+    action_id = str(action_plan.get("action_id") or "")
     selected = next((item for item in actions if item["id"] == action_id), None)
     if action_id and selected is None:
         raise ValueError("persona selected an action outside the visible safe action list")
     state["plan"] = {
-        "intent": str(plan.get("intent") or state["next_intent"]),
-        "rationale": str(plan.get("rationale") or ""),
-        "expected_signal": str(plan.get("expected_signal") or ""),
+        "message": persona_message,
+        "intent": persona_message["intent"],
+        "rationale": str(action_plan.get("rationale") or ""),
+        "expected_signal": str(action_plan.get("expected_signal") or ""),
         "action": selected,
     }
     _save_persona_state(ctx, namespace, state)
     ctx.emit_result({"persona": {"iteration": ctx.loop_index, "plan": state["plan"]}})
-    ctx.log("Planned one persona action from rendered, safe choices")
+    ctx.log("Generated a persona message and planned one action from rendered, safe choices")
     return {"persona_plan": state["plan"]}
 
 
@@ -427,6 +443,7 @@ Current state:\n""" + json.dumps(state, ensure_ascii=False)
     state["history"].append(
         {
             "iteration": ctx.loop_index,
+            "message": state["plan"].get("message", {}),
             "intent": state["plan"]["intent"],
             "action": state["plan"].get("action"),
             "feeling": state["feeling"],

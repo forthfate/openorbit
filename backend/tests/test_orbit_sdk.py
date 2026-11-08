@@ -275,6 +275,56 @@ def test_selenium_network_settlement_tracks_readiness_without_selenium_dependenc
     assert evidence["label"] == "capture"
 
 
+def test_selenium_http_failures_records_safe_response_details():
+    class Driver:
+        def get_log(self, name):
+            assert name == "performance"
+            return [
+                {
+                    "message": json.dumps(
+                        {
+                            "message": {
+                                "method": "Network.responseReceived",
+                                "params": {
+                                    "type": "Script",
+                                    "response": {
+                                        "status": 401,
+                                        "url": "https://dev-console.insighta.cloud/_next/app.js?token=secret#part",
+                                        "mimeType": "application/javascript",
+                                    },
+                                },
+                            }
+                        }
+                    )
+                },
+                {
+                    "message": json.dumps(
+                        {
+                            "message": {
+                                "method": "Network.responseReceived",
+                                "params": {
+                                    "type": "Document",
+                                    "response": {
+                                        "status": 200,
+                                        "url": "https://dev-console.insighta.cloud/ja/library",
+                                    },
+                                },
+                            }
+                        }
+                    )
+                },
+            ]
+
+    assert sdk.selenium_http_failures(Driver()) == [
+        {
+            "status": 401,
+            "url": "https://dev-console.insighta.cloud/_next/app.js",
+            "mime_type": "application/javascript",
+            "request_type": "Script",
+        }
+    ]
+
+
 def test_update_file_retains_previous_contents_and_metadata(tmp_path, monkeypatch):
     project = tmp_path / "project"
     project.mkdir()
