@@ -1456,6 +1456,8 @@ class ConsoleStore:
             # Existing builds predate this optional policy, so leave it off
             # unless an operator explicitly enabled it.
             build.setdefault("require_human_approval_before_apply", False)
+            build.setdefault("agent_apply_policy", "review_required")
+            build.setdefault("agent_auto_commit_allowed_paths", [])
             build.setdefault("starred", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
@@ -2283,6 +2285,8 @@ class ConsoleStore:
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
             ),
+            "agent_apply_policy": values.get("agent_apply_policy", "review_required"),
+            "agent_auto_commit_allowed_paths": list(values.get("agent_auto_commit_allowed_paths", [])),
             "executor": executor,
         }
         builds = self.builds()
@@ -2377,6 +2381,8 @@ class ConsoleStore:
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
             ),
+            "agent_apply_policy": values.get("agent_apply_policy", "review_required"),
+            "agent_auto_commit_allowed_paths": list(values.get("agent_auto_commit_allowed_paths", [])),
             "executor": executor,
         }
         builds[index] = build

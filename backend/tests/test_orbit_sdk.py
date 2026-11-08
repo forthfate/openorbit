@@ -143,6 +143,7 @@ def test_run_ai_agent_uses_the_selected_cli_and_only_marker_feedback(tmp_path, m
             "gpt-5",
             "Fix the retry behavior",
         ],
+        ["git", "rev-parse", "HEAD"],
         ["git", "add", "--intent-to-add", "--all"],
         ["git", "diff", "--name-only", "--"],
         ["git", "diff", "--binary", "--"],
@@ -152,6 +153,34 @@ def test_run_ai_agent_uses_the_selected_cli_and_only_marker_feedback(tmp_path, m
     assert result["proposal"]["diff"] == "diff --git a/src/retry.py b/src/retry.py\n"
     assert result["proposal"]["base_revision"]
     assert result["proposal"]["branch"].startswith("orbit/agent-proposal/run-123/")
+    assert result["proposal"]["auto_commit"] == {"status": "not_requested"}
+
+
+def test_auto_commit_policy_requires_an_allow_list_and_blocks_sensitive_paths(tmp_path):
+    resources = b64encode(
+        json.dumps(
+            {
+                "build": {
+                    "agent_apply_policy": "auto_commit_branch",
+                    "agent_auto_commit_allowed_paths": ["backend/**", ".github/**"],
+                }
+            }
+        ).encode()
+    ).decode()
+    ctx = sdk.RunnerContext(
+        phase="execute",
+        target_repository=tmp_path,
+        mode="run",
+        loop_index=1,
+        environment={"ORBIT_RUNNER_RESOURCES": resources},
+    )
+
+    assert ctx._auto_commit_policy_result(["backend/app/agent.py"], "done") == {"status": "eligible"}
+    assert ctx._auto_commit_policy_result([".github/workflows/release.yml"], "done") == {
+        "status": "skipped",
+        "reason": "blocked_path",
+        "paths": [".github/workflows/release.yml"],
+    }
 
 
 def test_graph_step_automatically_traces_its_execution(tmp_path, capsys):

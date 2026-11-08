@@ -7,6 +7,7 @@ per subprocess, so a runner cannot accidentally become a second scheduler.
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import json
 import os
@@ -28,6 +29,18 @@ from orbit_sdk.helpers import command_from_environment
 
 PROJECT_ROOT = Path(os.environ.get("ORBIT_TARGET_REPOSITORY", Path.cwd())).resolve()
 ORBIT_APP_DATA = Path(os.environ.get("ORBIT_APP_DATA", Path.home() / ".local" / "share" / "orbit")).resolve()
+
+# These paths are never eligible for unattended agent commits, even when an
+# operator accidentally includes them in an allow-list.  They alter deployment,
+# credentials, or persistent data and must remain review-only.
+_AUTO_COMMIT_BLOCKED_PATHS = (
+    ".github/**",
+    "infra/**",
+    "migrations/**",
+    "**/migrations/**",
+    "*.pem",
+    "*.key",
+)
 
 
 def ORBIT_PROJECT_PATH(*parts: str) -> Path:
@@ -1701,6 +1714,41 @@ class RunnerContext:
         self.emit_result({"evaluation_request": request})
         return request
 
+    def _auto_commit_policy_result(self, changed_files: list[str], feedback: str) -> dict[str, object]:
+        """Return whether this isolated proposal may receive an unattended commit.
+
+        This is deliberately an allow-list gate rather than a convenience
+        switch: the policy does not push or merge and sensitive repository
+        paths cannot be opted in.
+        """
+        build = self.build
+        if str(build.get("agent_apply_policy", "review_required")) != "auto_commit_branch":
+            return {"status": "not_requested"}
+        if not feedback or not changed_files:
+            return {"status": "skipped", "reason": "proposal_has_no_feedback_or_changes"}
+        allowed = [
+            str(pattern).strip()
+            for pattern in build.get("agent_auto_commit_allowed_paths", [])
+            if str(pattern).strip()
+        ]
+        if not allowed:
+            return {"status": "skipped", "reason": "allow_list_is_empty"}
+        blocked = [
+            path
+            for path in changed_files
+            if any(fnmatch.fnmatchcase(path, pattern) for pattern in _AUTO_COMMIT_BLOCKED_PATHS)
+        ]
+        if blocked:
+            return {"status": "skipped", "reason": "blocked_path", "paths": blocked}
+        outside_allow_list = [
+            path
+            for path in changed_files
+            if not any(fnmatch.fnmatchcase(path, pattern) for pattern in allowed)
+        ]
+        if outside_allow_list:
+            return {"status": "skipped", "reason": "path_not_allow_listed", "paths": outside_allow_list}
+        return {"status": "eligible"}
+
     def run_ai_agent(
         self,
         prompt: str,
@@ -1714,6 +1762,11 @@ class RunnerContext:
         The agent must print ``ORBIT_AGENT_FEEDBACK: <summary>`` as its final
         feedback line to opt its work into evaluation.  This keeps a silent or
         no-op agent run from creating a score for the iteration.
+
+        When the Build's ``agent_apply_policy`` is ``auto_commit_branch``, a
+        proposal that stays within its explicit allow-list is committed only to
+        its isolated proposal branch. It is never pushed, merged, or applied to
+        the evaluated repository.
         """
         normalized_prompt = prompt.strip()
         if not normalized_prompt:
@@ -1738,6 +1791,8 @@ class RunnerContext:
         output = ""
         changed_files: list[str] = []
         patch = ""
+        feedback = ""
+        auto_commit: dict[str, object] = {"status": "not_requested"}
         keep_worktree = False
         try:
             output = self.exec(
@@ -1746,6 +1801,9 @@ class RunnerContext:
                 timeout=timeout,
                 target_log_source="ai-agent",
             )
+            agent_head = self.exec(["git", "rev-parse", "HEAD"], cwd=worktree).strip()
+            if agent_head and agent_head != base_revision:
+                raise RuntimeError("AI agent proposals must not create commits")
             # Include newly-created files in the review patch without creating
             # a commit.  Intent-to-add is local to this disposable proposal
             # worktree and is finalized only after Issue approval.
@@ -1765,6 +1823,20 @@ class RunnerContext:
                 ),
                 "",
             )
+            auto_commit = self._auto_commit_policy_result(changed_files, feedback)
+            if auto_commit["status"] == "eligible":
+                self.exec(["git", "add", "--all"], cwd=worktree)
+                self.exec(
+                    ["git", "commit", "-m", f"orbit: autonomous proposal for {run_id}"],
+                    cwd=worktree,
+                    target_log_source="ai-agent",
+                )
+                auto_commit = {
+                    "status": "committed",
+                    "commit": self.exec(["git", "rev-parse", "HEAD"], cwd=worktree).strip(),
+                    "branch": branch,
+                    "allowed_paths": list(self.build.get("agent_auto_commit_allowed_paths", [])),
+                }
             keep_worktree = bool(feedback and patch)
         finally:
             if not keep_worktree:
@@ -1802,6 +1874,7 @@ class RunnerContext:
                 "diff": patch,
                 "fingerprint": _sha256(patch.encode("utf-8")) if patch else "",
                 "diff_artifact": artifact,
+                "auto_commit": auto_commit,
             },
         }
         self.emit_result({"agent_run": result})

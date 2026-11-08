@@ -330,6 +330,16 @@
         "hint": "감독자 제안은 사람이 적용을 승인할 때까지 증거로만 보존합니다."
       },
       "humanApprovalEnable": "유효화",
+      "agentApplyPolicy": {
+        "label": "에이전트 제안 정책",
+        "hint": "자동 커밋은 격리된 제안 브랜치에만 기록하며 push나 병합은 하지 않습니다. 민감한 경로는 항상 차단됩니다."
+      },
+      "agentApplyReview": "검토 필요",
+      "agentApplyCommit": "제안 브랜치 자동 커밋",
+      "agentAllowedPaths": {
+        "label": "자동 커밋 허용 경로",
+        "hint": "쉼표로 구분한 Git glob 패턴입니다. 모든 변경 경로가 일치해야 하며, 비워 두면 자동 커밋을 하지 않습니다."
+      },
       "name": "이름",
       "next": "다음"
     },

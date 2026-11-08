@@ -65,6 +65,8 @@ type Draft = {
   candidates_per_iteration: number;
   approval_score: number;
   require_human_approval_before_apply: boolean;
+  agent_apply_policy: "review_required" | "auto_commit_branch";
+  agent_auto_commit_allowed_paths: string[];
   enabled: boolean;
 };
 
@@ -111,6 +113,10 @@ type BuildWizardCopy = {
   approvalScore: LabelCopy;
   humanApproval: LabelCopy;
   humanApprovalEnable: string;
+  agentApplyPolicy: LabelCopy;
+  agentApplyReview: string;
+  agentApplyCommit: string;
+  agentAllowedPaths: LabelCopy;
   name: string;
   next: string;
 };
@@ -147,6 +153,8 @@ const empty: Draft = {
   candidates_per_iteration: 2,
   approval_score: 8,
   require_human_approval_before_apply: false,
+  agent_apply_policy: "review_required",
+  agent_auto_commit_allowed_paths: [],
   enabled: true,
 };
 const testIsActive = (status: string) =>
@@ -178,6 +186,8 @@ const draftOf = (b: Build, copy = false): Draft => ({
   approval_score: b.approval_score,
   require_human_approval_before_apply:
     b.require_human_approval_before_apply ?? false,
+  agent_apply_policy: b.agent_apply_policy ?? "review_required",
+  agent_auto_commit_allowed_paths: b.agent_auto_commit_allowed_paths ?? [],
   enabled: b.enabled,
 });
 const Field = ({
@@ -598,6 +608,15 @@ function Direct({
               {copy.humanApprovalEnable}
             </span>
           </Field>
+          <Field label={copy.agentApplyPolicy.label} description={copy.agentApplyPolicy.hint}>
+            <select value={d.agent_apply_policy} onChange={(e) => setD({ ...d, agent_apply_policy: e.target.value as Draft["agent_apply_policy"] })}>
+              <option value="review_required">{copy.agentApplyReview}</option>
+              <option value="auto_commit_branch">{copy.agentApplyCommit}</option>
+            </select>
+          </Field>
+          {d.agent_apply_policy === "auto_commit_branch" && <Field label={copy.agentAllowedPaths.label} description={copy.agentAllowedPaths.hint}>
+            <input value={d.agent_auto_commit_allowed_paths.join(", ")} placeholder="prompts/**, backend/app/assistant_*.py" onChange={(e) => setD({ ...d, agent_auto_commit_allowed_paths: e.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} />
+          </Field>}
         </div>
       )}
       {step === 5 && (

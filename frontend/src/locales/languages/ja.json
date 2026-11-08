@@ -325,6 +325,16 @@
         "hint": "監督者の提案は、人が適用を承認するまで証跡として保持します。"
       },
       "humanApprovalEnable": "有効化",
+      "agentApplyPolicy": {
+        "label": "エージェント提案ポリシー",
+        "hint": "自動コミットは分離された提案ブランチにのみ記録され、push やマージは行いません。機密パスは常にブロックされます。"
+      },
+      "agentApplyReview": "レビュー必須",
+      "agentApplyCommit": "提案ブランチを自動コミット",
+      "agentAllowedPaths": {
+        "label": "自動コミットの許可パス",
+        "hint": "カンマ区切りの Git glob パターンです。すべての変更パスが一致する必要があり、空欄の場合は自動コミットしません。"
+      },
       "name": "名前",
       "next": "次へ"
     },

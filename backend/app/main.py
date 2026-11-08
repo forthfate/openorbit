@@ -574,6 +574,8 @@ class BuildCreate(BaseModel):
     candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
     require_human_approval_before_apply: bool = False
+    agent_apply_policy: Literal["review_required", "auto_commit_branch"] = "review_required"
+    agent_auto_commit_allowed_paths: list[str] = Field(default_factory=list, max_length=32)
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
     )  # Legacy fallback; selected execution environment is authoritative.

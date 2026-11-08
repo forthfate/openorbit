@@ -331,6 +331,16 @@
         "hint": "Keep supervisor proposals as evidence until a human approves their application."
       },
       "humanApprovalEnable": "Enable",
+      "agentApplyPolicy": {
+        "label": "Agent proposal policy",
+        "hint": "Auto-commit writes only to an isolated proposal branch; it never pushes or merges. Sensitive paths are always blocked."
+      },
+      "agentApplyReview": "Require review",
+      "agentApplyCommit": "Auto-commit proposal branch",
+      "agentAllowedPaths": {
+        "label": "Allowed auto-commit paths",
+        "hint": "Comma-separated Git glob patterns. Every changed path must match; leave empty to disable auto-commit."
+      },
       "name": "Name",
       "next": "Next"
     },
