@@ -331,6 +331,7 @@
       },
       "agentApplyReview": "レビュー必須",
       "agentApplyCommit": "提案ブランチを自動コミット",
+      "agentApplyAuto": "管理アセットを AI 自動改善・承認",
       "agentAllowedPaths": {
         "label": "自動コミットの許可パス",
         "hint": "カンマ区切りの Git glob パターンです。すべての変更パスが一致する必要があり、空欄の場合は自動コミットしません。"
@@ -483,10 +484,22 @@
       "noAgentProposalChanges": "提案されたファイル変更はありません。",
       "agentProposalBranch": "エージェント提案ブランチ",
       "committed": "コミット済み",
-      "approveAndCommit": "承認してコミット",
+      "approveAndCommit": "承認して元ブランチへ反映",
       "rejectAndRemove": "却下して削除",
-      "agentProposalCommitted": "エージェント提案を対象ブランチにコミットしました。",
-      "agentProposalRemoved": "エージェント提案の worktree とブランチを削除しました。"
+      "agentProposalCommitted": "エージェント提案を元ブランチへ反映しました。",
+      "agentProposalRemoved": "エージェント提案の worktree とブランチを削除しました。",
+      "autoImprove": "AI 自動改善",
+      "autoImproveTitle": "AI 改善提案を作成しますか？",
+      "autoImproveDescription": "隔離された worktree を {count} 個作成します。各提案を承認するまで、元のリポジトリは変更されません。",
+      "autoImproveQueued": "AI 改善提案を {count} 件キューに追加しました。",
+      "agentJobQueued": "AI 改善作業はキューで待機中です。",
+      "agentJobRunning": "AI が隔離された worktree で改善案を作成しています。",
+      "agentJobFailed": "レビュー可能な AI 改善案を作成できませんでした。",
+      "agentJobReady": "提案はレビュー可能です。",
+      "agentJobQueuedShort": "待機中",
+      "agentJobRunningShort": "作業中",
+      "agentJobFailedShort": "失敗",
+      "agentJobReadyShort": "レビュー可能"
     },
     "settingsLogs": {
       "title": "Orbit 運用ログ",
@@ -870,6 +883,7 @@
       "personaJourneys": "ペルソナジャーニーのタイムライン",
       "personaJourneysHint": "時間の流れに沿って、観測されたペルソナの行動、判断、次の行動を比較します。",
       "noPersonaJourneys": "この期間のペルソナジャーニーはありません。",
+      "noPersonaEvidence": "このイテレーションには視覚的な証拠が保存されていません。記録されたペルソナジャーニーを下に表示します。",
       "personaGoal": "ペルソナの目標",
       "currentAction": "今回したこと",
       "currentDecision": "今回の判断",

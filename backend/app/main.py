@@ -573,7 +573,9 @@ class BuildCreate(BaseModel):
     candidates_per_iteration: int = Field(default=2, ge=2, le=8)
     approval_score: int = Field(ge=0, le=10)
     require_human_approval_before_apply: bool = False
-    agent_apply_policy: Literal["review_required", "auto_commit_branch"] = "review_required"
+    agent_apply_policy: Literal["review_required", "auto_commit_branch", "auto_apply_managed_assets"] = (
+        "review_required"
+    )
     agent_auto_commit_allowed_paths: list[str] = Field(default_factory=list, max_length=32)
     executor_type: str = Field(
         default="local", pattern=r"^(local|remote-http)$"
@@ -612,6 +614,12 @@ class IssueManagementDelete(BaseModel):
 
 class AgentIssueDecision(BaseModel):
     decision: Literal["approve", "reject"]
+
+
+class AgentProposalCreate(BaseModel):
+    """Create isolated coding-agent proposals for selected Issue rows."""
+
+    proposal_ids: list[str] = Field(min_length=1, max_length=20)
 
 
 class RunnerAssetUpdate(BaseModel):
@@ -1661,6 +1669,15 @@ def list_improvements_v1():
 @app.get("/api/v1/issue-management", tags=["Improvements"], operation_id="listIssueManagementItems")
 def list_issue_management_items_v1():
     return store.issue_management_items()
+
+
+@app.post(
+    "/api/v1/issue-management/agent-proposals",
+    tags=["Improvements"],
+    operation_id="createIssueManagementAgentProposals",
+)
+def create_issue_management_agent_proposals_v1(values: AgentProposalCreate):
+    return safely(lambda: store.create_issue_management_agent_proposals(values.proposal_ids))
 
 
 @app.get(

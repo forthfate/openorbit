@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fnmatch
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import requests
 import yaml
 from opentelemetry.trace import Status, StatusCode
+from orbit_sdk import RunnerContext
 from orbit_sdk.visual import definition_for_runner_template
 
 from orbit import load_bundle
@@ -203,6 +205,7 @@ class ConsoleStore:
         self._test_sessions: dict[str, Run] = {}
         self._runner_graph_drafts: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
+        self._issue_management_lock = threading.Lock()
         if recover_interrupted_runs:
             self._recover_interrupted_runs()
         self.tracer = configure_telemetry(TELEMETRY)
@@ -2742,6 +2745,245 @@ class ConsoleStore:
         )
         temporary.replace(ISSUE_MANAGEMENT)
 
+    @staticmethod
+    def _manual_agent_task(item: dict[str, Any], build: dict[str, Any]) -> str:
+        """Build a bounded coding-agent task from retained Issue evidence."""
+        issue = item.get("proposal") if isinstance(item.get("proposal"), dict) else {}
+        evidence = {
+            "id": item.get("proposal_id"),
+            "title": item.get("title"),
+            "category": item.get("category"),
+            "rationale": item.get("decision_rationale"),
+            "proposal": issue,
+        }
+        return "\n".join(
+            (
+                "You are the autonomous improvement agent for OpenOrbit managed assets.",
+                "Work only on the single Issue below. Inspect the repository and make one atomic, evidence-backed fix.",
+                "You are in an isolated proposal worktree for the OpenOrbit AppData assets. Change only runner, prompt, template, or non-secret configuration assets. Do not modify data, artifacts, browser profiles, credentials, or the evaluated product repository. Do not commit, push, reset, or modify files outside this worktree.",
+                f"Build purpose: {str(build.get('purpose') or '')}",
+                f"Managed prompt path: {str(build.get('managed_prompt_path') or build.get('prompt_bundle') or '')}",
+                f"Issue evidence: {json.dumps(evidence, ensure_ascii=False)}",
+                "Validate the change proportionately. If you made a meaningful change, finish with exactly one line: ORBIT_AGENT_FEEDBACK: <concise completed-work summary>.",
+            )
+        )
+
+    def _improvement_repository(self) -> Path:
+        """Return the AppData Git repository used for managed-asset proposals."""
+        repository = APP_DATA.resolve()
+        git_directory = repository / ".git"
+        if git_directory.exists():
+            return repository
+        ignore = repository / ".gitignore"
+        if not ignore.exists():
+            ignore.write_text(
+                "data/\nartifacts/\nrunner-assets/\nrunner-state/\nagent-worktrees/\n"
+                "config/persona-login.json\nconfig/issue-management.yaml\n__pycache__/\n*.pyc\n",
+                encoding="utf-8",
+            )
+        subprocess.run(
+            ["git", "init", "-b", "main", str(repository)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        subprocess.run(
+            ["git", "add", "--all"],
+            cwd=repository,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        has_head = subprocess.run(
+            ["git", "rev-parse", "--verify", "HEAD"],
+            cwd=repository,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if has_head.returncode != 0:
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "user.name=OpenOrbit",
+                    "-c",
+                    "user.email=openorbit@local",
+                    "commit",
+                    "-m",
+                    "orbit: initialize managed assets",
+                ],
+                cwd=repository,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        return repository
+
+    def create_issue_management_agent_proposals(self, proposal_ids: list[str]) -> dict[str, Any]:
+        """Queue one review-required worktree proposal for each selected Issue."""
+        identifiers = list(dict.fromkeys(str(value).strip() for value in proposal_ids if str(value).strip()))
+        if not identifiers:
+            raise ValueError("at least one issue-management item is required")
+        items = {str(item["proposal_id"]): item for item in self.issue_management_items()}
+        missing = [proposal_id for proposal_id in identifiers if proposal_id not in items]
+        if missing:
+            raise KeyError(missing[0])
+        provider = str(self.application_settings().get("coding_agent_provider") or "none")
+        if provider == "none":
+            raise ValueError(
+                "configure a Coding Agent in Application settings before requesting an AI improvement"
+            )
+        queued: list[str] = []
+        with self._issue_management_lock:
+            records = self._issue_management_records()
+            for proposal_id in identifiers:
+                item = items[proposal_id]
+                if not str(item.get("run_id") or "").strip():
+                    raise ValueError(f"Issue {proposal_id} has no source run")
+                self._improvement_repository()
+                record = records.setdefault(
+                    proposal_id, {"status": "unreviewed", "comments": [], "events": []}
+                )
+                job = record.get("agent_job") if isinstance(record.get("agent_job"), dict) else {}
+                if str(job.get("status") or "") in {"queued", "running"}:
+                    continue
+                if record.get("proposal_action") == "pending" and isinstance(
+                    record.get("agent_change"), dict
+                ):
+                    raise ValueError(f"Issue {proposal_id} already has a proposal awaiting review")
+                record.pop("agent_change", None)
+                record.pop("proposal_commit", None)
+                record["proposal_action"] = "pending"
+                record["agent_job"] = {
+                    "status": "queued",
+                    "provider": provider,
+                    "recorded_at": now().isoformat(),
+                }
+                record.setdefault("events", []).append(
+                    {"type": "agent_proposal_queued", "recorded_at": now().isoformat()}
+                )
+                queued.append(proposal_id)
+            self._save_issue_management_records(records)
+        for proposal_id in queued:
+            threading.Thread(
+                target=self._generate_issue_management_agent_proposal,
+                args=(proposal_id, provider),
+                daemon=True,
+            ).start()
+        return {"queued": queued, "skipped": [value for value in identifiers if value not in queued]}
+
+    def _generate_issue_management_agent_proposal(self, proposal_id: str, provider: str) -> None:
+        """Generate a proposal off-request-thread and retain its review patch."""
+        try:
+            item = next(
+                value for value in self.issue_management_items() if value["proposal_id"] == proposal_id
+            )
+            build = self.build(str(item["build_id"]))
+            repository = self._improvement_repository()
+            resources = {
+                "build": {**build, "agent_apply_policy": "review_required"},
+                "test_cases": build.get("test_cases", []),
+            }
+            environment = dict(os.environ)
+            environment["ORBIT_RUN_ID"] = f"issue-{hashlib.sha256(proposal_id.encode()).hexdigest()[:16]}"
+            environment["ORBIT_RUNNER_RESOURCES"] = base64.b64encode(
+                json.dumps(resources, ensure_ascii=False).encode("utf-8")
+            ).decode("ascii")
+            with self._issue_management_lock:
+                records = self._issue_management_records()
+                record = records.setdefault(
+                    proposal_id, {"status": "unreviewed", "comments": [], "events": []}
+                )
+                record["agent_job"] = {
+                    "status": "running",
+                    "provider": provider,
+                    "recorded_at": now().isoformat(),
+                }
+                record.setdefault("events", []).append(
+                    {"type": "agent_proposal_started", "recorded_at": now().isoformat()}
+                )
+                self._save_issue_management_records(records)
+
+            context = RunnerContext(
+                phase="after_each",
+                target_repository=repository,
+                mode="run",
+                loop_index=1,
+                environment=environment,
+            )
+            agent = context.run_ai_agent(self._manual_agent_task(item, build), provider=provider)
+            proposal = agent.get("proposal") if isinstance(agent.get("proposal"), dict) else {}
+            feedback = str(agent.get("feedback") or "").strip()
+            changed_files = agent.get("changed_files") if isinstance(agent.get("changed_files"), list) else []
+            if not feedback or not changed_files or not str(proposal.get("diff") or ""):
+                raise ValueError("coding agent completed without a reviewable change")
+            agent_change = {
+                "feedback": feedback,
+                "changed_files": [str(path) for path in changed_files],
+                "diff": str(proposal.get("diff") or ""),
+                "diff_artifact": proposal.get("diff_artifact"),
+                "base_revision": str(proposal.get("base_revision") or ""),
+                "branch": str(proposal.get("branch") or ""),
+                "worktree_path": str(proposal.get("worktree_path") or ""),
+                "source_repository": str(repository),
+                "fingerprint": str(proposal.get("fingerprint") or ""),
+            }
+            with self._issue_management_lock:
+                records = self._issue_management_records()
+                record = records.setdefault(
+                    proposal_id, {"status": "unreviewed", "comments": [], "events": []}
+                )
+                record["agent_change"] = agent_change
+                record["agent_job"] = {
+                    "status": "ready",
+                    "provider": provider,
+                    "recorded_at": now().isoformat(),
+                }
+                record.setdefault("events", []).append(
+                    {"type": "agent_proposal_ready", "recorded_at": now().isoformat()}
+                )
+                self._save_issue_management_records(records)
+            if build.get("agent_apply_policy") == "auto_apply_managed_assets":
+                allowed = [
+                    str(path)
+                    for path in build.get("agent_auto_commit_allowed_paths", [])
+                    if str(path).strip()
+                ]
+                if not allowed or any(
+                    not any(fnmatch.fnmatch(str(path), pattern) for pattern in allowed)
+                    for path in changed_files
+                ):
+                    raise ValueError(
+                        "automatic approval requires every changed managed asset to match an allowed path"
+                    )
+                self.decide_agent_issue(proposal_id, "approve")
+        except Exception as error:
+            with self._issue_management_lock:
+                records = self._issue_management_records()
+                record = records.setdefault(
+                    proposal_id, {"status": "unreviewed", "comments": [], "events": []}
+                )
+                record["agent_job"] = {
+                    "status": "failed",
+                    "error": str(error)[:1_000],
+                    "recorded_at": now().isoformat(),
+                }
+                record.setdefault("events", []).append(
+                    {
+                        "type": "agent_proposal_failed",
+                        "recorded_at": now().isoformat(),
+                        "error": str(error)[:1_000],
+                    }
+                )
+                self._save_issue_management_records(records)
+
+    def _auto_queue_issue_improvements(self, proposal_ids: list[str]) -> None:
+        """Best-effort automatic proposal creation; failures remain visible per Issue."""
+        try:
+            self.create_issue_management_agent_proposals(proposal_ids)
+        except Exception:
+            return
+
     def issue_management_items(self) -> list[dict[str, Any]]:
         records = self._issue_management_records()
         proposals = self.proposal_lifecycles()
@@ -2777,7 +3019,10 @@ class ConsoleStore:
             # management-level tombstone, not deletion of the underlying run.
             if record.get("status") == "deleted":
                 continue
-            agent_change = (proposal.get("proposal") or {}).get("agent_change") or {}
+            proposal_value = deepcopy(proposal.get("proposal") or {})
+            if isinstance(record.get("agent_change"), dict):
+                proposal_value["agent_change"] = record["agent_change"]
+            agent_change = proposal_value.get("agent_change") or {}
             review = agent_change.get("review") if isinstance(agent_change, dict) else None
             review_comment = []
             if isinstance(review, dict) and str(review.get("summary") or "").strip():
@@ -2793,12 +3038,14 @@ class ConsoleStore:
             values.append(
                 {
                     **proposal,
+                    "proposal": proposal_value,
                     "management_status": record.get("status", "unreviewed"),
                     "proposal_action": record.get("proposal_action", "pending"),
-                    "proposal_branch": str(
-                        ((proposal.get("proposal") or {}).get("agent_change") or {}).get("branch") or ""
-                    ),
+                    "proposal_branch": str(agent_change.get("branch") or ""),
                     "proposal_commit": str(record.get("proposal_commit") or ""),
+                    "agent_job": record.get("agent_job")
+                    if isinstance(record.get("agent_job"), dict)
+                    else None,
                     "assigner": record.get("assigner", ""),
                     "comments": [*review_comment, *record.get("comments", [])],
                     "management_events": [*review_comment, *record.get("events", [])],
@@ -2907,7 +3154,9 @@ class ConsoleStore:
         worktree_root = (APP_DATA / "agent-worktrees").resolve()
         if worktree_root not in worktree.parents:
             raise ValueError("agent proposal worktree is outside Orbit storage")
-        source_repository = Path(self._load(str(item.get("run_id") or "")).repository).resolve()
+        source_repository = Path(str(agent_change.get("source_repository") or APP_DATA)).resolve()
+        if source_repository != APP_DATA.resolve():
+            raise ValueError("agent proposal source repository must be OpenOrbit AppData")
         if not source_repository.is_dir():
             raise ValueError("agent proposal source repository is no longer available")
         records = self._issue_management_records()
@@ -2921,6 +3170,33 @@ class ConsoleStore:
         if decision == "approve":
             if not worktree.is_dir():
                 raise ValueError("agent proposal worktree is no longer available")
+            base_revision = str(agent_change.get("base_revision") or "").strip()
+            if not base_revision:
+                raise ValueError("agent proposal has no base revision")
+            source_status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=source_repository,
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).stdout.strip()
+            if source_status:
+                raise ValueError(
+                    "source repository has uncommitted changes; review and apply the proposal after it is clean"
+                )
+            source_head = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=source_repository,
+                check=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).stdout.strip()
+            if source_head != base_revision:
+                raise ValueError(
+                    "source repository changed since this proposal was generated; create a fresh proposal"
+                )
             changed = subprocess.run(
                 ["git", "diff", "--quiet", "--"], cwd=worktree, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -2948,9 +3224,36 @@ class ConsoleStore:
             commit = subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=worktree, check=True, text=True, stdout=subprocess.PIPE
             ).stdout.strip()
+            try:
+                subprocess.run(
+                    ["git", "merge", "--ff-only", branch],
+                    cwd=source_repository,
+                    check=True,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+            except subprocess.CalledProcessError as error:
+                raise ValueError(
+                    error.stderr.strip() or "could not apply proposal to the source branch"
+                ) from error
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(worktree)],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=source_repository,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
             record.update({"proposal_action": "approved", "proposal_commit": commit, "status": "resolved"})
             record["events"].append(
-                {"type": "proposal_approved", "branch": branch, "commit": commit, "recorded_at": timestamp}
+                {"type": "proposal_applied", "branch": branch, "commit": commit, "recorded_at": timestamp}
             )
         else:
             subprocess.run(
@@ -4813,6 +5116,25 @@ class ConsoleStore:
                     }
                 )
                 self._save(run)
+                build = self.build(run.build_id) if run.build_id else {}
+                if (
+                    stage == "issue_assessment"
+                    and build.get("agent_apply_policy") == "auto_apply_managed_assets"
+                ):
+                    record_index = len(run.supervisor_results) - 1
+                    issue_ids = [
+                        f"{run.id}:{iteration}:{record_index}:{index}"
+                        for index, proposal in enumerate(
+                            [*result["improvements"], *result["reported_issues"]]
+                        )
+                        if not str(proposal.get("known_issue_id") or "").strip()
+                        and str((proposal.get("evaluation") or {}).get("approval") or "pending").lower()
+                        != "rejected"
+                    ]
+                    if issue_ids:
+                        threading.Thread(
+                            target=self._auto_queue_issue_improvements, args=(issue_ids,), daemon=True
+                        ).start()
                 self._review_cycle_improvement(run, iteration, result, settings, provider)
                 span.set_attribute("orbit.supervisor.improvements", len(result["improvements"]))
                 span.set_attribute("orbit.supervisor.reported_issues", len(result["reported_issues"]))
