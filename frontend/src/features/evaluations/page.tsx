@@ -33,6 +33,7 @@ import {
 } from "./run-detail-log-panels";
 import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
+import { RunDetailConversationPanel } from "./run-detail-conversation-panel";
 
 const phases = [
   "before_all",
@@ -1043,6 +1044,7 @@ export function EvaluationsPage({
               { id: "result", label: l.result },
               { id: "commits", label: l.worktrees },
               { id: "supervisor", label: l.supervisor },
+              { id: "conversation", label: l.conversation },
               { id: "logs", label: l.logs },
             ]}
           />
@@ -1108,6 +1110,11 @@ export function EvaluationsPage({
                 l={l}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
+            </RunDetailTabPanel>
+          )}
+          {tab === "conversation" && (
+            <RunDetailTabPanel description={l.conversationDescription} hint={l.conversationDataHint} action={iterationNavigator}>
+              <RunDetailConversationPanel steps={selectedSteps} runId={selected.id} l={l} />
             </RunDetailTabPanel>
           )}
           {tab === "result" && (

@@ -5,6 +5,7 @@ export type RunDetailTab =
   | "logs"
   | "supervisor"
   | "commits"
+  | "conversation"
   | "result";
 
 type Tab<T extends string> = { id: T; label: string };
