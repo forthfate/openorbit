@@ -1125,7 +1125,7 @@ export function EvaluationsPage({
           )}
           {tab === "conversation" && (
             <RunDetailTabPanel description={l.conversationDescription} hint={l.conversationDataHint} action={iterationNavigator}>
-              <RunDetailConversationPanel steps={selectedSteps} runId={selected.id} l={l} />
+              <RunDetailConversationPanel steps={selectedSteps} runId={selected.id} l={l} locale={locale} />
             </RunDetailTabPanel>
           )}
           {tab === "result" && (
