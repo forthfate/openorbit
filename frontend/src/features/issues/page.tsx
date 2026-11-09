@@ -9,7 +9,7 @@ import { SectionInfo } from "../../components/ui/section-info";
 import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 import { PanelHeader } from "../../components/ui/page-header";
 import { intlLocales, localeMessages, locales, type Locale } from "../../locales";
-import { ListFilter, Trash2 } from "lucide-react";
+import { ListFilter, Sparkles, Trash2 } from "lucide-react";
 import { RunDetailTabs } from "../evaluations/run-detail-tabs";
 import { UnifiedDiff } from "../evaluations/run-detail-change-panels";
 import { ConfirmDialog } from "../../components/ui/confirm-dialog";
@@ -79,6 +79,18 @@ type Copy = {
   rejectAndRemove: string;
   agentProposalCommitted: string;
   agentProposalRemoved: string;
+  autoImprove: string;
+  autoImproveTitle: string;
+  autoImproveDescription: string;
+  autoImproveQueued: string;
+  agentJobQueued: string;
+  agentJobRunning: string;
+  agentJobFailed: string;
+  agentJobReady: string;
+  agentJobQueuedShort: string;
+  agentJobRunningShort: string;
+  agentJobFailedShort: string;
+  agentJobReadyShort: string;
 };
 const statuses = [
   "unreviewed",
@@ -115,13 +127,14 @@ export function IssueManagementSection({
     [filtersOpen, setFiltersOpen] = useState(false),
     [selected, setSelected] = useState<IssueManagementItem | null>(null),
     [agentDiff, setAgentDiff] = useState<{ proposalId: string; value: string } | null>(null),
-    [modalTab, setModalTab] = useState<"details" | "history">("details"),
+    [modalTab, setModalTab] = useState<"details" | "agent" | "history">("details"),
     [comment, setComment] = useState(""),
     [assigner, setAssigner] = useState(""),
     [managementStatus, setManagementStatus] = useState("unreviewed"),
     [run, setRun] = useState(""),
     [selectedIssueIds, setSelectedIssueIds] = useState<Set<string>>(new Set()),
     [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false),
+    [autoImproveOpen, setAutoImproveOpen] = useState(false),
     [page, setPage] = useState(1),
     [pageSize, setPageSize] = useState(15);
   const filterMenu = useRef<HTMLDivElement>(null);
@@ -133,6 +146,11 @@ export function IssueManagementSection({
     load();
     api<Run[]>("/api/runs").then(setRuns).catch(() => setRuns([]));
   }, [buildId]);
+  useEffect(() => {
+    if (!items.some((item) => item.agent_job?.status === "queued" || item.agent_job?.status === "running")) return;
+    const timer = window.setInterval(load, 2_500);
+    return () => window.clearInterval(timer);
+  }, [items]);
   useEffect(() => {
     if (!selected || !selected.proposal.agent_change) return;
     api<{ diff: string }>(`/api/v1/issue-management/${encodeURIComponent(selected.proposal_id)}/diff`)
@@ -257,6 +275,16 @@ export function IssueManagementSection({
       })
       .catch((error) => onNotice(error.message, "warning"));
   };
+  const confirmAutoImprove = () => {
+    const proposalIds = [...selectedIssueIds];
+    setAutoImproveOpen(false);
+    api<{ queued: string[] }>("/api/v1/issue-management/agent-proposals", "POST", { proposal_ids: proposalIds })
+      .then(({ queued }) => {
+        load();
+        onNotice(t.autoImproveQueued.replace("{count}", String(queued.length)), "success");
+      })
+      .catch((error) => onNotice(error.message, "warning"));
+  };
   const toggleManagedStatus = (status: string) =>
     {
       setPage(1);
@@ -353,6 +381,17 @@ export function IssueManagementSection({
       ),
       sortValue: (x) => x.management_status,
     },
+    {
+      id: "agent-status",
+      header: t.autoImprove,
+      render: (x) => x.agent_job ? (
+        <StatusBadge
+          value={x.agent_job.status === "failed" ? "rejected" : x.agent_job.status === "ready" ? "accepted" : "in_progress"}
+          label={x.agent_job.status === "queued" ? t.agentJobQueuedShort : x.agent_job.status === "running" ? t.agentJobRunningShort : x.agent_job.status === "failed" ? t.agentJobFailedShort : t.agentJobReadyShort}
+        />
+      ) : "—",
+      sortValue: (x) => x.agent_job?.status ?? "",
+    },
   ];
   const filterCount = managedStatuses.size + decisions.size;
   return (
@@ -441,6 +480,14 @@ export function IssueManagementSection({
         <div className="run-history-actions">
           <span>{t.selected.replace("{count}", String(selectedIssueIds.size))}</span>
           <button
+            className="ghost"
+            onClick={() => setAutoImproveOpen(true)}
+            disabled={!selectedIssueIds.size}
+          >
+            <Sparkles size={15} />
+            {t.autoImprove}
+          </button>
+          <button
             className="icon-button danger"
             aria-label={t.deleteSelected}
             title={t.deleteSelected}
@@ -464,7 +511,7 @@ export function IssueManagementSection({
               setRun("");
             }}
             className="issue-management-table"
-            gridTemplateColumns="36px 42px minmax(410px,1fr) 112px 76px 96px 110px 110px"
+            gridTemplateColumns="36px 42px minmax(350px,1fr) 112px 76px 96px 110px 110px 130px"
           />
         </div>
         <Pagination
@@ -484,6 +531,15 @@ export function IssueManagementSection({
         confirmLabel={t.delete}
         onCancel={() => setDeleteSelectionOpen(false)}
         onConfirm={confirmDeleteSelected}
+      />
+      <ConfirmDialog
+        open={autoImproveOpen}
+        title={t.autoImproveTitle}
+        description={t.autoImproveDescription.replace("{count}", String(selectedIssueIds.size))}
+        cancelLabel={locales[locale].common.cancel}
+        confirmLabel={t.autoImprove}
+        onCancel={() => setAutoImproveOpen(false)}
+        onConfirm={confirmAutoImprove}
       />
       <Modal
         open={!!selected}
@@ -518,6 +574,9 @@ export function IssueManagementSection({
               onSelect={setModalTab}
               tabs={[
                 { id: "details", label: t.details },
+                ...((selected.agent_job || selected.proposal.agent_change)
+                  ? [{ id: "agent" as const, label: t.autoImprove }]
+                  : []),
                 { id: "history", label: t.updated },
               ]}
             />
@@ -527,25 +586,6 @@ export function IssueManagementSection({
                   <section className="issue-management-rationale">
                     <h3>{t.decisionRationale}</h3>
                     <p>{selected.decision_rationale}</p>
-                  </section>
-                )}
-                {selected.proposal.agent_change && (
-                  <section className="issue-management-diff">
-                    <h3>{t.agentProposalDiff}</h3>
-                    {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
-                  </section>
-                )}
-                {selected.proposal.agent_change && (
-                  <section className="issue-management-proposal-action">
-                    <h3>{t.agentProposalBranch}</h3>
-                    <p>{selected.proposal_branch || "—"}</p>
-                    {selected.proposal_commit && <p>{t.committed}: {selected.proposal_commit}</p>}
-                    {selected.proposal_action === "pending" && (
-                      <div className="modal-actions">
-                        <button className="approve" onClick={() => decideAgentProposal("approve")}>{t.approveAndCommit}</button>
-                        <button className="danger" onClick={() => decideAgentProposal("reject")}>{t.rejectAndRemove}</button>
-                      </div>
-                    )}
                   </section>
                 )}
                 <label className="modal-setting-row">
@@ -580,6 +620,20 @@ export function IssueManagementSection({
                   </div>
                 </section>
               </>
+            ) : modalTab === "agent" ? (
+              <section className="issue-management-proposal-action">
+                <h3>{t.autoImprove}</h3>
+                {selected.agent_job && <p>{selected.agent_job.status === "queued" ? t.agentJobQueued : selected.agent_job.status === "running" ? t.agentJobRunning : selected.agent_job.status === "failed" ? t.agentJobFailed : t.agentJobReady}</p>}
+                {selected.agent_job?.error && <p className="hint">{selected.agent_job.error}</p>}
+                {Boolean(selected.proposal.agent_change) && <>
+                  <h3>{t.agentProposalDiff}</h3>
+                  {agentDiff?.proposalId === selected.proposal_id && agentDiff.value ? <UnifiedDiff patch={agentDiff.value} label={t.agentProposalDiff} /> : <p className="hint">{t.noAgentProposalChanges}</p>}
+                  <h3>{t.agentProposalBranch}</h3>
+                  <p>{selected.proposal_branch || "—"}</p>
+                  {selected.proposal_commit && <p>{t.committed}: {selected.proposal_commit}</p>}
+                  {selected.proposal_action === "pending" && <div className="modal-actions"><button className="approve" onClick={() => decideAgentProposal("approve")}>{t.approveAndCommit}</button><button className="danger" onClick={() => decideAgentProposal("reject")}>{t.rejectAndRemove}</button></div>}
+                </>}
+              </section>
             ) : (
               <section>
                 <h3>

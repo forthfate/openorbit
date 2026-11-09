@@ -103,6 +103,7 @@ type ImprovementCopy = {
   personaJourneys: string;
   personaJourneysHint: string;
   noPersonaJourneys: string;
+  noPersonaEvidence: string;
   personaGoal: string;
   currentAction: string;
   currentDecision: string;
@@ -346,7 +347,21 @@ function PersonaJourneyTimeline({
         </div>
       </section>)}
     </div> : <p className="catalog-empty">{t.noPersonaJourneys}</p>}
-    {selectedEvent && <VisualEvidenceModal open onClose={() => setSelectedEvent(null)} title={`${selectedEvent.persona} · ${t.iteration} #${selectedEvent.iteration}`} runId={selectedEvent.run.id} iteration={selectedEvent.iteration} artifacts={selectedArtifacts} />}
+    {selectedEvent && (selectedArtifacts.length ? (
+      <VisualEvidenceModal open onClose={() => setSelectedEvent(null)} title={`${selectedEvent.persona} · ${t.iteration} #${selectedEvent.iteration}`} runId={selectedEvent.run.id} iteration={selectedEvent.iteration} artifacts={selectedArtifacts} />
+    ) : (
+      <Modal open title={`${selectedEvent.persona} · ${t.iteration} #${selectedEvent.iteration}`} onClose={() => setSelectedEvent(null)}>
+        <section className="proposal-detail">
+          <p className="hint">{t.noPersonaEvidence}</p>
+          <dl className="persona-journeys__fallback">
+            {selectedEvent.goal && <div><dt>{t.personaGoal}</dt><dd>{selectedEvent.goal}</dd></div>}
+            {selectedEvent.action && <div><dt>{t.currentAction}</dt><dd>{selectedEvent.action}</dd></div>}
+            {selectedEvent.decision && <div><dt>{t.currentDecision}</dt><dd>{selectedEvent.decision}</dd></div>}
+            {selectedEvent.nextAction && <div><dt>{t.nextAction}</dt><dd>{selectedEvent.nextAction}</dd></div>}
+          </dl>
+        </section>
+      </Modal>
+    ))}
   </section>;
 }
 function Card({

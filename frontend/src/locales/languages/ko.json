@@ -336,6 +336,7 @@
       },
       "agentApplyReview": "검토 필요",
       "agentApplyCommit": "제안 브랜치 자동 커밋",
+      "agentApplyAuto": "관리 자산 AI 자동 개선 및 승인",
       "agentAllowedPaths": {
         "label": "자동 커밋 허용 경로",
         "hint": "쉼표로 구분한 Git glob 패턴입니다. 모든 변경 경로가 일치해야 하며, 비워 두면 자동 커밋을 하지 않습니다."
@@ -488,10 +489,22 @@
       "noAgentProposalChanges": "제안된 파일 변경이 없습니다.",
       "agentProposalBranch": "에이전트 제안 브랜치",
       "committed": "커밋됨",
-      "approveAndCommit": "승인 후 커밋",
+      "approveAndCommit": "승인 후 원본에 반영",
       "rejectAndRemove": "기각 및 삭제",
-      "agentProposalCommitted": "에이전트 제안을 해당 브랜치에 커밋했습니다.",
-      "agentProposalRemoved": "에이전트 제안 worktree와 브랜치를 삭제했습니다."
+      "agentProposalCommitted": "에이전트 제안을 원본 브랜치에 반영했습니다.",
+      "agentProposalRemoved": "에이전트 제안 worktree와 브랜치를 삭제했습니다.",
+      "autoImprove": "AI 자동 개선",
+      "autoImproveTitle": "AI 개선 제안을 생성할까요?",
+      "autoImproveDescription": "격리된 worktree {count}개를 만듭니다. 각 제안을 승인하기 전까지 원본 저장소는 변경되지 않습니다.",
+      "autoImproveQueued": "AI 개선 제안 {count}개를 대기열에 넣었습니다.",
+      "agentJobQueued": "AI 개선 작업이 대기 중입니다.",
+      "agentJobRunning": "AI가 격리된 worktree에서 개선안을 만들고 있습니다.",
+      "agentJobFailed": "검토 가능한 AI 개선안을 만들지 못했습니다.",
+      "agentJobReady": "제안이 검토 준비되었습니다.",
+      "agentJobQueuedShort": "대기",
+      "agentJobRunningShort": "수정 중",
+      "agentJobFailedShort": "실패",
+      "agentJobReadyShort": "검토 가능"
     },
     "settingsLogs": {
       "title": "Orbit 운영 로그",
@@ -915,6 +928,7 @@
       "personaJourneys": "페르소나 여정 타임라인",
       "personaJourneysHint": "시간 흐름에 따라 관측된 페르소나 행동, 판단, 다음 행동을 비교합니다.",
       "noPersonaJourneys": "이 기간에 페르소나 여정이 없습니다.",
+      "noPersonaEvidence": "이 이터레이션에는 시각 근거가 보관되지 않았습니다. 기록된 페르소나 여정을 아래에 표시합니다.",
       "personaGoal": "페르소나 목표",
       "currentAction": "이번에 한 일",
       "currentDecision": "이번 판단",
