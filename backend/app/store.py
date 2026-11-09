@@ -2978,11 +2978,29 @@ class ConsoleStore:
                 self._save_issue_management_records(records)
 
     def _auto_queue_issue_improvements(self, proposal_ids: list[str]) -> None:
-        """Best-effort automatic proposal creation; failures remain visible per Issue."""
+        """Queue automatic proposals and retain any startup failure on each Issue."""
         try:
             self.create_issue_management_agent_proposals(proposal_ids)
-        except Exception:
-            return
+        except Exception as error:
+            with self._issue_management_lock:
+                records = self._issue_management_records()
+                for proposal_id in proposal_ids:
+                    record = records.setdefault(
+                        proposal_id, {"status": "unreviewed", "comments": [], "events": []}
+                    )
+                    record["agent_job"] = {
+                        "status": "failed",
+                        "error": str(error)[:1_000],
+                        "recorded_at": now().isoformat(),
+                    }
+                    record.setdefault("events", []).append(
+                        {
+                            "type": "agent_proposal_failed",
+                            "recorded_at": now().isoformat(),
+                            "error": str(error)[:1_000],
+                        }
+                    )
+                self._save_issue_management_records(records)
 
     def issue_management_items(self) -> list[dict[str, Any]]:
         records = self._issue_management_records()
