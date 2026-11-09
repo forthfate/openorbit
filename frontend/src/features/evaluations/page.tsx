@@ -33,6 +33,7 @@ import {
 } from "./run-detail-log-panels";
 import { SupervisorPanel } from "./run-detail-supervisor-panel";
 import { EvaluationResultPanel } from "./run-detail-result-panel";
+import { RunDetailConversationPanel } from "./run-detail-conversation-panel";
 
 const phases = [
   "before_all",
@@ -134,6 +135,7 @@ export function EvaluationsPage({
     l = copy[locale],
     ui = locales[locale].runUi;
   const [selectedInternal, setSelected] = useState<Run | null>(null),
+    [selectedDetail, setSelectedDetail] = useState<Run | null>(null),
     [tab, setTab] = useState<RunDetailTab>("result"),
     [iterationTab, setIterationTab] = useState(1),
     [candidateTab, setCandidateTab] = useState<string | null>(null),
@@ -198,9 +200,18 @@ export function EvaluationsPage({
     [retryingRun, setRetryingRun] = useState<Run | null>(null);
   const retryCopy = locale === "ko" ? { title: "실행 재시도", warning: "재시도는 작업 디렉터리 또는 외부 대상의 중간 결과를 변경할 수 있습니다.", restart: "1부터 다시 시작", resume: "마지막 이터레이션부터 재시도" } : locale === "ja" ? { title: "実行を再試行", warning: "再試行により作業ディレクトリまたは外部ターゲットの中間結果が変わる可能性があります。", restart: "反復 1 から再開", resume: "最後の反復から再試行" } : { title: "Retry run", warning: "Retrying can change intermediate results in the working directory or external target.", restart: "Restart from iteration 1", resume: "Retry from the last iteration" };
   const selectedSource = initialSelectedRun ?? selectedInternal;
+  const selectedRunId = selectedSource?.id;
   const selected = selectedSource
-    ? runs.find((run) => run.id === selectedSource.id) ?? selectedSource
+    ? (selectedDetail?.id === selectedSource.id ? selectedDetail : runs.find((run) => run.id === selectedSource.id) ?? selectedSource)
     : null;
+  useEffect(() => {
+    if (!selectedRunId) return;
+    let active = true;
+    api<Run>(`/api/runs/${encodeURIComponent(selectedRunId)}`)
+      .then((run) => { if (active) setSelectedDetail(run); })
+      .catch(() => { if (active) setSelectedDetail(null); });
+    return () => { active = false; };
+  }, [selectedRunId]);
   const supervisorTranslationIds = useMemo(
     () =>
       (selected?.supervisor_results ?? [])
@@ -972,6 +983,7 @@ export function EvaluationsPage({
           title={l.detail}
           onClose={() => {
             setSelected(null);
+            setSelectedDetail(null);
             onSelectedRunClose?.();
           }}
           className="modal--run-detail"
@@ -1043,6 +1055,7 @@ export function EvaluationsPage({
               { id: "result", label: l.result },
               { id: "commits", label: l.worktrees },
               { id: "supervisor", label: l.supervisor },
+              { id: "conversation", label: l.conversation },
               { id: "logs", label: l.logs },
             ]}
           />
@@ -1108,6 +1121,11 @@ export function EvaluationsPage({
                 l={l}
                 renderLineOutput={(value) => <LineNumberedOutput value={value} />}
               />
+            </RunDetailTabPanel>
+          )}
+          {tab === "conversation" && (
+            <RunDetailTabPanel description={l.conversationDescription} hint={l.conversationDataHint} action={iterationNavigator}>
+              <RunDetailConversationPanel steps={selectedSteps} runId={selected.id} l={l} locale={locale} />
             </RunDetailTabPanel>
           )}
           {tab === "result" && (

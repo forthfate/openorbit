@@ -1456,6 +1456,8 @@ class ConsoleStore:
             # Existing builds predate this optional policy, so leave it off
             # unless an operator explicitly enabled it.
             build.setdefault("require_human_approval_before_apply", False)
+            build.setdefault("agent_apply_policy", "review_required")
+            build.setdefault("agent_auto_commit_allowed_paths", [])
             build.setdefault("starred", False)
             self._hydrate_build_environment(build)
             build.update(self._repository_metadata(str(build.get("repository", ""))))
@@ -2283,6 +2285,8 @@ class ConsoleStore:
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
             ),
+            "agent_apply_policy": values.get("agent_apply_policy", "review_required"),
+            "agent_auto_commit_allowed_paths": list(values.get("agent_auto_commit_allowed_paths", [])),
             "executor": executor,
         }
         builds = self.builds()
@@ -2377,6 +2381,8 @@ class ConsoleStore:
             "require_human_approval_before_apply": bool(
                 values.get("require_human_approval_before_apply", False)
             ),
+            "agent_apply_policy": values.get("agent_apply_policy", "review_required"),
+            "agent_auto_commit_allowed_paths": list(values.get("agent_auto_commit_allowed_paths", [])),
             "executor": executor,
         }
         builds[index] = build
@@ -3764,6 +3770,55 @@ class ConsoleStore:
     def runs(self) -> list[Run]:
         entries = [Run.model_validate_json(path.read_text(encoding="utf-8")) for path in RUNS.glob("*.json")]
         return sorted(entries, key=lambda run: run.created_at, reverse=True)
+
+    def run_summaries(self) -> list[dict[str, Any]]:
+        """Return the run-history fields without repeatedly loading full evidence.
+
+        The control room polls this collection. Browser snapshots, command
+        output, and saved artifacts belong to the detail endpoint; loading
+        every one of them for every poll can starve the local API and leave the
+        UI in its loading state.
+        """
+        summaries: list[dict[str, Any]] = []
+        step_keys = {
+            "step_id",
+            "phase",
+            "loop_index",
+            "candidate_id",
+            "name",
+            "started_at",
+            "ended_at",
+            "in_progress",
+            "exit_code",
+            "error",
+        }
+        for path in RUNS.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            steps = payload.get("step_results", [])
+            compact_steps = []
+            for step in steps if isinstance(steps, list) else []:
+                if not isinstance(step, dict):
+                    continue
+                compact = {key: value for key, value in step.items() if key in step_keys}
+                result = step.get("result")
+                simulator = result.get("insighta_persona_simulator") if isinstance(result, dict) else None
+                active = simulator.get("active_personas") if isinstance(simulator, dict) else None
+                if isinstance(active, list):
+                    compact["result"] = {"insighta_persona_simulator": {"active_personas": active}}
+                compact_steps.append(compact)
+            payload["step_results"] = compact_steps
+            payload.pop("prompt_snapshot", None)
+            payload.pop("workflow_graph", None)
+            for record in payload.get("supervisor_results", []):
+                if isinstance(record, dict):
+                    record.pop("prompt", None)
+            summaries.append(payload)
+        return sorted(summaries, key=lambda run: str(run.get("created_at") or ""), reverse=True)
 
     def delete_run(self, run_id: str) -> None:
         run = self._load(run_id)

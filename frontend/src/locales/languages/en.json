@@ -331,6 +331,16 @@
         "hint": "Keep supervisor proposals as evidence until a human approves their application."
       },
       "humanApprovalEnable": "Enable",
+      "agentApplyPolicy": {
+        "label": "Agent proposal policy",
+        "hint": "Auto-commit writes only to an isolated proposal branch; it never pushes or merges. Sensitive paths are always blocked."
+      },
+      "agentApplyReview": "Require review",
+      "agentApplyCommit": "Auto-commit proposal branch",
+      "agentAllowedPaths": {
+        "label": "Allowed auto-commit paths",
+        "hint": "Comma-separated Git glob patterns. Every changed path must match; leave empty to disable auto-commit."
+      },
       "name": "Name",
       "next": "Next"
     },
@@ -926,6 +936,17 @@
       "workflowGraph": "Workflow graph",
       "noWorkflowGraph": "This task has no declared workflow to display.",
       "logs": "Logs",
+      "conversation": "Conversation",
+      "conversationDescription": "Review the public conversation between each Persona and its dedicated tool AI.",
+      "conversationDataHint": "Only Persona messages, tool-AI replies, and sanitized tool results are shown. Private prompts and hidden reasoning are excluded.",
+      "session": "Session",
+      "persona": "Persona",
+      "toolAi": "Tool AI",
+      "toolResult": "Tool result",
+      "showToolResult": "Show tool result",
+      "hideToolResult": "Hide tool result",
+      "noConversation": "No conversation recorded",
+      "noConversationHint": "A conversation appears after a Persona session emits public dialogue evidence.",
       "logsDescription": "View all execution output together in chronological order.",
       "logsDataHint": "Entries appear when Orbit writes process output or a runner sends target logs with ctx.target_log().",
       "orbitLogs": "Orbit logs",

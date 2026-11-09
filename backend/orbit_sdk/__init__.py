@@ -8,7 +8,12 @@ helpers, and visual-node definitions into dedicated modules.
 import sys
 from types import ModuleType
 
-from .browser import NetworkSettleOptions, install_selenium_network_tracker, wait_for_selenium_page_settlement
+from .browser import (
+    NetworkSettleOptions,
+    install_selenium_network_tracker,
+    selenium_http_failures,
+    wait_for_selenium_page_settlement,
+)
 from .core import context as _context
 from .core.context import (
     ORBIT_APP_DATA,
@@ -49,6 +54,7 @@ __all__ = [
     "canonical_phase",
     "graph",
     "install_selenium_network_tracker",
+    "selenium_http_failures",
     "runner",
     "wait_for_selenium_page_settlement",
 ]

@@ -325,6 +325,16 @@
         "hint": "監督者の提案は、人が適用を承認するまで証跡として保持します。"
       },
       "humanApprovalEnable": "有効化",
+      "agentApplyPolicy": {
+        "label": "エージェント提案ポリシー",
+        "hint": "自動コミットは分離された提案ブランチにのみ記録され、push やマージは行いません。機密パスは常にブロックされます。"
+      },
+      "agentApplyReview": "レビュー必須",
+      "agentApplyCommit": "提案ブランチを自動コミット",
+      "agentAllowedPaths": {
+        "label": "自動コミットの許可パス",
+        "hint": "カンマ区切りの Git glob パターンです。すべての変更パスが一致する必要があり、空欄の場合は自動コミットしません。"
+      },
       "name": "名前",
       "next": "次へ"
     },
@@ -907,6 +917,17 @@
       "workflowGraph": "ワークフローグラフ",
       "noWorkflowGraph": "このタスクには表示する宣言済みワークフローがありません。",
       "logs": "ログ",
+      "conversation": "会話",
+      "conversationDescription": "各ペルソナと専用ツールAIの公開会話を確認します。",
+      "conversationDataHint": "ペルソナの発話、ツールAIの応答、サニタイズ済みのツール結果のみを表示します。非公開プロンプトと内部推論は除外されます。",
+      "session": "セッション",
+      "persona": "ペルソナ",
+      "toolAi": "ツールAI",
+      "toolResult": "ツール結果",
+      "showToolResult": "ツール結果を表示",
+      "hideToolResult": "ツール結果を隠す",
+      "noConversation": "記録された会話はありません",
+      "noConversationHint": "ペルソナセッションが公開会話の証拠を出力すると、ここに表示されます。",
       "logsDescription": "すべての実行出力を時系列でまとめて確認します。",
       "logsDataHint": "Orbit がプロセス出力を残すか、ランナーが ctx.target_log() で対象ログを送信すると表示されます。",
       "orbitLogs": "Orbit ログ",

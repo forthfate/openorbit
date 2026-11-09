@@ -330,6 +330,16 @@
         "hint": "감독자 제안은 사람이 적용을 승인할 때까지 증거로만 보존합니다."
       },
       "humanApprovalEnable": "유효화",
+      "agentApplyPolicy": {
+        "label": "에이전트 제안 정책",
+        "hint": "자동 커밋은 격리된 제안 브랜치에만 기록하며 push나 병합은 하지 않습니다. 민감한 경로는 항상 차단됩니다."
+      },
+      "agentApplyReview": "검토 필요",
+      "agentApplyCommit": "제안 브랜치 자동 커밋",
+      "agentAllowedPaths": {
+        "label": "자동 커밋 허용 경로",
+        "hint": "쉼표로 구분한 Git glob 패턴입니다. 모든 변경 경로가 일치해야 하며, 비워 두면 자동 커밋을 하지 않습니다."
+      },
       "name": "이름",
       "next": "다음"
     },
@@ -952,6 +962,17 @@
       "workflowGraph": "워크플로우 그래프",
       "noWorkflowGraph": "이 작업에는 표시할 워크플로우가 선언되어 있지 않습니다.",
       "logs": "로그",
+      "conversation": "대화",
+      "conversationDescription": "각 페르소나와 전용 도구 AI 사이에 공개된 대화를 확인합니다.",
+      "conversationDataHint": "페르소나 발화, 도구 AI 응답, 정제된 도구 결과만 표시합니다. 비공개 프롬프트와 내부 추론은 제외됩니다.",
+      "session": "세션",
+      "persona": "페르소나",
+      "toolAi": "도구 AI",
+      "toolResult": "도구 결과",
+      "showToolResult": "도구 결과 보기",
+      "hideToolResult": "도구 결과 숨기기",
+      "noConversation": "기록된 대화가 없습니다",
+      "noConversationHint": "페르소나 세션이 공개 대화 증거를 남기면 여기에 표시됩니다.",
       "logsDescription": "전체 실행 출력을 시간순으로 한 번에 확인합니다.",
       "logsDataHint": "Orbit 프로세스가 출력을 남기거나 러너가 ctx.target_log()로 대상 로그를 전송하면 표시됩니다.",
       "orbitLogs": "Orbit 로그",

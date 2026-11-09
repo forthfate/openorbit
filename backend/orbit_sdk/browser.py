@@ -10,6 +10,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Iterable
+from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_IGNORED_URL_PATTERNS = (
     r"analytics",
@@ -84,6 +85,45 @@ def install_selenium_network_tracker(
     # Also make the tracker available if the caller installs it after a page
     # has already been opened.  The preload registration handles future pages.
     driver.execute_script(script)
+
+
+def selenium_http_failures(driver: Any, *, limit: int = 20) -> list[dict[str, Any]]:
+    """Return newly emitted failed HTTP responses from Chrome performance logs.
+
+    Query strings and fragments are deliberately removed: browser evidence must
+    identify a failing asset without persisting credentials or user data.
+    Callers enable Chrome's ``performance`` log independently; unsupported
+    drivers simply return no diagnostic entries.
+    """
+    try:
+        entries = driver.get_log("performance")
+    except Exception:
+        return []
+
+    failures: list[dict[str, Any]] = []
+    for entry in entries if isinstance(entries, list) else []:
+        try:
+            message = json.loads(entry.get("message", "{}")).get("message", {})
+            if message.get("method") != "Network.responseReceived":
+                continue
+            params = message.get("params", {})
+            response = params.get("response", {})
+            status = int(response.get("status", 0))
+            url = str(response.get("url", ""))
+            if status < 400 or not url:
+                continue
+            parsed = urlsplit(url)
+            failures.append(
+                {
+                    "status": status,
+                    "url": urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", "")),
+                    "mime_type": str(response.get("mimeType", "")),
+                    "request_type": str(params.get("type", "")),
+                }
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return failures[-limit:]
 
 
 def wait_for_selenium_page_settlement(
