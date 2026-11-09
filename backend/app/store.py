@@ -4636,6 +4636,12 @@ class ConsoleStore:
                 # after_each step, but runs only after that selection exists.
                 for step in after_each:
                     self._execute_step(run_id, step, loop_index, resources, allow_terminal=True)
+                # A runner can already supply a concrete automation failure
+                # (target, locator, URL, and reproduction) before the slower
+                # supervisor call. Record it as a provisional Issue now so an
+                # auto-managed build can begin its isolated repair proposal
+                # without waiting for the language-model assessment.
+                self._record_runner_closeout(run_id, loop_index)
                 # The supervisor first assesses discovered issues. The agent
                 # may then create a proposal for an issue the supervisor did
                 # not reject; only that concrete proposal receives the second,
@@ -4688,6 +4694,100 @@ class ConsoleStore:
                 and self._latest_cycle_has_persona_evidence(run)
             ):
                 self._complete_supervision(run_id)
+
+    def _record_runner_closeout(self, run_id: str, loop_index: int) -> None:
+        """Promote actionable runner failures before supervisor assessment.
+
+        The closeout is intentionally narrow: only structured ``bugs`` emitted
+        by a runner are eligible.  It does not infer product defects from a
+        conversation or create an Issue for an ordinary incomplete task.
+        """
+        run = self._load(run_id)
+        if any(
+            record.get("stage") == "runner_closeout" and record.get("iteration") == loop_index
+            for record in run.supervisor_results
+            if isinstance(record, dict)
+        ):
+            return
+        issues: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for step in run.step_results:
+            if not isinstance(step, dict) or step.get("loop_index") != loop_index:
+                continue
+            result = step.get("result")
+            cycle = result.get("insighta_persona_simulator") if isinstance(result, dict) else None
+            evidence = cycle.get("persona_evidence", []) if isinstance(cycle, dict) else []
+            for session in evidence if isinstance(evidence, list) else []:
+                plan = session.get("plan", {}) if isinstance(session, dict) else {}
+                persona = str(session.get("persona") or "") if isinstance(session, dict) else ""
+                for bug in plan.get("bugs", []) if isinstance(plan, dict) else []:
+                    if not isinstance(bug, dict):
+                        continue
+                    title = str(bug.get("title") or "Runner execution failure")[:240]
+                    reproduction = str(bug.get("reproduction") or "runner closeout")[:700]
+                    key = (title, reproduction)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    issues.append(
+                        {
+                            "title": title,
+                            "category": "other",
+                            "severity": str(bug.get("severity") or "high"),
+                            "evidence": str(bug.get("evidence") or "")[:2400],
+                            "reproduction": reproduction,
+                            "status": "proposed",
+                            "rationale": "Runner closeout recorded a reproducible automation failure before supervisor assessment.",
+                            "persona": persona,
+                            "source": "runner_closeout",
+                        }
+                    )
+                closeout = plan.get("iteration_closeout", {}) if isinstance(plan, dict) else {}
+                for issue in closeout.get("improvement_issues", []) if isinstance(closeout, dict) else []:
+                    if not isinstance(issue, dict):
+                        continue
+                    title = str(issue.get("title") or "Runner closeout finding")[:240]
+                    reproduction = str(issue.get("reproduction") or "runner closeout")[:700]
+                    key = (title, reproduction)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    issues.append(
+                        {
+                            "title": title,
+                            "category": "other",
+                            "severity": str(issue.get("severity") or "medium"),
+                            "evidence": str(issue.get("evidence") or "")[:2400],
+                            "reproduction": reproduction,
+                            "status": "proposed",
+                            "rationale": "Iteration closeout found that the coursework objective did not make executable progress.",
+                            "persona": persona,
+                            "source": "runner_closeout",
+                        }
+                    )
+        if not issues:
+            return
+        record_index = len(run.supervisor_results)
+        run.supervisor_results.append(
+            {
+                "iteration": loop_index,
+                "stage": "runner_closeout",
+                "status": "completed",
+                "response": {"improvements": [], "reported_issues": issues},
+                "recorded_at": now().isoformat(),
+            }
+        )
+        run.updated_at = now()
+        self._save(run)
+        build = self.build(run.build_id) if run.build_id else {}
+        if build.get("agent_apply_policy") != "auto_apply_managed_assets":
+            return
+        issue_ids = [f"{run.id}:{loop_index}:{record_index}:issue:{index}" for index in range(len(issues))]
+        threading.Thread(
+            target=self._auto_queue_issue_improvements,
+            args=(issue_ids,),
+            daemon=True,
+        ).start()
 
     @staticmethod
     def _latest_cycle_has_persona_evidence(run: Run) -> bool:
