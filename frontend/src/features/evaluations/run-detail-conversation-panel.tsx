@@ -3,8 +3,8 @@ import type { RunStepResult } from "../../domain/models";
 import { EvidenceViewer, visualEvidenceArtifacts } from "../../components/ui/evidence-viewer";
 
 type RecordItem = Record<string, unknown>;
-type DialogueMessage = { role: "persona" | "assistant" | "tool"; content: string };
-type Session = { persona: string; dialogue: DialogueMessage[]; iteration: number; artifacts: ReturnType<typeof visualEvidenceArtifacts> };
+type DialogueMessage = { role: "persona" | "assistant" | "tool"; content: string; recordedAt?: string };
+type Session = { persona: string; dialogue: DialogueMessage[]; iteration: number; recordedAt?: string; artifacts: ReturnType<typeof visualEvidenceArtifacts> };
 type Copy = Record<string, string>;
 
 const record = (value: unknown): RecordItem | null => value && typeof value === "object" && !Array.isArray(value) ? value as RecordItem : null;
@@ -15,8 +15,9 @@ function dialogue(value: unknown): DialogueMessage[] {
     const item = record(message);
     const role = item?.role;
     const content = item?.content;
+    const recordedAt = typeof item?.recorded_at === "string" ? item.recorded_at : undefined;
     return (role === "persona" || role === "assistant" || role === "tool") && typeof content === "string"
-      ? [{ role, content }]
+      ? [{ role, content, recordedAt }]
       : [];
   });
 }
@@ -43,19 +44,29 @@ function publicToolSummary(content: string) {
 }
 
 function sessionsFrom(steps: RunStepResult[]): Session[] {
-  return steps.flatMap((step) => {
+  const latestByPersona = new Map<string, Session>();
+  for (const step of steps) {
     const simulator = record(step.result?.insighta_persona_simulator);
     const evidence = simulator?.persona_evidence;
-    if (!Array.isArray(evidence)) return [];
-    return evidence.flatMap((entry, index) => {
+    if (!Array.isArray(evidence)) continue;
+    for (const [index, entry] of evidence.entries()) {
       const item = record(entry);
       const plan = record(item?.plan);
       const messages = dialogue(plan?.dialogue);
-      if (!item || !messages.length) return [];
+      if (!item || !messages.length) continue;
       const persona = typeof item.persona === "string" ? item.persona : `Persona ${index + 1}`;
-      return [{ persona, dialogue: messages, iteration: step.loop_index ?? 0, artifacts: visualEvidenceArtifacts(step.data_files ?? []) }];
-    });
-  });
+      // A runner emits the same evidence from both the source-backed session
+      // and the retention step. Keep the later record for one Persona/iteration.
+      latestByPersona.set(`${step.loop_index ?? 0}:${persona}`, {
+        persona,
+        dialogue: messages,
+        iteration: step.loop_index ?? 0,
+        recordedAt: step.ended_at ?? step.started_at,
+        artifacts: visualEvidenceArtifacts(step.data_files ?? []),
+      });
+    }
+  }
+  return [...latestByPersona.values()];
 }
 
 export function RunDetailConversationPanel({ steps, runId, l }: { steps: RunStepResult[]; runId: string; l: Copy }) {
@@ -71,7 +82,7 @@ export function RunDetailConversationPanel({ steps, runId, l }: { steps: RunStep
     </div>
     <ol className="conversation-transcript" aria-label={`${session.persona} ${l.session}`}>
       {session.dialogue.map((message, index) => <li key={`${message.role}-${index}`} className={`conversation-message conversation-message--${message.role}`}>
-        <small>{message.role === "persona" ? l.persona : message.role === "assistant" ? l.toolAi : l.toolResult}</small>
+        <header><small>{message.role === "persona" ? l.persona : message.role === "assistant" ? l.toolAi : l.toolResult}</small>{(message.recordedAt ?? session.recordedAt) && <time dateTime={message.recordedAt ?? session.recordedAt}>{new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(message.recordedAt ?? session.recordedAt!))}</time>}</header>
         {message.role === "tool" ? <details><summary>{l.showToolResult}</summary><pre>{publicToolSummary(message.content)}</pre></details> : <p>{message.content}</p>}
         {message.role === "tool" && <EvidenceViewer runId={runId} iteration={session.iteration} artifacts={session.artifacts} imageLabel={l.viewImageEvidence} htmlLabel={l.viewHtmlEvidence} imageTitle={l.imageEvidence} htmlTitle={l.htmlEvidence} />}
       </li>)}

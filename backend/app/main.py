@@ -267,15 +267,14 @@ def runs():
     # model-oriented for internal scheduling callers and enrich only this API
     # representation.
     values = []
-    for run in store.runs():
-        item = run.model_dump(mode="json")
+    for item in store.run_summaries():
         responses = [
             record.get("response")
-            for record in run.supervisor_results
+            for record in item.get("supervisor_results", [])
             if isinstance(record, dict) and isinstance(record.get("response"), dict)
         ]
-        if not responses and isinstance(run.supervisor_response, dict):
-            responses = [run.supervisor_response]
+        if not responses and isinstance(item.get("supervisor_response"), dict):
+            responses = [item["supervisor_response"]]
         improvements = [
             improvement
             for response in responses
