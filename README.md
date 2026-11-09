@@ -6,14 +6,17 @@
 
 # What is OpenOrbit?
 
-> **A local workspace where AI personas find product work, AI coding agents
-> prepare changes, and your team reviews the result.**
+> **A local control room where persistent AI personas express real user intent,
+> bounded action agents gather evidence, and coding agents prepare safe,
+> reviewable improvements.**
 
 OpenOrbit is a local-first web service for running the work around an AI
-product—not only evaluating the agent itself. Personas explore a product,
-report problems and tasks, and preserve the evidence. Your selected AI coding
-agent can prepare a change in an isolated Git worktree; your team reviews the
-diff, evidence, and decision in one control room.
+product—not only evaluating the agent itself. Each Persona speaks from its own
+perspective and retained public history. A separate action agent turns that
+message into bounded tool work using only safe, rendered choices. OpenOrbit
+retains the public conversation, sanitized evidence, and proposed code change
+so your team can review it—or optionally auto-commit a tightly scoped proposal
+branch without pushing, merging, or deploying it.
 
 It also supports repeatable AI-agent evaluation and self-improvement. Every
 run, proposal, decision, and approved change becomes retained operational
@@ -28,28 +31,31 @@ reviewable improvement:
 
 ```mermaid
 flowchart LR
-  A[AI persona explores<br/>the product]
-  B[Problem, task, and<br/>retained evidence]
-  C[AI coding agent prepares<br/>a worktree change]
-  D[Review the diff, evidence,<br/>and proposal]
-  E[Human decision]
-  F[Improved product or<br/>AI agent]
+  A[Persistent AI Persona<br/>expresses user intent]
+  B[Bounded action agent<br/>uses safe tools]
+  C[Public conversation<br/>and retained evidence]
+  D[AI coding agent prepares<br/>an isolated proposal]
+  E[Review or constrained<br/>proposal-branch auto-commit]
+  F[Human integration<br/>decision]
 
   A --> B --> C --> D --> E --> F --> A
 ```
 
-OpenOrbit keeps this work visible and reversible: AI can propose and prepare
-work, while people decide what is applied.
+OpenOrbit keeps this work visible and reversible: AI can express intent,
+prepare evidence and proposals, while people decide what is integrated.
 
 ## What you can do
 
 - **Develop reported problems with worktrees.** When AI reports a concrete
-  problem, let a coding agent prepare an isolated change, then review its diff
-  and evidence before deciding what to apply.
+  problem, let a coding agent prepare an isolated change. Review its diff and
+  evidence before integration, or opt in to a tightly bounded proposal-branch
+  auto-commit policy.
 - **Use your preferred AI coding agent.** Connect the coding agent your team
   already uses instead of being tied to one provider.
-- **Give AI personas work to do.** Personas explore from a defined point of
-  view, surface tasks and problems, and keep their work connected to evidence.
+- **Operate persistent AI personas.** Personas express a defined user
+  perspective and use their retained public history. A separate action role
+  performs bounded tool work, while their public conversation and evidence
+  remain connected to each task.
 - **Improve AI agents over time.** Repeated evaluations retain responses,
   feedback, proposals, and decisions so an AI agent can improve safely.
 - **Manage personas and reusable assets.** Keep personas, model profiles,
@@ -115,6 +121,31 @@ supervisor feedback and any proposed improvement.
 
 ![OpenOrbit Runs showing a completed workflow and its retained evidence](docs/images/evaluation-result-approved.png)
 
+### Follow a Persona conversation from intent to evidence
+
+For compatible Persona journey runners, the **Conversation** tab shows each
+Persona session and iteration. A Persona speaker produces the natural,
+first-person message; a separate action-planning role receives that message and
+the rendered safe choices, then selects bounded tool work. This keeps the
+Persona's user perspective separate from the operating role without requiring
+separate model providers.
+
+```mermaid
+flowchart LR
+  A[Persona speaker<br/>public user intent]
+  B[Action planner<br/>safe rendered choices]
+  C[Bounded tool action]
+  D[Sanitized evidence<br/>and next Persona turn]
+
+  A --> B --> C --> D --> A
+```
+
+The transcript retains only public Persona messages, tool-AI replies, and
+sanitized tool results. Private prompts, hidden reasoning, credentials, and raw
+browser payloads are excluded. Select a Persona and iteration to inspect its
+conversation; expandable tool results can open the retained screenshot or HTML
+evidence for that step.
+
 ### Follow improvement and persona activity
 
 Compare feedback, decisions, scores, run health, and persona journeys across
@@ -131,6 +162,21 @@ evidence, and diff, then approve, reject, or keep it under review—nothing is
 applied without a decision.
 
 ![OpenOrbit Improvements reviewing an AI-created change and its isolated worktree diff](docs/images/ai-created-proposal-review.png)
+
+### Choose how AI proposals are committed
+
+Each Build chooses an agent proposal policy:
+
+| Policy | What OpenOrbit does |
+| --- | --- |
+| **Require review** (default) | Keeps the isolated worktree proposal and its evidence for a human to review before integration. |
+| **Auto-commit proposal branch** | Commits an eligible proposal only to its isolated proposal branch when every changed file matches an explicit allowed-path glob. |
+
+Auto-commit is a bounded proposal-preparation option, not unrestricted
+self-modification: an empty allowed-path list disables it, sensitive paths stay
+blocked even when listed, and it never pushes, merges, applies the change to the
+evaluated repository, or deploys it. Human review remains the integration
+boundary.
 
 ### Ask Orbit Assistant about the current screen
 
@@ -279,6 +325,10 @@ command-line path. Model profiles store the name of the environment variable
 that contains a secret, never the secret itself. Review workflow commands,
 approved workspace boundaries, and network exposure before connecting a
 production AI system.
+
+Conversation records follow the same boundary: OpenOrbit retains public
+messages and sanitized tool results needed to review a run, not private prompts,
+hidden reasoning, credentials, or raw browser payloads.
 
 ## API and extensibility
 
