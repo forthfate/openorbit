@@ -337,6 +337,7 @@
       },
       "agentApplyReview": "Require review",
       "agentApplyCommit": "Auto-commit proposal branch",
+      "agentApplyAuto": "Auto improve and approve managed assets",
       "agentAllowedPaths": {
         "label": "Allowed auto-commit paths",
         "hint": "Comma-separated Git glob patterns. Every changed path must match; leave empty to disable auto-commit."
@@ -489,10 +490,22 @@
       "noAgentProposalChanges": "No file changes were proposed.",
       "agentProposalBranch": "Agent proposal branch",
       "committed": "Committed",
-      "approveAndCommit": "Approve and commit",
+      "approveAndCommit": "Approve and apply",
       "rejectAndRemove": "Reject and remove",
-      "agentProposalCommitted": "Agent proposal committed to its branch.",
-      "agentProposalRemoved": "Agent proposal worktree and branch removed."
+      "agentProposalCommitted": "Agent proposal applied to the source branch.",
+      "agentProposalRemoved": "Agent proposal worktree and branch removed.",
+      "autoImprove": "AI auto improve",
+      "autoImproveTitle": "Create AI improvement proposals?",
+      "autoImproveDescription": "{count} isolated worktrees will be created. The source repository remains unchanged until each proposal is approved.",
+      "autoImproveQueued": "Queued {count} AI improvement proposal(s).",
+      "agentJobQueued": "AI improvement is queued.",
+      "agentJobRunning": "AI improvement is generating an isolated worktree.",
+      "agentJobFailed": "AI improvement could not create a reviewable proposal.",
+      "agentJobReady": "Proposal is ready for review.",
+      "agentJobQueuedShort": "Queued",
+      "agentJobRunningShort": "Working",
+      "agentJobFailedShort": "Failed",
+      "agentJobReadyShort": "Ready"
     },
     "settingsLogs": {
       "title": "Orbit operational logs",
@@ -889,6 +902,7 @@
       "personaJourneys": "Persona journey timeline",
       "personaJourneysHint": "Compare observed persona actions, decisions, and next steps over time.",
       "noPersonaJourneys": "No persona journeys in this period.",
+      "noPersonaEvidence": "No visual evidence was retained for this iteration. The recorded persona journey is shown below.",
       "personaGoal": "Persona goal",
       "currentAction": "This session's action",
       "currentDecision": "This session's decision",

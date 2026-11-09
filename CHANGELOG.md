@@ -5,6 +5,35 @@ All notable changes to OpenOrbit are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [0.13.0] - 2026-11-09
+
+### Added
+
+- Added public Persona-to-tool-AI conversations to Run detail, including
+  Persona sessions, iteration-aware timestamps, sanitized tool summaries, and
+  linked screenshot or HTML evidence.
+- Split Persona speech from action planning so a persistent Persona can express
+  its user perspective while a separate bounded role selects from rendered safe
+  actions.
+- Added an optional allow-listed auto-commit policy for isolated AI proposal
+  branches. It never pushes, merges, deploys, or writes to the evaluated
+  repository.
+- Added AI usage and rate-limit monitoring by model profile.
+- Added retained Orbit Assistant chat history and a reusable browser-network
+  settlement helper for browser journeys.
+
+### Changed
+
+- Repositioned the README around persistent Persona intent, bounded action
+  agents, public evidence, and reviewable improvements.
+
+### Fixed
+
+- Localized Conversation timestamps, kept Run-history updates responsive, and
+  prevented duplicate Persona conversation sessions.
+- Improved MCP fallback behavior, bounded MCP pipeline responses, and made the
+  Orbit Assistant more resilient to transient initialization failures.
+
 ## [0.12.9] - 2026-09-26
 
 ### Fixed

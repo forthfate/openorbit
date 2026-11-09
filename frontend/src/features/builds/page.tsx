@@ -65,7 +65,7 @@ type Draft = {
   candidates_per_iteration: number;
   approval_score: number;
   require_human_approval_before_apply: boolean;
-  agent_apply_policy: "review_required" | "auto_commit_branch";
+  agent_apply_policy: "review_required" | "auto_commit_branch" | "auto_apply_managed_assets";
   agent_auto_commit_allowed_paths: string[];
   enabled: boolean;
 };
@@ -116,6 +116,7 @@ type BuildWizardCopy = {
   agentApplyPolicy: LabelCopy;
   agentApplyReview: string;
   agentApplyCommit: string;
+  agentApplyAuto: string;
   agentAllowedPaths: LabelCopy;
   name: string;
   next: string;
@@ -612,9 +613,10 @@ function Direct({
             <select value={d.agent_apply_policy} onChange={(e) => setD({ ...d, agent_apply_policy: e.target.value as Draft["agent_apply_policy"] })}>
               <option value="review_required">{copy.agentApplyReview}</option>
               <option value="auto_commit_branch">{copy.agentApplyCommit}</option>
+              <option value="auto_apply_managed_assets">{copy.agentApplyAuto}</option>
             </select>
           </Field>
-          {d.agent_apply_policy === "auto_commit_branch" && <Field label={copy.agentAllowedPaths.label} description={copy.agentAllowedPaths.hint}>
+          {(d.agent_apply_policy === "auto_commit_branch" || d.agent_apply_policy === "auto_apply_managed_assets") && <Field label={copy.agentAllowedPaths.label} description={copy.agentAllowedPaths.hint}>
             <input value={d.agent_auto_commit_allowed_paths.join(", ")} placeholder="prompts/**, backend/app/assistant_*.py" onChange={(e) => setD({ ...d, agent_auto_commit_allowed_paths: e.target.value.split(",").map((value) => value.trim()).filter(Boolean) })} />
           </Field>}
         </div>
